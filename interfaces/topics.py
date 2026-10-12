@@ -22,3 +22,5 @@ STREAM_ANNOUNCED = "stream/announced"
 
 #: This node's tailnet status. Payload: `TailnetStatus`.
 TAILNET_STATUS = "tailnet/status"
+#: Every peer this node can see on its tailnet, as one snapshot. Payload: `TailnetPeers`.
+TAILNET_PEERS = "tailnet/peers"

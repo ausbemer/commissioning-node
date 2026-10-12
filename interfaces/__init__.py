@@ -11,6 +11,8 @@ from .models import (
     NodeCard,
     StreamAnnouncement,
     StreamEndpoint,
+    TailnetPeer,
+    TailnetPeers,
     TailnetStatus,
     Tick,
 )
@@ -20,10 +22,11 @@ from .topics import (
     STREAM_ANNOUNCED,
     SYSTEM_CARD,
     SYSTEM_TICK,
+    TAILNET_PEERS,
     TAILNET_STATUS,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "__version__",
@@ -37,10 +40,13 @@ __all__ = [
     "StreamEndpoint",
     "StreamAnnouncement",
     "TailnetStatus",
+    "TailnetPeer",
+    "TailnetPeers",
     "SYSTEM_TICK",
     "SYSTEM_CARD",
     "CAMERA_REGISTER",
     "CAMERA_ANNOUNCED",
     "STREAM_ANNOUNCED",
     "TAILNET_STATUS",
+    "TAILNET_PEERS",
 ]

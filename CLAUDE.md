@@ -31,7 +31,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 
 | Path | Role |
 |------|------|
-| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.1.0`. All cross-module types live here and nowhere else. |
+| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.2.0`. All cross-module types live here and nowhere else. |
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
@@ -46,7 +46,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
 neutral packages none yet · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
 
-## Topics (contract v0.1.0)
+## Topics (contract v0.2.0)
 
 | Topic | Payload | Producer → consumers |
 |-------|---------|----------------------|
@@ -56,6 +56,7 @@ neutral packages none yet · bus-coupled infra none yet · ops tier `ops/` · co
 | `camera/announced` | `CameraAnnouncement` | camera-config → stream-relay, dashboard |
 | `stream/announced` | `StreamAnnouncement` (nested `StreamEndpoint`) | stream-relay → dashboard |
 | `tailnet/status` | `TailnetStatus` | tailnet-gateway → stream-relay, dashboard |
+| `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`), declares `period_s` | tailnet-gateway → dashboard (identity, ADR-0003; added 0.2.0, producer lands with `feature/tailnet-peers`) |
 
 ## Modules
 

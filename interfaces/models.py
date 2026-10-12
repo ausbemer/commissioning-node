@@ -113,3 +113,34 @@ class TailnetStatus(Envelope):
     addresses: list[str] = []
     #: Subnet routes (CIDR) this node is currently serving on the tailnet.
     served_routes: list[str] = []
+
+
+class TailnetPeer(Shape):
+    """One other node on this node's tailnet, as the overlay last reported it."""
+
+    #: The peer's tailnet addresses (IPv4 and IPv6).
+    addresses: list[str] = []
+    #: The peer's name on the tailnet: its MagicDNS name, e.g. "alice-laptop.tail1234.ts.net",
+    #: or its OS host name when the overlay reports no DNS name.
+    node_name: str
+    #: Login of the user who owns the peer, e.g. "alice@example.com". None for a tagged
+    #: peer: a tagged node is owned by its tags, not by a user.
+    login: str | None = None
+    #: ACL tags the peer carries, e.g. "tag:ops". Empty for a user-owned peer.
+    tags: list[str] = []
+
+
+class TailnetPeers(Envelope):
+    """The complete set of peers this node can see on its tailnet (ADR-0003 §2).
+
+    A snapshot, not a delta: a peer absent from the latest message is not on the tailnet.
+    Consumers use it to resolve a tailnet address to an identity, and must treat it as a
+    renewed level (§5): once older than their bound, derived from `period_s` (§11 rung 11),
+    it no longer resolves anyone.
+    """
+
+    #: Wall-clock time the overlay was read (Unix seconds).
+    observed_at: float
+    #: The cadence the producer intends to publish at, in seconds.
+    period_s: float
+    peers: list[TailnetPeer] = []
