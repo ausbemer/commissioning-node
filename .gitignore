@@ -16,3 +16,23 @@ venv/
 
 # NOTE: do NOT ignore schemas/ — the additivity baseline (schemas/baseline.json)
 # is committed on purpose; it is what future contract changes are checked against (§8.1).
+
+# Secrets never enter the repo (spec §8.9; ADR-0001). Credentials live outside the
+# project: SSH keys in ~/.ssh, runtime secrets in the (future) config registry's store.
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*_deploy
+*_deploy.pub
+secrets/
+credentials*
+*.secret
+# Provisioned vendor configs can hold credentials; the ops tier templates them instead.
+mediamtx.yml
+tailscale-authkey*
