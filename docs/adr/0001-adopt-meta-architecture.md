@@ -100,4 +100,8 @@ new version here as an amendment).
 
 ## Amendments
 
-None yet.
+- **2026-10-12 — the fallback door's mechanism is decided (ADR-0003).** The local fallback is
+  an HTTPS listener on the site LAN (:8443) gated by an scrypt-hashed admin password. Tailnet
+  identity is resolved from the peer table that `tailnet-gateway` publishes, and any tailnet
+  user may edit config. "Every surface is loopback-only and read-only" still holds until
+  ADR-0003's replacements ship together (its rung-12 note); then it is lifted, not before.

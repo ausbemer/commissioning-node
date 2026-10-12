@@ -5,7 +5,9 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
 
-- [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Decide on tailnet identity
+- [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Drafted as
+      `docs/adr/0003-operator-doors-identity-and-admin-fallback.md` (Accepted); implement in
+      its order. Decide on tailnet identity
       resolution (peer → login, §15), for example by fronting the dashboard with
       `tailscale serve` and reading its identity headers. Decide on the local fallback's
       listener, credential storage (§8.9) and lifecycle. Until this ADR exists, the dashboard
