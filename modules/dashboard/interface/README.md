@@ -1,4 +1,4 @@
-# dashboard Inward Interface — v0.1.0
+# dashboard Inward Interface — v0.2.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"dashboard"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.1.0`).
-- `__version__` — the inward interface semver (`0.1.0`).
+- `VERSION` — the module release version (`0.2.0`).
+- `__version__` — the inward interface semver (`0.2.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -38,6 +38,7 @@ Every feature implements `feature.py`'s protocol:
 | Model | Since | Purpose |
 |-------|-------|---------|
 | `DashboardState` | 0.1.0 | Thread-safe bounded latest-value store shared by collector and HTTP core (§4 "features meet in interface objects") |
+| `PeerDirectory`, `PeerIdentity`, `Unresolved` (`identity.py`) | 0.2.0 | The one tailnet caller resolver (ADR-0003 §2): latest peer table, fresh by the producer's cadence, fails toward deny with a reason (`stale`, `unknown`, `ambiguous`, `invalid`) |
 | `View` (protocol, `views.py`) | 0.1.0 | A feature-supplied page: `path`, `content_type`, pure `render(snapshot)` |
 
 All models tolerate unknown fields (`extra="ignore"`). Nested shapes are models too, never
@@ -56,4 +57,5 @@ interface objects").
 
 ## Changelog
 
+- v0.2.0 — `PeerDirectory`, `PeerIdentity`, `Unresolved` (additive).
 - v0.1.0 — initial interface.

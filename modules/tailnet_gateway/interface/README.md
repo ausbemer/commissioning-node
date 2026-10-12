@@ -1,4 +1,4 @@
-# tailnet-gateway Inward Interface — v0.1.0
+# tailnet-gateway Inward Interface — v0.2.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"tailnet-gateway"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.1.0`).
-- `__version__` — the inward interface semver (`0.1.0`).
+- `VERSION` — the module release version (`0.2.0`).
+- `__version__` — the inward interface semver (`0.2.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -37,7 +37,8 @@ Every feature implements `feature.py`'s protocol:
 
 | Model | Since | Purpose |
 |-------|-------|---------|
-| `OverlaySnapshot` | 0.1.0 | Vendor-neutral reading of the overlay (hostname, connected, addresses, served routes) |
+| `OverlaySnapshot` | 0.1.0 | Vendor-neutral reading of the overlay (hostname, connected, addresses, served routes). 0.2.0 adds `peers`, plus `observed_at` and `period_s`, which core stamps |
+| `OverlayPeer` | 0.2.0 | Another node on the overlay: addresses, unique node name, owning login (None if tagged), tags |
 | `OverlayStatusSource` (protocol, `seams.py`) | 0.1.0 | Vendor-neutral seam; `core/tailscale_cli.py` is the Tailscale adapter. Must not raise. |
 | `OVERLAY_SNAPSHOT` (inward topic) | 0.1.0 | Name core routes snapshots under; never published on the bus |
 
@@ -57,4 +58,5 @@ interface objects").
 
 ## Changelog
 
+- v0.2.0 — `OverlayPeer`; `OverlaySnapshot.peers`, `.observed_at`, `.period_s` (additive).
 - v0.1.0 — initial interface.

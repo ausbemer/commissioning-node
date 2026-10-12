@@ -44,7 +44,7 @@ MODULES = "modules"
 #: ops/provisioning tier (spec §4) — never scanned, never imported
 OPS = "ops"
 #: neutral shared packages (spec §4) — pure libraries, incl. canonical authorities
-NEUTRAL: set[str] = set()
+NEUTRAL: set[str] = {"freshness"}
 #: bus-coupled infra (spec §4) — may hold a bus reference, never imports a module
 BUS_COUPLED: set[str] = set()
 #: trees never scanned (tests/tools are not runtime code; the rest are not Python packages)

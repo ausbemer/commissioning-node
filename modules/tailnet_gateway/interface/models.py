@@ -8,6 +8,17 @@ from interfaces import Shape
 OVERLAY_SNAPSHOT = "tailnet-gateway/overlay-snapshot"
 
 
+class OverlayPeer(Shape):
+    """Another node on the overlay, as the adapter understood it."""
+
+    addresses: list[str] = []
+    #: Unique name on the overlay (MagicDNS name for Tailscale), or the OS host name.
+    node_name: str
+    #: Owning user's login; None for a tagged (non-user-owned) node.
+    login: str | None = None
+    tags: list[str] = []
+
+
 class OverlaySnapshot(Shape):
     """One reading of the overlay network's state, as the adapter understood it."""
 
@@ -18,3 +29,9 @@ class OverlaySnapshot(Shape):
     addresses: list[str] = []
     #: Subnet routes (CIDR) this node is currently serving.
     served_routes: list[str] = []
+    #: Every other node visible on the overlay. Empty when disconnected.
+    peers: list[OverlayPeer] = []
+    #: Stamped by core, not the adapter: when the reading was taken (Unix seconds) and the
+    #: tick cadence it rides (§11 rung 11). None only in adapter-level tests.
+    observed_at: float | None = None
+    period_s: float | None = None
