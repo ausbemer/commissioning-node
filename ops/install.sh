@@ -94,6 +94,9 @@ else
   refuse "host is ${PRETTY_NAME:-unknown} on $arch; pins are for Debian $TARGET_CODENAME on $TARGET_ARCH"
 fi
 ((DRY_RUN)) || ((EUID == 0)) || refuse "run as root (sudo ops/install.sh), or use --dry-run"
+# The daemon runs as the checkout's owner. A checkout made with `sudo mkdir` / `sudo tar` is
+# root-owned (this happened on the first node), and the daemon must never run as root.
+[[ "$RUN_USER" != root ]] || refuse "$REPO_ROOT is owned by root, so the daemon would run as root; chown it to the operator user first"
 ok "repo $REPO_ROOT, daemon will run as $RUN_USER"
 
 # ---------------------------------------------------------------------------------------
@@ -180,15 +183,17 @@ else
   echo "    doing: installed $MTX_DIR/mediamtx (sha256 verified)"
   CHANGED=1
 fi
-if [[ "$(readlink "$MTX_ROOT/current" 2>/dev/null)" == "$MTX_DIR" ]]; then ok "$MTX_ROOT/current -> $MTX_DIR"
-else act "point $MTX_ROOT/current at $MTX_DIR" ln -sfn "$MTX_DIR" "$MTX_ROOT/current"; CHANGED=1; fi
-
+# Check the config against the new binary BEFORE `current` moves to it: a refusal must leave
+# the unit starting the old binary with the old config, not the new binary with the old one.
 if [[ -x "$MTX_DIR/mediamtx" ]]; then
   "$OPS_DIR/check_mediamtx_config.sh" "$MTX_DIR/mediamtx" "$OPS_DIR/mediamtx/mediamtx.conf.yml" \
-    | sed 's/^/    /' || refuse "MediaMTX config failed its check; nothing restarted"
+    | sed 's/^/    /' || refuse "MediaMTX config failed its check; nothing switched or restarted"
 else
-  echo "    would: check the config against $MTX_DIR/mediamtx before installing it"
+  echo "    would: check the config against $MTX_DIR/mediamtx before switching to it"
 fi
+
+if [[ "$(readlink "$MTX_ROOT/current" 2>/dev/null)" == "$MTX_DIR" ]]; then ok "$MTX_ROOT/current -> $MTX_DIR"
+else act "point $MTX_ROOT/current at $MTX_DIR" ln -sfn "$MTX_DIR" "$MTX_ROOT/current"; CHANGED=1; fi
 sync_file "$OPS_DIR/mediamtx/mediamtx.conf.yml" "$MTX_CONF" 0644
 sync_file "$OPS_DIR/systemd/mediamtx.service" "$UNIT_DIR/mediamtx.service" 0644
 ensure_service mediamtx.service "$CHANGED"
