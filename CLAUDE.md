@@ -41,10 +41,10 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `ci.sh` | The whole gate, the same locally and in CI. |
 | `tools/ledgers/`, `tests/replay/` | Evidence for behaviour/safety constants and the replay corpus (§8.11/§8.12) — this node acts on the world. |
 | `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX and Axis VAPIX (§7). |
+| `ops/` | Ops tier (ADR-0002): `install.sh` (idempotent, `--dry-run`), `doctor.sh` (read-only), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), MediaMTX config + its check, the scoped nftables firewall, and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
-neutral packages none yet · bus-coupled infra none yet · ops tier none yet (`ops/` appears
-with the first installer or doctor script) · composition root `main.py`.
+neutral packages none yet · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
 
 ## Topics (contract v0.1.0)
 
@@ -99,7 +99,11 @@ directory and import path.
     accepts writes, until the identity/admin-auth ADR exists.
 14. **Domain-specific:** Axis cameras belong to the site — the first write to any camera is
     operator-confirmed (§11 rung 3), and its warning appears in the action manifest (§5).
-15. Vendor calls (tailscale, VAPIX, MediaMTX) live only in their bridge module's `core/`
+15. **Domain-specific:** MediaMTX's ports are reachable only from the tailnet and loopback.
+    The `inet commissioning_node` nftables table enforces this, and `mediamtx.service`
+    refuses to run without it. Never `flush ruleset` and never enable Debian's
+    `nftables.service` (ADR-0002). A new MediaMTX server or port also means a firewall entry.
+16. Vendor calls (tailscale, VAPIX, MediaMTX) live only in their bridge module's `core/`
     adapter behind an `interface/` seam; every silent vendor behaviour you measure goes in
     `docs/quirks.md`.
 

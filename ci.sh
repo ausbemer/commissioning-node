@@ -33,4 +33,30 @@ echo "==> Import boundaries — the §4 ontology (§8.1)"
 echo "==> Pin integrity (§2/§8.7; no-op at Stage 0)"
 "$PY" tools/check_pins.py
 
+echo "==> Ops scripts — parsed, linted, dry-run (§8.1: shipped scripts are executed)"
+for f in ops/*.sh; do bash -n "$f"; done
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck -x ops/*.sh ci.sh
+else
+  echo "    SKIP: shellcheck not installed — ops scripts were NOT linted"
+fi
+ops/install.sh --dry-run > /dev/null
+echo "    ok: install.sh --dry-run"
+
+echo "==> Firewall rules validate (nft -c)"
+NFT="$(command -v nft || echo /usr/sbin/nft)"
+if [[ -x "$NFT" ]] && sudo -n true 2>/dev/null; then
+  sudo -n "$NFT" -c -f ops/firewall/commissioning-node.nft && echo "    ok: firewall rules"
+else
+  echo "    SKIP: needs nft + passwordless sudo — firewall rules were NOT validated"
+fi
+
+echo "==> MediaMTX config executes against the pinned binary"
+MTX="${MEDIAMTX_BIN:-/opt/mediamtx/current/mediamtx}"
+if [[ -x "$MTX" ]]; then
+  ops/check_mediamtx_config.sh "$MTX"
+else
+  echo "    SKIP: no MediaMTX binary at $MTX (set MEDIAMTX_BIN) — config was NOT executed"
+fi
+
 echo "==> CI OK"

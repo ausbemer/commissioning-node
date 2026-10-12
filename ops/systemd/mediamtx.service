@@ -1,0 +1,30 @@
+# Installed by ops/install.sh. Version pinned in ops/pins.sh (ADR-0002).
+# Requires= the firewall: if the firewall unit fails or is stopped, MediaMTX does not run.
+# Fail closed: no firewall, no streams.
+[Unit]
+Description=MediaMTX media relay (commissioning-node)
+Requires=commissioning-node-firewall.service
+After=commissioning-node-firewall.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=mediamtx
+Group=mediamtx
+StateDirectory=mediamtx
+WorkingDirectory=/var/lib/mediamtx
+ExecStart=/opt/mediamtx/current/mediamtx /etc/mediamtx/mediamtx.yml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
