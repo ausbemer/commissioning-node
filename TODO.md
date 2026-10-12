@@ -5,7 +5,9 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
 
-- [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Decide on tailnet identity
+- [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Drafted as
+      `docs/adr/0003-operator-doors-identity-and-admin-fallback.md` (Accepted); implement in
+      its order. Decide on tailnet identity
       resolution (peer → login, §15), for example by fronting the dashboard with
       `tailscale serve` and reading its identity headers. Decide on the local fallback's
       listener, credential storage (§8.9) and lifecycle. Until this ADR exists, the dashboard
@@ -30,10 +32,16 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 ## Ops tier (`ops/`, created with its first member, §10)
 
-- [ ] Idempotent installer (`--dry-run`) for tailscale and MediaMTX at pinned versions, plus a
-      systemd unit for `main.py`. Record each pinned version in `docs/quirks.md`.
-- [ ] Read-only doctor script: tailscaled up? MediaMTX up? Dashboard bound? Versions?
-- [ ] Deployment-form ADR: bare metal + systemd versus containers on the RevPi (§4).
+- [x] Idempotent installer, doctor, firewall and units (`ops/`, ADR-0002). Tailscale
+      1.102.5 and MediaMTX v1.21.1 are pinned in `ops/pins.sh`.
+- [ ] **Run it on the node:** `sudo ops/install.sh`, then `sudo tailscale up` (manual: an
+      auth key is a secret), then `sudo ops/doctor.sh`.
+- [ ] Provenance (§2, ADR-0002): run a tagged checkout on shipped nodes, and have the
+      doctor and node card report the running commit.
+- [ ] A check that `relay_planner.MEDIAMTX_RTSP_PORT` matches `rtspAddress` in the MediaMTX
+      config.
+- [ ] Decide on the RevPi's stock all-interface services (80/443/41443, SSH) as part of the
+      admin-fallback ADR.
 - [ ] **Site teardown and redeploy procedure.** The node moves between sites. List the
       site-specific state (camera inventory, credentials, tailnet routes, MediaMTX paths,
       logs) and declare how each is wiped or preserved before the node leaves (§10

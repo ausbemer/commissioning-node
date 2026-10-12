@@ -1,0 +1,20 @@
+# Installed by ops/install.sh, which fills @REPO_ROOT@ and @RUN_USER@ (ADR-0002).
+# Runs whatever is checked out in @REPO_ROOT@ (see ADR-0002 "Provenance").
+[Unit]
+Description=commissioning-node daemon (main.py)
+After=network-online.target tailscaled.service mediamtx.service
+Wants=network-online.target
+
+[Service]
+User=@RUN_USER@
+WorkingDirectory=@REPO_ROOT@
+ExecStart=/usr/bin/python3 @REPO_ROOT@/main.py
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

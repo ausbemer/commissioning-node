@@ -1,0 +1,52 @@
+# MediaMTX config for commissioning-node — installed to /etc/mediamtx/mediamtx.yml by
+# ops/install.sh. Validated against the pinned MediaMTX (ops/pins.sh); keys not set here
+# take MediaMTX's defaults. Contains NO credentials (spec §8.9) — keep it that way.
+#
+# Posture (ADR-0001, ADR-0002): the tailnet is the boundary. This server listens on all
+# interfaces, so the commissioning-node firewall (ops/firewall/) is what keeps the RTSP
+# port off the site LAN; mediamtx.service refuses to start without it.
+
+logLevel: info
+logDestinations: [stdout]
+
+# Anyone who can reach the RTSP port may READ (reachability = tailnet, enforced by the
+# firewall). Nobody may publish: streams are pulled from cameras by path `source:`
+# entries that stream-relay creates. The API answers on loopback only.
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+        path:
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+
+# Control API for stream-relay's future MediaMTX adapter. Loopback only.
+api: true
+apiAddress: 127.0.0.1:9997
+
+metrics: false
+pprof: false
+playback: false
+
+# RTSP over TCP only: no UDP/multicast listeners, and TCP behaves best across the tailnet.
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: :8554
+
+# Off until a feature needs them (each would need its own port in the firewall).
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+# MoQ (Media over QUIC) is ON by default since v1.21 and listens on all interfaces
+# (:8892 tcp+udp, :8893 udp) — docs/quirks.md Q-001. Explicitly off.
+moq: false
+
+# No predefined paths: stream-relay adds one per camera through the API.
+paths: {}

@@ -1,0 +1,30 @@
+#!/usr/sbin/nft -f
+# commissioning-node firewall — installed to /etc/commissioning-node/firewall.nft and
+# loaded by commissioning-node-firewall.service (ADR-0002).
+#
+# Scope: ONLY MediaMTX's ports. They are reachable from loopback and the tailnet
+# (tailscale0) and dropped on every other interface, i.e. the site LAN. Nothing else on
+# the host is touched: this is our own table, never `flush ruleset` (that would also wipe
+# Tailscale's rules).
+#
+# MediaMTX listens on all interfaces; this table is what makes the tailnet the boundary
+# for streams (ADR-0001). Ports listed are every port MediaMTX v1.21 opens by default,
+# including ones our config switches off, so a config slip stays contained.
+
+# Idempotent replace: create-if-missing, delete, define.
+table inet commissioning_node
+delete table inet commissioning_node
+
+table inet commissioning_node {
+	chain input {
+		type filter hook input priority filter - 10; policy accept;
+
+		iifname { "lo", "tailscale0" } accept
+
+		# RTSP 8554, RTSPS 8322, API 9997, metrics 9998, pprof 9999, playback 9996,
+		# RTMP 1935/1936, HLS 8888, WebRTC 8889, SRT 8890, MoQ 8892.
+		tcp dport { 1935, 1936, 8322, 8554, 8888, 8889, 8892, 9996, 9997, 9998, 9999 } drop comment "MediaMTX: tailnet + loopback only (ADR-0002)"
+		# RTP/RTCP 8000-8007, WebRTC 8189, SRT 8890, MoQ 8892/8893.
+		udp dport { 8000-8007, 8189, 8890, 8892, 8893 } drop comment "MediaMTX: tailnet + loopback only (ADR-0002)"
+	}
+}
