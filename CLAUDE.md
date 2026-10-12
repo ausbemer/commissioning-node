@@ -35,6 +35,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
+| `freshness/` | Neutral package (§4): the one staleness-window authority for renewed levels, `clamp(3 × period_s, min, max)`. Used by stream-relay and the dashboard. |
 | `tools/check_additivity.py` | Contract shape check (§3/§8.1): strict superset, nested shapes typed or declared in `schemas/blind_spots.txt`. Run `check` in CI, `snapshot` at release. |
 | `tools/check_boundaries.py` | Ontology check (§4/§8.1): every top-level package has a tier and keeps that tier's import rules. A new neutral or bus-coupled package is declared in its config sets. |
 | `tests/` | Smoke test (bus round-trip), additivity test, boundary test (with planted violations), plus per-module unit tests. Keep all green. |
@@ -44,7 +45,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `ops/` | Ops tier (ADR-0002): `install.sh` (idempotent, `--dry-run`), `doctor.sh` (read-only), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), MediaMTX config + its check, the scoped nftables firewall, and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
-neutral packages none yet · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
+neutral packages `freshness/` · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
 
 ## Topics (contract v0.2.0)
 
@@ -56,16 +57,16 @@ neutral packages none yet · bus-coupled infra none yet · ops tier `ops/` · co
 | `camera/announced` | `CameraAnnouncement` | camera-config → stream-relay, dashboard |
 | `stream/announced` | `StreamAnnouncement` (nested `StreamEndpoint`) | stream-relay → dashboard |
 | `tailnet/status` | `TailnetStatus` | tailnet-gateway → stream-relay, dashboard |
-| `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`), declares `period_s` | tailnet-gateway → dashboard (identity, ADR-0003; added 0.2.0, producer lands with `feature/tailnet-peers`) |
+| `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`), declares `period_s` | tailnet-gateway → dashboard (caller identity, ADR-0003) |
 
 ## Modules
 
 | Module | Responsibility | Inward interface version |
 |--------|----------------|--------------------------|
-| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status now; will auto-detect the site subnet and propose routes for operator confirmation. Sole writer of Tailscale state. | 0.1.0 |
+| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table now; will auto-detect the site subnet and propose routes for operator confirmation. Sole writer of Tailscale state. | 0.2.0 |
 | `camera-config` (`modules/camera_config/`) | Bridge to Axis VAPIX: knows the site's cameras; will probe and (operator-confirmed) configure them. Sole writer to cameras. | 0.1.0 |
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: read-only, loopback-only HTTP view of node card, tailnet, cameras, streams and wire versions. | 0.1.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: read-only, loopback-only HTTP view of node card, tailnet, cameras, streams and wire versions; holds the tailnet caller resolver (ADR-0003). | 0.2.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.

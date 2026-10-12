@@ -97,7 +97,9 @@ def test_capabilities_are_aggregated() -> None:
     node, _, _ = make()
     assert node.capabilities() == {
         "camera-config:camera-registry",
+        "dashboard:peer-directory",
         "dashboard:state-collector",
         "stream-relay:relay-planner",
+        "tailnet-gateway:peer-report",
         "tailnet-gateway:status-report",
     }

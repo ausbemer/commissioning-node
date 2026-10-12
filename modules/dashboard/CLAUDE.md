@@ -5,7 +5,7 @@
 
 ## Role in the ecosystem
 
-Operator config and ops surface. Today it is a read-only, loopback-only HTTP view (`/` and `/api/state`) of the node card (module versions, capabilities), tailnet status, cameras, planned streams, and the `schema_version` seen on the wire per topic against the pinned contract (§8.5). The surface enforces the ADR-0001 posture itself: it refuses non-loopback binds and returns 405 for non-GET. Config editing arrives with the config registry. Writes and non-loopback serving arrive only after the identity/admin-auth ADR. The collector is a terminal consumer (§8.2) and never re-publishes.
+Operator config and ops surface. Today it is a read-only, loopback-only HTTP view (`/` and `/api/state`) of the node card (module versions, capabilities), tailnet status, cameras, planned streams, and the `schema_version` seen on the wire per topic against the pinned contract (§8.5). The surface enforces the ADR-0001 posture itself: it refuses non-loopback binds and returns 405 for non-GET. Config editing arrives with the config registry. Writes and non-loopback serving arrive with ADR-0003 step 4, all together; the caller resolver they rely on is already live. The collector is a terminal consumer (§8.2) and never re-publishes.
 
 ## Interfaces
 
@@ -13,13 +13,13 @@ Distinguish the two directions explicitly. **Outward** topics cross service boun
 their payloads conform to the ecosystem contract (`commissioning-node-interfaces`). **Inward**
 topics/types are local to this module and defined by its own `interface/`.
 
-- **Consumes — outward (from the bus):** `system/card` (`NodeCard`), `tailnet/status`, `camera/announced`, `stream/announced`
-- **Consumes — inward (core → features):** `DashboardState` (shared live-state object, written by `state-collector`, read by `core/http_surface.py`)
+- **Consumes — outward (from the bus):** `system/card` (`NodeCard`), `tailnet/status`, `tailnet/peers` (`TailnetPeers`), `camera/announced`, `stream/announced`
+- **Consumes — inward (core → features):** `DashboardState` (shared live-state object, written by `state-collector`, read by `core/http_surface.py`); `PeerDirectory` (tailnet caller resolver, written by `peer-directory`, held by `core/http_surface.py` for the tailnet door, ADR-0003)
 - **Produces — outward (to the bus):** none — conforms to the ecosystem
-  contract (`interfaces/` v0.1.0)
+  contract (`interfaces/` v0.2.0)
 - **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`)
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.1.0; inward
-  contract `__version__` 0.1.0. Both live in `interface/__init__.py`; see
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.2.0; inward
+  contract `__version__` 0.2.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 
@@ -28,6 +28,7 @@ topics/types are local to this module and defined by its own `interface/`.
 | Feature | Status | Built on interface | Notes |
 |---------|--------|--------------------|-------|
 | `state-collector` | enabled | 0.1.0 | Latest-value-per-key store of card/tailnet/camera/stream + wire versions. Terminal consumer. |
+| `peer-directory` | enabled | 0.2.0 | Latest `TailnetPeers` → `PeerDirectory`. Resolves a tailnet address to an identity only while fresh (`freshness`); every failure resolves to nobody, with a reason. Terminal consumer. |
 | `overview-page` | served | 0.1.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. |
 
 ## Rules for agents working here

@@ -7,7 +7,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Drafted as
       `docs/adr/0003-operator-doors-identity-and-admin-fallback.md` (Accepted); implement in
-      its order. Decide on tailnet identity
+      its order. Step 2 done (`tailnet/peers`, `freshness`, dashboard `PeerDirectory`).
+      Next: step 3 (ops: admin password, TLS key, 8080 firewall entry, doctor checks). Decide on tailnet identity
       resolution (peer → login, §15), for example by fronting the dashboard with
       `tailscale serve` and reading its identity headers. Decide on the local fallback's
       listener, credential storage (§8.9) and lifecycle. Until this ADR exists, the dashboard
@@ -51,7 +52,9 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [ ] `main.TICK_PERIOD_S = 5.0`
 - [ ] `tailscale_cli.STATUS_TIMEOUT_S = 5.0`
-- [ ] `relay_planner.STALE_MIN_S = 5.0`, `STALE_MAX_S = 120.0`, `MAX_CAMERAS = 512`
+- [ ] `freshness.STALE_MIN_S = 5.0`, `STALE_MAX_S = 120.0`, `PERIODS = 3` (the staleness
+      window for every renewed level: stream endpoints and tailnet caller identity)
+- [ ] `relay_planner.MAX_CAMERAS = 512`
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture
       in `tests/test_tailscale_cli.py`. Verify the field mapping in `docs/quirks.md`.

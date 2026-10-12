@@ -8,6 +8,7 @@ from .core.input import Subscribe, attach
 from .core.output import Output, Publish
 from .core.registry import Registry
 from .core.tailscale_cli import TailscaleCliStatusSource
+from .features.peer_report import PeerReport
 from .features.status_report import StatusReport
 from .interface import OverlayStatusSource
 
@@ -15,5 +16,6 @@ from .interface import OverlayStatusSource
 def build(subscribe: Subscribe, publish: Publish, source: OverlayStatusSource | None = None) -> Registry:
     registry = Registry()
     registry.register(StatusReport())
+    registry.register(PeerReport())
     attach(registry, subscribe, Output(publish), source or TailscaleCliStatusSource())
     return registry

@@ -8,7 +8,7 @@ Endpoint enrichment from the tailnet feed declares the direction it fails (§5):
   safe default = advertise NO endpoints. Only a fresh, connected TailnetStatus produces an
   endpoint, and only on a tailnet address — never a site-LAN address, because the tailnet is
   the trust boundary (ADR-0001). Freshness is derived from the producer's declared tick
-  cadence: stale after clamp(3 × period_s, STALE_MIN_S, STALE_MAX_S) without a status.
+  cadence (the `freshness` package is the one authority for that window).
 
 State is bounded latest-value-per-camera (§8.8).
 """
@@ -34,6 +34,8 @@ from interfaces import (
     __version__ as CONTRACT_VERSION,
 )
 
+from freshness import is_fresh
+
 from ..interface import MODULE
 
 log = logging.getLogger(MODULE)
@@ -41,9 +43,6 @@ log = logging.getLogger(MODULE)
 #: MediaMTX's default RTSP listener port. Must match the ops-provisioned mediamtx.yml
 #: (vendor default, not a tuned constant — see docs/quirks.md).
 MEDIAMTX_RTSP_PORT = 8554
-#: Bounds on the derived staleness window, seconds. PROVISIONAL — not yet measured (TODO.md, §8.11).
-STALE_MIN_S = 5.0
-STALE_MAX_S = 120.0
 #: Bound on remembered cameras (§8.8). PROVISIONAL — a commissioning site's camera count, unmeasured.
 MAX_CAMERAS = 512
 
@@ -62,7 +61,7 @@ class RelayPlanner:
         self._cameras: dict[str, CameraAnnouncement] = {}
         self._status: TailnetStatus | None = None
         self._status_at: float | None = None
-        self._stale_after_s: float | None = None    # unknown until the first tick declares a cadence
+        self._period_s: float | None = None    # unknown until the first tick declares a cadence
         self._advertised_host: str | None = None
 
     def handle(self, topic: str, payload: dict) -> list[tuple[str, dict]]:
@@ -78,8 +77,7 @@ class RelayPlanner:
                 self._status = TailnetStatus.model_validate(payload)
                 self._status_at = self._clock()
             elif topic == SYSTEM_TICK:
-                period = Tick.model_validate(payload).period_s
-                self._stale_after_s = min(max(3 * period, STALE_MIN_S), STALE_MAX_S)
+                self._period_s = Tick.model_validate(payload).period_s
         except ValidationError as exc:
             log.warning("ignoring malformed %s: %s", topic, exc.errors(include_url=False))
             return []
@@ -90,10 +88,8 @@ class RelayPlanner:
 
     def _host(self) -> str | None:
         """The tailnet IPv4 address to advertise, or None (the safe default)."""
-        s, at, window = self._status, self._status_at, self._stale_after_s
-        if s is None or at is None or window is None or not s.connected:
-            return None
-        if self._clock() - at > window:
+        s = self._status
+        if s is None or not s.connected or not is_fresh(self._status_at, self._period_s, self._clock()):
             return None
         return next((a for a in s.addresses if ":" not in a), None)
 
