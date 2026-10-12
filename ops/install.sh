@@ -52,6 +52,16 @@ installed_version() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null || true; }
 is_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'; }
 key_fpr() { GNUPGHOME="$work/gnupg" gpg --show-keys --with-colons "$1" 2>/dev/null | awk -F: '$1 == "fpr" {print $10; exit}'; }
 
+# apt-get update exits non-zero if ANY configured repo fails, and the host's own repos
+# (raspberrypi.org, revolutionpi.de) have failed transiently ("no longer has a Release
+# file") while reachable seconds later. So: retry the full update once, and refresh the
+# Tailscale repo on its own so an unrelated repo can never block the Tailscale install.
+apt_update_all() { apt-get update -qq || { echo "    apt-get update failed; retrying in 10s" >&2; sleep 10; apt-get update -qq; }; }
+apt_update_tailscale() {
+  apt-get update -qq -o Dir::Etc::sourcelist="$TS_LIST" -o Dir::Etc::sourceparts=- \
+    -o APT::Get::List-Cleanup=0
+}
+
 # sync_file SRC DEST MODE — install SRC at DEST unless identical. Sets CHANGED=1 if it would change.
 sync_file() {
   local src="$1" dest="$2" mode="$3"
@@ -91,7 +101,7 @@ step "apt prerequisites"
 missing=()
 for pkg in ca-certificates curl gnupg nftables; do is_installed "$pkg" || missing+=("$pkg"); done
 if ((${#missing[@]})); then
-  act "apt-get update" apt-get update -qq
+  act "apt-get update" apt_update_all
   act "apt-get install ${missing[*]}" apt-get install -y -qq --no-install-recommends "${missing[@]}"
 else
   ok "ca-certificates curl gnupg nftables"
@@ -116,14 +126,17 @@ ts_line="deb [signed-by=$TS_KEYRING] $TAILSCALE_REPO_URL $TAILSCALE_SUITE main"
 if [[ -f "$TS_LIST" && "$(cat "$TS_LIST")" == "$ts_line" ]]; then
   ok "$TS_LIST"
 else
-  write_ts_list() { printf '%s\n' "$ts_line" > "$TS_LIST" && apt-get update -qq; }
-  act "write $TS_LIST and apt-get update" write_ts_list
+  write_ts_list() { printf '%s\n' "$ts_line" > "$TS_LIST"; }
+  act "write $TS_LIST" write_ts_list
 fi
 
 have="$(installed_version tailscale)"
 if [[ "$have" == "$TAILSCALE_VERSION" ]]; then
   ok "tailscale $have installed"
 else
+  # Refreshed whenever an install is due, not only when the list is new: a run that
+  # wrote the list and then failed must not leave the next run with a stale index.
+  act "apt-get update (Tailscale repo only)" apt_update_tailscale
   act "install tailscale=$TAILSCALE_VERSION (installed: ${have:-none})" \
     apt-get install -y -qq --allow-downgrades --allow-change-held-packages "tailscale=$TAILSCALE_VERSION"
 fi
