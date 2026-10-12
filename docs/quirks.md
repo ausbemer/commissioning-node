@@ -37,9 +37,23 @@ Pinned dependencies covered here:
 
 ## Unverified assumptions (verify, then turn into entries or delete)
 
-- `tailscale status --json` field mapping used by `tailscale_cli.py`: `BackendState ==
-  "Running"` means connected; `Self.HostName`, `Self.TailscaleIPs`, `Self.PrimaryRoutes`
-  (routes this node is currently primary for, which is not the same as the routes it
-  *advertises*). Taken from documentation, not from a captured sample on a pinned version.
+- `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
+  on 1.102.5, logged out (2026-10-12): the top-level keys `BackendState` (`NeedsLogin` when
+  logged out), `Self`, `Peer` and `User` exist, and `Peer`/`User` are `null` when logged out.
+  `Self` has `HostName`, `DNSName`, `TailscaleIPs` and `UserID`. `Tags` and `PrimaryRoutes`
+  are omitted when empty. **Still unverified**, because it needs a logged-in node:
+  - that `BackendState == "Running"` means connected;
+  - `Self.PrimaryRoutes` (routes this node is currently primary for, which is not the same
+    as the routes it *advertises*);
+  - the shape of `Peer` entries (`DNSName` with a trailing dot, `TailscaleIPs`, `UserID`,
+    `Tags`);
+  - `User[str(UserID)].LoginName`;
+  - that a tagged peer's `UserID` points at a "tagged-devices" pseudo-user.
+
+  The caller identity in ADR-0003 rests on the peer mapping. Capture a sample after the
+  first `tailscale up` and replace the fixtures in `tests/test_tailscale_cli.py` and
+  `tests/test_tailnet_peers.py`.
+- `tailscale up --auth-key=file:<path>` reads the key from a file (from `--help` on
+  1.102.5), so the key never appears in argv (ADR-0003 §5). Not yet exercised.
 - MediaMTX's RTSP port 8554 (`relay_planner.MEDIAMTX_RTSP_PORT`) must match `rtspAddress`
   in `ops/mediamtx/mediamtx.conf.yml`. They match today, but nothing checks it yet.

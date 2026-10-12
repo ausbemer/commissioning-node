@@ -4,9 +4,12 @@ READ-ONLY: runs `tailscale status --json` and nothing else. Any command that cha
 Tailscale state (up/down/set, routes, auth keys) is a separate writer with its own Safety
 ADR, and this module stays its single writer (§11 rung 9).
 
-The JSON field mapping below (BackendState, Self.HostName, Self.TailscaleIPs,
-Self.PrimaryRoutes) has NOT yet been verified against a pinned tailscale version on this
-node. Capture a real sample when tailscale is installed and record it in docs/quirks.md.
+Field mapping, against tailscale 1.102.5 on this node (2026-10-12, logged out):
+- VERIFIED present: top-level BackendState, Self, Peer, User; Self.HostName, Self.DNSName,
+  Self.TailscaleIPs, Self.UserID. Peer and User are null when logged out.
+- NOT YET VERIFIED (needs a logged-in node): Self.PrimaryRoutes and per-peer Tags (both
+  omitted when empty), the shape of Peer entries, and User[str(UserID)].LoginName.
+  docs/quirks.md tracks this.
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ import socket
 import subprocess
 from typing import Callable
 
-from ..interface import MODULE, VERSION, OverlaySnapshot
+from ..interface import MODULE, VERSION, OverlayPeer, OverlaySnapshot
 
 log = logging.getLogger(MODULE)
 
@@ -54,7 +57,24 @@ class TailscaleCliStatusSource:
             connected=data.get("BackendState") == "Running",
             addresses=[str(a) for a in me.get("TailscaleIPs") or []],
             served_routes=[str(r) for r in me.get("PrimaryRoutes") or []],
+            peers=self._peers(data),
         )
+
+    @staticmethod
+    def _peers(data: dict) -> list[OverlayPeer]:
+        users = data.get("User") or {}
+        peers = []
+        for p in (data.get("Peer") or {}).values():
+            tags = [str(t) for t in p.get("Tags") or []]
+            # A tagged node is owned by its tags; its UserID points at Tailscale's
+            # "tagged-devices" pseudo-user, which is not a person, so it gets no login.
+            login = None if tags else (users.get(str(p.get("UserID"))) or {}).get("LoginName")
+            name = (p.get("DNSName") or "").rstrip(".") or p.get("HostName") or ""
+            if not name:
+                continue
+            peers.append(OverlayPeer(addresses=[str(a) for a in p.get("TailscaleIPs") or []],
+                                     node_name=name, login=login, tags=tags))
+        return peers
 
     @staticmethod
     def _disconnected() -> OverlaySnapshot:

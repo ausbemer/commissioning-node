@@ -14,12 +14,12 @@ their payloads conform to the ecosystem contract (`commissioning-node-interfaces
 topics/types are local to this module and defined by its own `interface/`.
 
 - **Consumes — outward (from the bus):** `system/tick` (`Tick`)
-- **Consumes — inward (core → features):** `tailnet-gateway/overlay-snapshot` → `OverlaySnapshot`, produced by core from the `OverlayStatusSource` adapter (`core/tailscale_cli.py`, read-only `tailscale status --json`)
-- **Produces — outward (to the bus):** `tailnet/status` (`TailnetStatus`) — conforms to the ecosystem
-  contract (`interfaces/` v0.1.0)
+- **Consumes — inward (core → features):** `tailnet-gateway/overlay-snapshot` → `OverlaySnapshot`, stamped by core with `observed_at` and the tick's `period_s`, produced from the `OverlayStatusSource` adapter (`core/tailscale_cli.py`, read-only `tailscale status --json`)
+- **Produces — outward (to the bus):** `tailnet/status` (`TailnetStatus`), `tailnet/peers` (`TailnetPeers`) — conforms to the ecosystem
+  contract (`interfaces/` v0.2.0)
 - **Produces — inward (features → core):** none yet
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.1.0; inward
-  contract `__version__` 0.1.0. Both live in `interface/__init__.py`; see
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.2.0; inward
+  contract `__version__` 0.2.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 
@@ -28,6 +28,7 @@ topics/types are local to this module and defined by its own `interface/`.
 | Feature | Status | Built on interface | Notes |
 |---------|--------|--------------------|-------|
 | `status-report` | enabled | 0.1.0 | Overlay snapshot → `TailnetStatus`. Read-only. |
+| `peer-report` | enabled | 0.2.0 | Overlay snapshot → `TailnetPeers`, every tick, connected or not (an empty table when disconnected). Feeds the dashboard's caller identity (ADR-0003). Read-only. |
 
 ## Rules for agents working here
 

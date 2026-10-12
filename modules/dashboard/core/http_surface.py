@@ -13,7 +13,7 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from ..interface import MODULE, DashboardState, View
+from ..interface import MODULE, DashboardState, PeerDirectory, View
 
 log = logging.getLogger(MODULE)
 
@@ -21,10 +21,14 @@ STATE_PATH = "/api/state"
 
 
 class HttpSurface:
-    def __init__(self, state: DashboardState, views: list[View], host: str, port: int) -> None:
+    def __init__(self, state: DashboardState, views: list[View], host: str, port: int,
+                 peers: PeerDirectory | None = None) -> None:
         if not ipaddress.ip_address(host).is_loopback:
             raise ValueError(f"dashboard refuses to bind {host}: loopback only until auth exists (ADR-0001)")
         self._state = state
+        #: Tailnet caller resolver (ADR-0003 §2). Held, not yet consulted: the tailnet door
+        #: and the loopback guard's lift arrive together in ADR-0003 step 4.
+        self._peers = peers
         self._views = {v.path: v for v in views}
         self._host, self._port = host, port
         self._server: ThreadingHTTPServer | None = None
