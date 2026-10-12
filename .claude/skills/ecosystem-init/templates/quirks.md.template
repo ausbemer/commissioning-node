@@ -1,0 +1,22 @@
+# Vendor quirk registry (spec §7)
+
+Measured *silent* behaviours of pinned foreign dependencies: things they do (drop, reorder,
+ignore, clamp) without an error. **A pin bump re-verifies every entry for that dependency**
+before the new version is adopted. The registry is the checklist for "is it safe to bump?"
+
+Pinned dependencies covered here:
+
+| Dependency | Pinned version | Contained behind (bridge module, §6) |
+|------------|----------------|--------------------------------------|
+{PINNED_DEPENDENCY_ROWS}
+
+## Entries
+
+### Q-001: {short name}
+
+- **Dependency / version:** {name @ version}
+- **Behaviour:** {what it silently does}
+- **How measured:** {the experiment, with a link to the log or test}
+- **Detection signature:** {how to tell it is happening: a log line, a counter, a test}
+- **Our accommodation:** {what our code does about it, with a file reference}
+- **Last verified:** {version, date}

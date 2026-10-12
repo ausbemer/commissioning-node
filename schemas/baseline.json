@@ -1,0 +1,363 @@
+{
+  "$defs/ModuleInfo": {
+    "description": "One module's identity inside a `NodeCard`.",
+    "properties": {
+      "capabilities": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Capabilities",
+        "type": "array"
+      },
+      "inward_version": {
+        "title": "Inward Version",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "release_version": {
+        "title": "Release Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "release_version",
+      "inward_version"
+    ],
+    "title": "ModuleInfo",
+    "type": "object"
+  },
+  "$defs/StreamEndpoint": {
+    "description": "One place a relayed stream can be pulled from. The URL never carries credentials.",
+    "properties": {
+      "protocol": {
+        "title": "Protocol",
+        "type": "string"
+      },
+      "url": {
+        "title": "Url",
+        "type": "string"
+      }
+    },
+    "required": [
+      "protocol",
+      "url"
+    ],
+    "title": "StreamEndpoint",
+    "type": "object"
+  },
+  "CameraAnnouncement": {
+    "description": "A camera this node knows about. Carries no credentials (\u00a78.9).",
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "camera_id": {
+        "title": "Camera Id",
+        "type": "string"
+      },
+      "firmware": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Firmware"
+      },
+      "label": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Label"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Model"
+      },
+      "origin": {
+        "title": "Origin",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "camera_id",
+      "address",
+      "origin"
+    ],
+    "title": "CameraAnnouncement",
+    "type": "object"
+  },
+  "CameraRegistration": {
+    "description": "Command: take this camera on. Produced by an operator surface.",
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "camera_id": {
+        "title": "Camera Id",
+        "type": "string"
+      },
+      "label": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Label"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "camera_id",
+      "address"
+    ],
+    "title": "CameraRegistration",
+    "type": "object"
+  },
+  "Envelope": {
+    "description": "Base for every published payload: a Shape that carries its version on the wire.",
+    "properties": {
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version"
+    ],
+    "title": "Envelope",
+    "type": "object"
+  },
+  "ModuleInfo": {
+    "description": "One module's identity inside a `NodeCard`.",
+    "properties": {
+      "capabilities": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Capabilities",
+        "type": "array"
+      },
+      "inward_version": {
+        "title": "Inward Version",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "release_version": {
+        "title": "Release Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "release_version",
+      "inward_version"
+    ],
+    "title": "ModuleInfo",
+    "type": "object"
+  },
+  "NodeCard": {
+    "description": "Read-only self-description of this node (\u00a75 card; \u00a714 when fleets arrive).\n\nReading a card never acts, and nothing in a card is an instruction.",
+    "properties": {
+      "contract_version": {
+        "title": "Contract Version",
+        "type": "string"
+      },
+      "hostname": {
+        "title": "Hostname",
+        "type": "string"
+      },
+      "modules": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/ModuleInfo"
+        },
+        "title": "Modules",
+        "type": "array"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "hostname",
+      "contract_version"
+    ],
+    "title": "NodeCard",
+    "type": "object"
+  },
+  "Shape": {
+    "description": "Base for nested shapes: open to unknown keys, checked field-by-field (\u00a73).",
+    "properties": {},
+    "title": "Shape",
+    "type": "object"
+  },
+  "StreamAnnouncement": {
+    "description": "A relay path for one camera's stream (\u00a76: announce over reliable, stream over fast).\n\nThe bytes never touch the bus; this message only says where they are.",
+    "properties": {
+      "camera_id": {
+        "title": "Camera Id",
+        "type": "string"
+      },
+      "endpoints": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/StreamEndpoint"
+        },
+        "title": "Endpoints",
+        "type": "array"
+      },
+      "live": {
+        "default": false,
+        "title": "Live",
+        "type": "boolean"
+      },
+      "origin": {
+        "title": "Origin",
+        "type": "string"
+      },
+      "path": {
+        "title": "Path",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "camera_id",
+      "path",
+      "origin"
+    ],
+    "title": "StreamAnnouncement",
+    "type": "object"
+  },
+  "StreamEndpoint": {
+    "description": "One place a relayed stream can be pulled from. The URL never carries credentials.",
+    "properties": {
+      "protocol": {
+        "title": "Protocol",
+        "type": "string"
+      },
+      "url": {
+        "title": "Url",
+        "type": "string"
+      }
+    },
+    "required": [
+      "protocol",
+      "url"
+    ],
+    "title": "StreamEndpoint",
+    "type": "object"
+  },
+  "TailnetStatus": {
+    "description": "This node's tailnet status, as last read from the overlay.",
+    "properties": {
+      "addresses": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Addresses",
+        "type": "array"
+      },
+      "connected": {
+        "title": "Connected",
+        "type": "boolean"
+      },
+      "hostname": {
+        "title": "Hostname",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "served_routes": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Served Routes",
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema_version",
+      "hostname",
+      "connected"
+    ],
+    "title": "TailnetStatus",
+    "type": "object"
+  },
+  "Tick": {
+    "description": "Orchestration heartbeat from the composition root (\u00a78.8).\n\nThe producer declares its own cadence (\u00a711 rung 11): consumers derive any timeout from\n`period_s`, never from a constant of their own.",
+    "properties": {
+      "at": {
+        "title": "At",
+        "type": "number"
+      },
+      "period_s": {
+        "title": "Period S",
+        "type": "number"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "at",
+      "period_s"
+    ],
+    "title": "Tick",
+    "type": "object"
+  }
+}

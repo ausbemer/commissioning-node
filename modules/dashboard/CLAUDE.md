@@ -1,0 +1,52 @@
+# dashboard — Module Context
+
+> Module of the commissioning-node monolith
+> following the spec §4 structure standard.
+
+## Role in the ecosystem
+
+Operator config and ops surface. Today it is a read-only, loopback-only HTTP view (`/` and `/api/state`) of the node card (module versions, capabilities), tailnet status, cameras, planned streams, and the `schema_version` seen on the wire per topic against the pinned contract (§8.5). The surface enforces the ADR-0001 posture itself: it refuses non-loopback binds and returns 405 for non-GET. Config editing arrives with the config registry. Writes and non-loopback serving arrive only after the identity/admin-auth ADR. The collector is a terminal consumer (§8.2) and never re-publishes.
+
+## Interfaces
+
+Distinguish the two directions explicitly. **Outward** topics cross service boundaries and
+their payloads conform to the ecosystem contract (`commissioning-node-interfaces`). **Inward**
+topics/types are local to this module and defined by its own `interface/`.
+
+- **Consumes — outward (from the bus):** `system/card` (`NodeCard`), `tailnet/status`, `camera/announced`, `stream/announced`
+- **Consumes — inward (core → features):** `DashboardState` (shared live-state object, written by `state-collector`, read by `core/http_surface.py`)
+- **Produces — outward (to the bus):** none — conforms to the ecosystem
+  contract (`interfaces/` v0.1.0)
+- **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`)
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.1.0; inward
+  contract `__version__` 0.1.0. Both live in `interface/__init__.py`; see
+  `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
+  contract, with a one-repo blast radius.
+
+## Features
+
+| Feature | Status | Built on interface | Notes |
+|---------|--------|--------------------|-------|
+| `state-collector` | enabled | 0.1.0 | Latest-value-per-key store of card/tailnet/camera/stream + wire versions. Terminal consumer. |
+| `overview-page` | served | 0.1.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. |
+
+## Rules for agents working here
+
+1. Core is I/O only; all logic in `features/`, behind the `Feature` protocol.
+2. Features never import each other or the core's internals — only `interface/`. This
+   includes the module name constant `MODULE`, which lives in `interface/__init__.py`
+   (import `from ..interface import MODULE`; package path `modules.dashboard`), never in `core/`.
+3. Need new fields? Bump interface MINOR **on dev first**, then branch (spec §4).
+4. Merge early, register disabled (spec §8.4) beats long feature branches.
+5. Watch for the middleman smell (spec §4): if this module starts carrying data only
+   one feature needs, that feature is a graduation candidate.
+6. External I/O goes behind a vendor-neutral seam (spec §4): a protocol in `interface/`,
+   one adapter per vendor in `core/`. A foreign runtime with its own bus is a sidecar
+   reached only through this kind of bridge, with an explicit crossing allowlist (§6).
+7. A derived fact other modules also need (a geometry, a mode predicate, "which source is
+   the truth") is computed in ONE neutral canonical authority and imported, never
+   recomputed here (§4).
+8. If this module writes to anything (hardware, shared stores, other systems), its ADR
+   follows the §11 ladder: one writer, one ownership door, dead-man levels, leases with no
+   force door.
+" section}

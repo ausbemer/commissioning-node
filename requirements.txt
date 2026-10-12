@@ -1,0 +1,5 @@
+# commissioning-node — Stage 0 runtime dependencies.
+# Target interpreter: Python 3.13 (the RevPi's Debian 13 python3; spec baseline is 3.11+).
+# On this node they come from apt (python3-pydantic, python3-pytest), because Debian blocks
+# system-wide pip (PEP 668). CI installs this file with pip.
+pydantic>=2,<3

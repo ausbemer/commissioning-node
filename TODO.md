@@ -1,0 +1,64 @@
+# commissioning-node — TODO
+
+What's left. Each item that needs a decision gets an ADR in `docs/adr/` before code.
+Growth is trigger-driven: nothing here is scheduled until it's needed.
+
+## Next features (each starts read-only; actuation needs an ADR with the Safety section)
+
+- [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Decide on tailnet identity
+      resolution (peer → login, §15), for example by fronting the dashboard with
+      `tailscale serve` and reading its identity headers. Decide on the local fallback's
+      listener, credential storage (§8.9) and lifecycle. Until this ADR exists, the dashboard
+      stays loopback-only and read-only.
+- [ ] **Config registry** (§6 sanctioned exception). Features declare fields, the
+      dashboard reads and edits them, and secrets are flagged at declaration. Document the
+      graduation cost.
+- [ ] **tailnet-gateway: auto-configuration.** Detect the site subnet, then *propose*
+      advertised routes and hostname for operator confirmation (§11 rung 2). Then a writer
+      feature (`tailscale set` / `up`) with a Safety ADR. Auth keys are secrets.
+- [ ] **camera-config: VAPIX probe** (read-only). Fill `model` / `firmware` from the camera.
+      Then discovery, which proposes cameras for an operator to adopt (rung 2).
+- [ ] **camera-config: VAPIX writer.** Safety ADR. The first write to a camera is
+      operator-confirmed (rung 3). May-disturb warnings go in the action manifest (rung 4),
+      and declared state is restored exception-safely (rung 6). Camera credentials are secrets.
+- [ ] **stream-relay: MediaMTX adapter.** Write paths via the MediaMTX API, then set
+      `live=true` only once it is actually serving. Safety ADR (single writer, rung 9).
+- [ ] **Action manifest** (§5). Expose `camera/register` and later commands as name + schema
+      + `requires` + availability + risk warnings, which the dashboard and an LLM caller both
+      consume.
+- [ ] **One-shot CLI modes** in `main.py` (e.g. register a camera) on a private Bus instance (§4).
+
+## Ops tier (`ops/`, created with its first member, §10)
+
+- [ ] Idempotent installer (`--dry-run`) for tailscale and MediaMTX at pinned versions, plus a
+      systemd unit for `main.py`. Record each pinned version in `docs/quirks.md`.
+- [ ] Read-only doctor script: tailscaled up? MediaMTX up? Dashboard bound? Versions?
+- [ ] Deployment-form ADR: bare metal + systemd versus containers on the RevPi (§4).
+- [ ] **Site teardown and redeploy procedure.** The node moves between sites. List the
+      site-specific state (camera inventory, credentials, tailnet routes, MediaMTX paths,
+      logs) and declare how each is wiped or preserved before the node leaves (§10
+      "disposable, never lossy").
+
+## Evidence (§8.11) — provisional constants awaiting a measurement + ledger entry
+
+- [ ] `main.TICK_PERIOD_S = 5.0`
+- [ ] `tailscale_cli.STATUS_TIMEOUT_S = 5.0`
+- [ ] `relay_planner.STALE_MIN_S = 5.0`, `STALE_MAX_S = 120.0`, `MAX_CAMERAS = 512`
+- [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
+- [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture
+      in `tests/test_tailscale_cli.py`. Verify the field mapping in `docs/quirks.md`.
+
+## Later (recorded, not scaffolded)
+
+- [ ] Fleet of nodes (§14): a design-only ADR covering peer card polling, membership as a
+      level, and shared deterministic rules. `NodeCard` already exists.
+- [ ] Broker choice (undecided): ADR when a lever fires (§10).
+
+## Non-goals (from init interview)
+
+None stated yet.
+
+## Optional connectors
+
+None offered: Stage 0 is local-only. GitHub, a status board (Linear, Asana or Notion), and
+Datadog or PagerDuty become relevant at Stage 1 or once services run in production.

@@ -1,0 +1,109 @@
+# {ECOSYSTEM} — Workflow
+
+Day-to-day rituals. The spec (`META-ARCHITECTURE.md`) says *why*; this says *how, here*.
+
+## Branches
+
+Work happens on `dev`. `master` holds validated states and receives promotions only.
+
+## Start a feature
+
+```bash
+git checkout dev && git pull
+git checkout -b feature/{name}
+# implement the Feature protocol from modules/{module}/interface/feature.py
+# register in modules/{module}/core/registry.py (flagged off until ready)
+```
+
+Need new data fields? Add them (optional!) on `dev` first, bump the interface MINOR
+(`__version__`), then branch from that dev. Shipping a feature behind an unchanged
+interface bumps the module's release `VERSION` only (spec §4 dual versioning).
+Contract-package changes additionally require:
+
+```bash
+python tools/check_additivity.py check   # must pass before any contract commit
+```
+
+A nested shape is a model (subclass `Shape`), never a bare `dict`. If the checker reports
+an untyped field you truly cannot type yet, declare it in `schemas/blind_spots.txt`
+(`Model.field  # why + plan`). `python tools/check_additivity.py blind-spots` lists them.
+
+## New package or new dependency
+
+- **New top-level package:** pick its §4 tier (neutral, bus-coupled, ops) and declare it in
+  `tools/check_boundaries.py`. The boundary check fails until you do.
+- **New derived fact other modules need:** one canonical authority (a neutral package),
+  imported everywhere. If it ports a reference algorithm, its tests execute the original
+  and diff the outputs (§4).
+- **Pinning a foreign runtime/vendor library:** contain it behind one bridge module (§6),
+  start or extend `docs/quirks.md`, and re-verify every quirk entry on each pin bump (§7).
+- **Codegen or verbatim-shipped artifacts:** add a `--check` freshness gate and a
+  compile/execute gate to `ci.sh`. Conditional gates skip loudly (§8.1).
+
+## Behaviour and safety changes
+
+(If `tools/ledgers/` or `tests/replay/` don't exist yet, the first change that needs them
+creates them. See `tools/ledgers/README.md` once it exists, or spec §8.11/§8.12.)
+
+- New or changed threshold/timeout/gain: measure it, add it to `tools/ledgers/` with the
+  re-derivation script, and link the ledger from the ADR (§8.11).
+- Behavioural change: replay the corpus in `tests/replay/` and add any new episode (§8.12).
+- Actuation: the ADR fills the Safety section (§11 ladder, rungs 1–13).
+
+## Release / promote
+
+{STAGE0_BLOCK:
+Stage 0: promotion is just merging validated dev to master and tagging the monolith.
+Refresh the additivity baseline at each tagged release:
+    python tools/check_additivity.py snapshot && git add schemas/
+}
+{STAGE1_BLOCK:
+Contract release (in {ECOSYSTEM}-interfaces):   ./release-contract.sh
+Workspace promotion (in {WORKSPACE}):           ./promote.sh vX.Y.Z
+Both scripts refuse on failing checks. Never `git merge dev` in the workspace.
+}
+
+## Tests
+
+```bash
+python -m pytest -q          # smoke + additivity + boundaries; keep green on every dev commit
+```
+
+## Before you push
+
+```bash
+./ci.sh                      # tests + additivity + boundaries + pin check — same gate as CI.
+                             # Green here == green in GitHub Actions (.github/workflows/ci.yml).
+                             # Release tags are NOT gated here; that is release-contract.sh.
+```
+
+## Guards
+
+```bash
+# Detached-HEAD guard — install once per repo (and per submodule at Stage 1):
+cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+# Pin-references-a-real-tag check (Stage 1; no-op at Stage 0):
+python tools/check_pins.py --contract-repo ../{ECOSYSTEM}-interfaces
+```
+
+## Graduation (Stage 0 → Stage 1)
+
+Extract a module only when a spec §10 trigger fires: second independent owner,
+divergent deploy cadence, divergent runtime, or the middleman smell. Mechanics:
+spec §10 "Extraction mechanics", or ask an agent to run the ecosystem-init skill,
+which detects the existing scaffold and offers guided graduation.
+
+A single lever (a real broker, an out-of-process component, a second language) can be
+pulled early behind one module seam, with its own ADR, without the repo split (§10).
+
+## Spec upgrades
+
+This project vendors the spec at the version in ADR-0001. To adopt a newer one, copy the
+new `META-ARCHITECTURE.md` over the old one unedited, then add an ADR-0001 amendment
+recording the new version and what you adopted from it. The spec is additive, so
+fast-forwarding is safe (§12).
+
+## Non-goals (from init interview)
+
+{NON_GOALS_LIST}

@@ -1,0 +1,19 @@
+#!/bin/sh
+# Detached-HEAD guard — spec §2/§8.7, the #1 submodule footgun.
+#
+# Submodules check out at a pinned commit in DETACHED HEAD. If you edit and commit there,
+# the commit lands on no branch and is silently lost on the next `git submodule update`.
+# This hook refuses a commit made from detached HEAD and tells you how to fix it.
+#
+# Install (run once per repo, and once per submodule):
+#   cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# For submodules, the hooks dir is .git/modules/<path>/hooks/ .
+
+if ! git symbolic-ref -q HEAD >/dev/null 2>&1; then
+  echo "ERROR: refusing to commit from a DETACHED HEAD."
+  echo "  You are on a commit, not a branch — this commit would land on no branch and be lost."
+  echo "  Fix: 'git checkout <branch>' (e.g. dev) inside this repo, then re-commit."
+  echo "  (Meta-architecture spec, detached-HEAD rule §2.)"
+  exit 1
+fi
+exit 0

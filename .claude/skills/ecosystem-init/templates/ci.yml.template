@@ -1,0 +1,19 @@
+# Thin GitHub Actions wrapper — all real logic lives in ./ci.sh so the same gate
+# runs locally and in CI. Instantiated by init to .github/workflows/ci.yml.
+name: ci
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - run: ./ci.sh

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+
+# NOTE: do NOT ignore schemas/ — the additivity baseline (schemas/baseline.json)
+# is committed on purpose; it is what future contract changes are checked against (§8.1).

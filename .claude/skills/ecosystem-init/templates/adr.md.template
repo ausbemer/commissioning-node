@@ -1,0 +1,45 @@
+# ADR {NUMBER}: {TITLE}
+
+- **Status:** {Proposed | Accepted | Amended (see Amendments) | Superseded by ADR-XXXX}
+- **Date:** {YYYY-MM-DD}
+- **Deciders:** {who}
+- **Shape:** {standard | design-only | decision ledger | review-as-rulings} (spec §7)
+
+## Context
+
+{The forces at play: the problem, the constraints, the version/stage, what the spec
+says (cite the § if relevant). Why a decision is needed now. Record any measured
+hardware/vendor fact that drives the decision next to it (§7).}
+
+## Decision
+
+{The choice, stated plainly. If it pulls a spec lever (transport tiering §6, a single
+graduation lever or the repo split §10), say which and why the trigger fired. For a
+decision ledger: the numbers, the data each came from, and the ledger that re-derives
+them (§8.11). For review-as-rulings: numbered, binding rulings.}
+
+## Safety (delete if this ADR does not touch actuation — spec §11)
+
+{Answer each that applies; "n/a" is an answer, silence is not.
+- Rungs 1–8: read-only default? who confirms the first write? may-disturb warnings in the
+  action manifest? interlock (a lease, no force door)? exception-safe restore? refusals
+  in-band? independent kill for safety-critical TX?
+- Rung 9 — the single writer: which code is the ONLY writer, and where the safety
+  properties are enforced.
+- Rung 10 — the ownership door: how non-owner acts are recorded as requests.
+- Rung 11 — dead-man level: what is held safe, the declared cadence, the derived timeout.
+- Rung 12 — does this remove or weaken a safety behaviour? Name the replacement and the
+  confinement (flag / scenario) until it ships.
+- Rung 13 — which consumers enforce the safety predicate, from which canonical authority.
+- Constants: each behaviour/safety number links to its ledger entry (§8.11).}
+
+## Consequences
+
+{What becomes easier and what becomes harder. New obligations (e.g. a deprecation
+schedule if this was a MAJOR), follow-ups, and what would cause us to revisit this.
+Gate open items on data ("decide once X is measured"), never on guesses.}
+
+## Amendments
+
+{None yet. Amending is normal (§7): append dated amendments with the measured reality and
+a revisit clause; never rewrite the original decision text.}

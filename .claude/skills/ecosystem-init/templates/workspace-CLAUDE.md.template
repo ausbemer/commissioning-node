@@ -1,0 +1,62 @@
+# {WORKSPACE} — Superproject Manifest
+
+> Stage 1 polyrepo workspace following the Additive-Contract meta-architecture.
+> Binding spec: `META-ARCHITECTURE.md`, **v{SPEC_VERSION}** (recorded in ADR-0001; never
+> edit it, keep its version line). This repo holds NO service code — its commits are
+> version manifests (spec §2).
+
+## Domain
+
+{ONE_PARAGRAPH_DOMAIN_DESCRIPTION_FROM_INTERVIEW}
+
+## Branches
+
+- `master` — known-good set: every submodule pinned to a validated commit.
+- `dev` — latest-testing set: submodules track each service's `dev` branch
+  (`git submodule update --remote`), resulting pins committed.
+- Promotion is pin-copying via `./promote.sh vX.Y.Z` — **never** `git merge dev`.
+
+## Project table
+
+| Repo | Description | Status | Key output | Contract pin |
+|------|-------------|--------|-----------|--------------|
+| {ECOSYSTEM}-interfaces | Shared contract package | active | tagged releases | — |
+{SERVICE_TABLE_ROWS}
+
+## Rules for agents working here
+
+1. **Detached HEAD trap:** always `git checkout <branch>` inside a submodule before
+   editing (spec §2). A guard hook exists, but do not rely on it.
+2. Every contract pin must reference an existing tag — the tag is the release.
+3. The three version surfaces stay in their lanes (spec §2): workspace pins = source,
+   contract pins = interop, deploy pins = runtime.
+4. Live pin/branch state belongs in tooling output, not hand-edited docs.
+5. Each service repo carries its own CLAUDE.md — read it before working there.
+6. Every service runs the same gate: additivity (nested shapes typed or declared, §3),
+   import boundaries (§4), pin integrity. A bridge between services and another transport
+   names its crossing allowlist in both directions (§6).
+7. Acting on the world follows the §11 ladder; behaviour/safety constants are measured
+   and ledgered (§8.11).
+
+## Skills to reach for
+
+| Moment | Skill |
+|--------|-------|
+| Recording a design/technology decision or a graduation | `engineering:architecture` — ADR into the relevant repo's `docs/adr/` (spec §7) |
+| Before merging to a service's `dev` | `engineering:code-review` — additivity + forwarding-trap (§8.2) |
+| Designing a new service boundary or extracting a feature | `engineering:system-design` |
+| Test plans for features and contract changes | `engineering:testing-strategy` |
+| Interface READMEs, CLAUDE.md, WORKFLOW.md | `engineering:documentation` |
+| Deprecations piling up — schedule a MAJOR? (§8.3) | `engineering:tech-debt` |
+| Shipping a release via `{deploy}` | `engineering:deploy-checklist` |
+| A production issue | `engineering:incident-response` |
+| Cross-submodule progress summary | `engineering:standup` |
+| Standing guardrails (pin-references-tag CI, drift) | `schedule` |
+
+**Live state lives on the status board, not here.** Pin/branch/drift state belongs on the
+connected board (Linear / Asana / Notion) per spec §7 — this file holds roles and rules,
+not live status.
+
+## Current focus
+
+See `TODO.md` (each item links to its ADR).

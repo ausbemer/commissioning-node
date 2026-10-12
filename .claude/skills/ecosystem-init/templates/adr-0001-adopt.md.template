@@ -1,0 +1,57 @@
+# ADR 0001: Adopt the Additive-Contract meta-architecture ({STAGE})
+
+- **Status:** Accepted
+- **Date:** {YYYY-MM-DD}
+- **Deciders:** {who}
+- **Shape:** standard (spec §7)
+- **Spec version adopted:** {SPEC_VERSION} — copied from the version line at the top of
+  `META-ARCHITECTURE.md`, which stays in the vendored copy (spec §9 step 0, §12)
+
+## Context
+
+{ONE_PARAGRAPH_DOMAIN_DESCRIPTION_FROM_INTERVIEW} {Number of independent owners on day one,
+and why that selects this stage (spec §10, Appendix "Why monolith-first?").}
+
+## Decision
+
+Adopt the meta-architecture in `META-ARCHITECTURE.md` (spec v{SPEC_VERSION}) at
+**{STAGE}**. Live from day one:
+
+- Cross-module types only in `interfaces/` — additive-only, `extra="ignore"`, nested shapes
+  typed as models (§3), machine-checked by `tools/check_additivity.py` (§8.1).
+- The §4 ontology, machine-checked by `tools/check_boundaries.py` (§8.1): modules meet only
+  on the bus; neutral packages stay pure; the contract imports nothing internal.
+- `schema_version` on every envelope (§8.5); semantics never mutate (§8.6).
+- Capability discovery as an in-process registry lookup (§5).
+- Dual versioning per module: `VERSION` (release) + `__version__` (inward contract) (§4).
+
+Deliberately deferred until a §10 trigger fires: {DEFERRED_LIST — STAGE0: submodules, the
+superproject, per-service tagging, promote.sh, the deploy repo, a real broker, a second
+transport | STAGE1: the deploy repo until two services run together, a second transport}.
+Each graduation lever may be pulled alone, behind one seam, with its own ADR (§10).
+
+## Security posture (spec §9 step 0.5)
+
+{WHERE_IS_THE_TRUST_BOUNDARY — from the interview. E.g. "the overlay network is the
+boundary; identity is read from the transport (§15)", or per-service auth, or "local-only,
+no network surface yet". Secrets follow §8.9 from the first credential.}
+
+## Risk profile
+
+- **Acts on the world?** {no — read-only system | yes: what it writes to. Actuation ADRs
+  follow the §11 ladder and fill the Safety section of the ADR template.}
+- **Foreign runtimes / pinned vendor dependencies:** {none | name + pin; quirk registry at
+  `docs/quirks.md` (§7), contained as a sidecar behind one bridge module (§6)}
+- **Anticipated later:** {e.g. simulation mode §13, many peer nodes §14, device enrolment
+  §15 — or "none". Recorded so a design-only ADR can fix the shape before the code.}
+
+## Consequences
+
+Extraction to Stage 1 stays mechanical repo surgery, not a redesign (§10). The contract
+checker, boundary checker and CI gate are obligations from the first commit. Revisit this
+ADR when a §10 graduation trigger fires, or when adopting a newer spec version (record the
+new version here as an amendment).
+
+## Amendments
+
+None yet.
