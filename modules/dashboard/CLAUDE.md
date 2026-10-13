@@ -20,7 +20,7 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`, `login-page` on the fallback, `config-page` at `/config`); `Action`s (`config-editor`: set + clear per config field; `tailnet-apply`: join, rename, leave)
 - **Consumes — inward (core):** `ConfigSurface` (the config registry's operator surface, injected by `main.py`; ADR-0004); `AdminAuth` (fallback credential, sessions, login limits) and the pure door functions in `interface/doors.py`
 - **Versions (spec §4 dual versioning):** release `VERSION` 0.6.0; inward
-  contract `__version__` 0.6.0. Both live in `interface/__init__.py`; see
+  contract `__version__` 0.7.0 (`chrome.py`, the shared page frame). Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 

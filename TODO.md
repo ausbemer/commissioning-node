@@ -26,6 +26,12 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [x] **Identity + admin fallback** (`docs/adr/0003-operator-doors-identity-and-admin-fallback.md`,
       Accepted). Steps 1–6 done (2026-10-12/13); step 6's rehearsal finishes under Up next.
+- [ ] **Overview network map.** Mockup 3 ("Network Map", 2026-10-13) opens the overview on a
+      map: site LAN and its cameras → this gateway → the tailnet, each link coloured by its
+      state. The style was adopted without the map. To decide first: which facts each link
+      shows and who is the authority for each (route approved, stream serving, endpoint fresh,
+      camera reachable — several don't exist on the bus yet), how stale links look, and how it
+      scales past a handful of cameras. Inline SVG, no JavaScript (CSP).
 - [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:

@@ -3,6 +3,7 @@
 The ONLY package features may import from this module (spec §4).
 """
 from .actions import Action, ActionResult
+from .chrome import banner, page
 from .admin import AdminAuth, Session
 from .config import (CONFIG_ACTIONS, ConfigFieldState, ConfigSurface, ConfigWriteResult,
                      TAILNET_OPERATIONS, TAILNET_WRITER, Invoker, clear_path, config_key,
@@ -19,11 +20,11 @@ MODULE = "dashboard"
 #: Release version — bumps with features/implementation (§4 dual versioning).
 VERSION = "0.6.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
            "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",
-           "Action", "ActionResult", "AdminAuth", "Session",
+           "Action", "ActionResult", "AdminAuth", "Session", "banner", "page",
            "DOORS", "LOCAL", "TAILNET", "FALLBACK", "Caller", "Refusal", "Decision",
            "authorize", "classify", "host_allowed", "same_origin",
            "ConfigSurface", "ConfigFieldState", "ConfigWriteResult", "CONFIG_ACTIONS",
