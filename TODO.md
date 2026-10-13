@@ -3,20 +3,33 @@
 What's left. Each item that needs a decision gets an ADR in `docs/adr/` before code.
 Growth is trigger-driven: nothing here is scheduled until it's needed.
 
+## Up next (start here next session)
+
+- [ ] **ADR-0003 step 5: Config registry ADR** (§6 sanctioned exception), then build it.
+      Features declare config fields; the dashboard reads them and edits them as `Action`s
+      behind `authorize()` (ADR-0003 §4). Secret fields (the Tailscale auth key first, D3)
+      are flagged at declaration and never reach the bus or logs (§8.9). Decide: where values
+      persist (the daemon has `ProtectSystem=full`, so `/etc` is read-only to it; ADR-0003
+      Consequences), how a site teardown wipes them, and the graduation cost. The first
+      fields serve step 6: Tailscale hostname, tags, auth key. Use `engineering:architecture`.
+- [ ] **Confirm step 4 on the node** (not yet done; the daemon runs pre-step-4 code until
+      restarted). In an SSH terminal (not `! sudo`): `sudo systemctl restart
+      commissioning-node`, then `sudo ops/doctor.sh`; expect 8443 listening + answering TLS
+      and 8080 on all addresses. Then from a LAN laptop open `https://192.168.36.153:8443`,
+      check the fingerprint `A9:7F:DB:2D:…:BF:F3` (printed in full by the doctor), log in, log out.
+
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
 
-- [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Drafted as
-      `docs/adr/0003-operator-doors-identity-and-admin-fallback.md` (Accepted); implement in
-      its order. Steps 2–4 done: peer table and resolver; ops (admin password, TLS key, 8080
-      firewall, operator, doctor); the dashboard's three doors, fallback login, sessions,
-      CSRF, login limits and `authorize()`. Next: step 5, the config registry ADR.
+- [ ] **Identity + admin fallback** (`docs/adr/0003-operator-doors-identity-and-admin-fallback.md`,
+      Accepted). Steps 1–4 done (2026-10-12/13): peer table and resolver; ops (admin
+      password, TLS key, 8080 firewall, operator, doctor); the dashboard's three doors,
+      fallback login, sessions, CSRF, login limits and `authorize()`, security-reviewed.
+      Remaining: step 5 (Up next) and step 6, the `tailnet-gateway` writer (hostname, tags,
+      auth-key join) with its own Safety ADR and action-manifest entries.
 - [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
       a client not using MagicDNS resolves `*.ts.net` through a resolver the site may control.
-- [ ] **Config registry** (§6 sanctioned exception). Features declare fields, the
-      dashboard reads and edits them, and secrets are flagged at declaration. Document the
-      graduation cost.
 - [ ] **tailnet-gateway: auto-configuration.** Detect the site subnet, then *propose*
       advertised routes and hostname for operator confirmation (§11 rung 2). Then a writer
       feature (`tailscale set` / `up`) with a Safety ADR. Auth keys are secrets.
