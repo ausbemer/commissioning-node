@@ -12,11 +12,11 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       persist (the daemon has `ProtectSystem=full`, so `/etc` is read-only to it; ADR-0003
       Consequences), how a site teardown wipes them, and the graduation cost. The first
       fields serve step 6: Tailscale hostname, tags, auth key. Use `engineering:architecture`.
-- [ ] **Confirm step 4 on the node** (not yet done; the daemon runs pre-step-4 code until
-      restarted). In an SSH terminal (not `! sudo`): `sudo systemctl restart
-      commissioning-node`, then `sudo ops/doctor.sh`; expect 8443 listening + answering TLS
-      and 8080 on all addresses. Then from a LAN laptop open `https://192.168.36.153:8443`,
-      check the fingerprint `A9:7F:DB:2D:…:BF:F3` (printed in full by the doctor), log in, log out.
+- [x] **Step 4 confirmed on the node** (2026-10-13): doctor clean, fallback login from a
+      LAN laptop. Certificate regenerated since step 3; its fingerprint is now
+      `4D:E0:3A:96:…:86:BA:C4:F0` (printed in full by the doctor). Browser login needed one
+      fix: `Referrer-Policy: no-referrer` made browsers send `Origin: null`, which the
+      same-origin check refused.
 
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
 

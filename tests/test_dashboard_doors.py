@@ -477,3 +477,10 @@ def test_bad_tls_files_keep_the_fallback_off_and_the_dashboard_up(tmp_path: Path
         assert call(conn, "GET", "/api/state")[0] == 200
     finally:
         node.dashboard.stop()
+
+
+def test_referrer_policy_keeps_the_browser_origin():
+    """`no-referrer` makes browsers send `Origin: null` on same-origin POSTs, which the
+    same-origin check refuses, so no browser could log in or write (found on the node)."""
+    from modules.dashboard.core.http_surface import SECURITY_HEADERS
+    assert SECURITY_HEADERS["Referrer-Policy"] == "same-origin"
