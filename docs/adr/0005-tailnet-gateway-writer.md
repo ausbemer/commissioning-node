@@ -258,3 +258,99 @@ dashboard ◀──bus── tailnet/apply-result ◀── drained on the next 
    the quirks,
    then enable the capability. Run the security review over ADR-0004 and this ADR together,
    then merge.
+
+## Amendments
+
+### 2026-10-13 — rehearsal findings; keep the key and rejoin; advertise the site network
+
+The first rehearsal join succeeded (ephemeral, tagged key; the node came up as `pi5-gateway`,
+tag `tag:mace4-comms`). The operator then set two requirements: **the node must survive a
+power cycle**, and **it must advertise a subnet route, defaulting to the network it is on.**
+
+Measured on the joined node (tailscale 1.102.5, 2026-10-13):
+
+- **`tailscale status --json` has no ephemeral flag** in `Self`. D4's post-join check is not
+  possible from status; the requirement stays enforced by the help text and the Join warning.
+- `Self.Tags` lists the node's tags; `PrimaryRoutes` is absent with no approved routes.
+- `tailscale set --advertise-routes` exists (unlike `--advertise-tags`, Q-002), and an empty
+  value means "no routes".
+- Prefs after the join: `WantRunning=true`, `LoggedOut=false`.
+- The site interface is now `eth0` (192.168.137.218/24, DHCP, default route), not the `lan0`
+  of ADR-0003. Interface names are not stable across nodes, so nothing may assume one.
+- `net.ipv4.ip_forward = 0`. A subnet router needs forwarding on.
+
+**A1 — D3 is replaced: the key is kept.** A successful join no longer deletes the saved
+auth key. It stays (0600, site-scoped, wiped at teardown) so the node can rejoin on its own
+(A2). The Join warning and the key's help now say the key must be **reusable and ephemeral**:
+a single-use key cannot rejoin. The operator deletes it on `/config`, and the site teardown
+wipes it. This supersedes ADR-0003 §5's "deleted once tailscaled confirms the join".
+Consequence: a long-lived network secret on the SD card, for the life of the key (Tailscale
+caps auth keys at 90 days). Mitigations: a tagged ephemeral key limits what it can join as,
+and the file rules of ADR-0004 apply.
+
+**A2 — Automatic rejoin, a narrow exception to D1.** D1 stays the rule: an operator's first
+join is always an explicit, confirmed act (rung 3). The exception is only for *rejoining a
+tailnet the operator already joined*:
+
+- **The intent is a level the writer records.** After a successful join the worker writes a
+  join record (`site/tailnet-gateway.join.json`: the routes it applied, when). Leave deletes
+  it. The record is site-scoped, so teardown wipes it. tailscaled's own `LoggedOut` pref is
+  not used: it is read through `tailscale debug prefs`, a debug interface.
+- **The trigger:** the record exists, the field `auto_rejoin` is on (default on, site-scoped),
+  a key is saved, a *fresh* reading says `BackendState == "NeedsLogin"`, and no write is
+  running. Then the feature plans a join with the saved values, requested by `auto-rejoin`
+  through the `node` door. A reboot that comes back `Running` triggers nothing: tailscaled
+  keeps its node key across restarts.
+- **It never hammers.** Attempts back off: 1 min, doubling, capped at 30 min
+  (`REJOIN_BACKOFF_*`, provisional, §8.11). Every attempt and outcome is a
+  `TailnetApplyResult`, shown on the panel. Success resets the backoff.
+- **Fails toward not joining.** If the record, the key or a fresh reading is missing, nothing
+  happens. If tailscaled reports a state other than `NeedsLogin`, nothing happens.
+- **Not measured yet:** that an ephemeral node removed by the control plane comes back as
+  `NeedsLogin`. Rehearse it: join, power the node off long enough to be removed, power it
+  on, and watch the panel.
+- **Known gap:** a manual `tailscale logout` over SSH leaves the record, so the node rejoins.
+  tailnet-gateway is the single writer (rung 9); manual CLI use bypasses it. Leave on
+  `/config`, or switch `auto_rejoin` off.
+
+**A3 — Advertised routes, defaulting to the site network (§11 rung 2: detect, then confirm).**
+
+- **A field `advertise_routes`** (`str_list`, site-scoped, default `["auto"]`): IPv4 CIDRs,
+  or `auto`. `auto` expands to the networks the node is on now. An empty list advertises
+  nothing.
+- **Detection:** the IPv4 networks of every interface that is up, except loopback and the
+  tailnet, ignoring /32s, link-local addresses and anything inside 100.64.0.0/10. It reads
+  `ip -j -4 addr` through a new `SiteNetworkSource` seam in core (rule 16 style: host I/O
+  behind a seam). It is stamped onto each overlay reading, and the panel shows it. With
+  several interfaces (an LTE uplink beside the site LAN), `auto` includes both. The panel
+  shows what `auto` means right now, so the operator sees it before confirming, and can
+  replace `auto` with the exact network.
+- **Applied by Join** (`--advertise-routes=…`, always passed, empty included, so a later
+  join never trips Q-001-style "mention all non-default flags"), and on a joined node by a
+  new confirmed operation, **Routes** (`tailscale set --advertise-routes=…`). The adapter
+  re-checks each CIDR with `ipaddress` (strict network, IPv4, outside 100.64.0.0/10).
+- **Approval is the site's.** An advertised route serves nothing until the tailnet's admin
+  approves it (or an `autoApprovers` ACL does). The panel shows advertised against approved
+  (`served_routes`).
+- **Forwarding and the firewall (ops, rule 15):**
+  - The installer sets `net.ipv4.ip_forward=1` in `/etc/sysctl.d/90-commissioning-node.conf`.
+    IPv6 forwarding stays off: turning it on stops the kernel accepting router
+    advertisements, which could cost the node its site IPv6.
+  - With forwarding on, the node would route between any of its interfaces. The
+    `inet commissioning_node` table gains a `forward` chain: established and related
+    traffic is accepted, traffic arriving on `tailscale0` is accepted, **everything else is
+    dropped**. Only the tailnet can open a forwarded connection; a site-LAN host cannot use
+    the node as a path into the tailnet or to another network (ADR-0001: the LAN is
+    untrusted).
+  - The doctor checks both.
+
+**Contract 0.5.0 (additive):** `TailnetStatus` gains `state` (tailscaled's BackendState),
+`advertised_routes` (from the join record) and `site_networks` (detected).
+
+**Safety, for these amendments:** rung 2: routes are detected and proposed, the operator
+confirms. Rung 3: the first join stays operator-confirmed; automatic rejoin acts only on a
+recorded prior confirmation. Rung 5: auto-rejoin uses the same one-at-a-time slot. Rung 7:
+every automatic attempt is a visible result. Rung 12: removes "the key is deleted after a
+join"; replaced by the reusable-ephemeral-key requirement, the teardown wipe and the visible
+key note. Rung 13: CIDRs are re-checked at the adapter, and forwarding is fenced by the
+firewall, not only by Tailscale's own rules.
