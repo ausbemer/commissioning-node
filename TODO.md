@@ -35,8 +35,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [x] Idempotent installer, doctor, firewall and units (`ops/`, ADR-0002). Tailscale
       1.102.5 and MediaMTX v1.21.1 are pinned in `ops/pins.sh`.
 - [x] Run it on the node (`sudo ops/install.sh`, 2026-10-12).
-- [ ] Re-run `sudo ops/install.sh` for ADR-0003 step 3, then `sudo ops/set-admin-password.sh`
-      and `sudo ops/doctor.sh`. `tailscale up --operator=<user>` waits for the dashboard's
+- [x] ADR-0003 step 3 applied on the node (2026-10-13): TLS key, admin password, operator,
+      8080 rule; doctor clean. `tailscale up --operator=<user>` waits for the dashboard's
       join flow (ADR-0003 step 6) or a manual join.
 - [ ] Provenance (§2, ADR-0002): run a tagged checkout on shipped nodes, and have the
       doctor and node card report the running commit.
