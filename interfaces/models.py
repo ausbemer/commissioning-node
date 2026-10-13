@@ -144,3 +144,42 @@ class TailnetPeers(Envelope):
     #: The cadence the producer intends to publish at, in seconds.
     period_s: float
     peers: list[TailnetPeer] = []
+
+
+class ConfigField(Shape):
+    """One operator-settable config field, as its owning module declares it (ADR-0004).
+
+    A declaration, not a value: config is not a message (§6), and no value ever rides in
+    this shape. It crosses a module boundary because the owner declares it and the operator
+    surface renders it. The action manifest (§5) and Stage 1 graduation reuse it as-is.
+    """
+
+    #: Owning module, kebab-case (e.g. "tailnet-gateway"). The field's key is `module.name`.
+    module: str
+    #: Field name, snake_case, unique within the module (e.g. "auth_key").
+    name: str
+    #: Value kind: "str", "int", "bool" or "str_list". Open vocabulary: a surface that
+    #: doesn't know a kind shows the field read-only rather than guessing.
+    kind: str
+    #: §8.9: flagged here and nowhere else. A secret is write-only and reads as set/unset.
+    secret: bool = False
+    #: "site" (wiped when the node leaves a site) or "node" (survives the move). Defaults
+    #: to "site": carrying one site's data to the next is the dangerous failure (ADR-0004 D2).
+    scope: str = "site"
+    #: Short human label, e.g. "Tailscale hostname".
+    label: str = ""
+    #: One-line help for the operator.
+    help: str = ""
+    #: Value when unset. Always None for a secret.
+    default: str | int | bool | list[str] | None = None
+    #: "str" / each "str_list" item: maximum length in characters.
+    max_len: int | None = None
+    #: "str" / each "str_list" item: a regular expression the whole value must match.
+    pattern: str | None = None
+    #: "str_list": maximum number of items.
+    max_items: int | None = None
+    #: "int": inclusive bounds.
+    minimum: int | None = None
+    maximum: int | None = None
+    #: §11 rung-4 warning if *editing* the field disturbs something; else None.
+    may_disturb: str | None = None

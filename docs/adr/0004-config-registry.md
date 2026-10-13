@@ -243,9 +243,9 @@ the writer exists (§8.4 "merge early, register disabled").
 ## Implementation order
 
 1. ~~Accept this ADR with D1–D3.~~ Done 2026-10-13 (recommendations taken).
-2. Contract: `ConfigField` (0.3.0). Then `config_registry/` with its tier declaration and
+2. ~~Contract: `ConfigField` (0.3.0). Then `config_registry/` with its tier declaration and
    tests: atomic writes, malformed-file fallback, secret modes, CR/LF stripping, masking,
-   unknown keys kept.
+   unknown keys kept.~~ Done 2026-10-13.
 3. Ops: `StateDirectory=`, `paths.sh`, doctor checks. Re-run `install.sh` on the node.
 4. Wiring: `tailnet-gateway` declares the three fields and gets `ConfigView`; the dashboard
    gets `ConfigSurface`, the Config section and the `config.*` actions through `authorize()`.

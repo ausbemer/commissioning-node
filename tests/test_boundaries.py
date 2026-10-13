@@ -101,3 +101,13 @@ def test_legal_shape_passes(tmp_path, tiers, case) -> None:
     plant(tmp_path, rel, source)
     problems = cb.check(tmp_path)
     assert not problems, f"{case}: false positive\n" + "\n".join(problems)
+
+
+def test_modules_cannot_import_the_config_registry(tmp_path) -> None:
+    """ADR-0004 §1: modules read config through their own interface/, never the store.
+    Runs against this repo's real tier declaration, not the synthetic one."""
+    assert "config_registry" in cb.BUS_COUPLED
+    plant(tmp_path, "config_registry/store.py", "import interfaces\n")
+    plant(tmp_path, "modules/alpha/core/output.py", "from config_registry import ConfigRegistry\n")
+    problems = cb.check(tmp_path)
+    assert any(p.startswith("modules/alpha/core/output.py") for p in problems), "\n".join(problems)

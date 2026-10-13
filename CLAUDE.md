@@ -32,10 +32,11 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 
 | Path | Role |
 |------|------|
-| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.2.0`. All cross-module types live here and nowhere else. |
+| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.3.0`. All cross-module types live here and nowhere else. |
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
+| `config_registry/` | Bus-coupled infra (§4), the one §6 bypass of the bus (ADR-0004): declared `ConfigField`s, values under the daemon's state directory (`site/` wiped at teardown, `node/` kept), secrets as 0600 files only their owner can locate. Wired by `main.py`; no module imports it. |
 | `freshness/` | Neutral package (§4): the one staleness-window authority for renewed levels, `clamp(3 × period_s, min, max)`. Used by stream-relay and the dashboard. |
 | `tools/check_additivity.py` | Contract shape check (§3/§8.1): strict superset, nested shapes typed or declared in `schemas/blind_spots.txt`. Run `check` in CI, `snapshot` at release. |
 | `tools/check_boundaries.py` | Ontology check (§4/§8.1): every top-level package has a tier and keeps that tier's import rules. A new neutral or bus-coupled package is declared in its config sets. |
@@ -46,9 +47,12 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (idempotent, `--dry-run`; also the fallback TLS key pair and the Tailscale operator), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), `paths.sh` (host paths + daemon user), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080), and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
-neutral packages `freshness/` · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
+neutral packages `freshness/` · bus-coupled infra `config_registry/` · ops tier `ops/` · composition root `main.py`.
 
-## Topics (contract v0.2.0)
+## Topics (contract v0.3.0)
+
+Not on the wire: `ConfigField` (0.3.0) is a config declaration, shared by the module that
+declares a field and the surface that edits it (ADR-0004).
 
 | Topic | Payload | Producer → consumers |
 |-------|---------|----------------------|

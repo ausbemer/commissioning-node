@@ -8,8 +8,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] **ADR-0003 step 5: build the config registry** (`docs/adr/0004-config-registry.md`,
       Accepted 2026-10-13). Values in `/var/lib/commissioning-node` (`StateDirectory=`),
       `site/` vs `node/` scopes so teardown deletes `site/`, graduation cost accepted.
-      Order (ADR-0004): `ConfigField` contract 0.3.0 → `config_registry/` (bus-coupled
-      tier) with tests → ops (`StateDirectory=`, `paths.sh`, doctor; re-run install on the
+      Order (ADR-0004): ~~`ConfigField` contract 0.3.0 → `config_registry/` (bus-coupled
+      tier) with tests~~ (done 2026-10-13, `feature/config-registry`) → ops (`StateDirectory=`, `paths.sh`, doctor; re-run install on the
       node) → wiring (tailnet-gateway's hostname/tags/auth_key fields, dashboard Config
       section and `config.*` actions via `authorize()`) → security review.
 - [x] **Step 4 confirmed on the node** (2026-10-13): doctor clean, fallback login from a
@@ -83,6 +83,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       `SOURCE_V6_PREFIX = 64`, `MAX_PENDING_LOGINS = 64`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
       `MAX_BODY = 16 KiB`. Ledger: `tools/ledgers/admin-auth/` (scrypt N is already there).
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
+- [ ] `config_registry`: `MAX_VALUE_LEN = 256`, `MAX_LIST_ITEMS = 32`, `MAX_SECRET_LEN = 512`,
+      `MAX_FILE_BYTES = 64 KiB` (ADR-0004 §3; measure a real auth key's length on 1.102.5).
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture
       in `tests/test_tailscale_cli.py`. Verify the field mapping in `docs/quirks.md`.
 
