@@ -93,7 +93,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
             dashboard_port: int = DASHBOARD_PORT_DEFAULT, dashboard_host: str = DASHBOARD_HOST,
             fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
             actions: list | None = None, config_root: str | None = None,
-            tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None) -> Node:
+            tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None,
+            site_networks=None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
@@ -115,7 +116,9 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
     node.registries = [
         tailnet_gateway.build(sub, pub, overlay_source, config=gateway_config,
                               writer=overlay_writer, writer_enabled=tailnet_writer,
-                              clock=clock, spawn=writer_spawn),
+                              clock=clock, spawn=writer_spawn, networks=site_networks,
+                              # The join record is site state: teardown wipes it (ADR-0005 A2).
+                              state_dir=os.path.join(config_root, "site") if config_root else None),
         camera_config.build(sub, pub),
         stream_relay.build(sub, pub, clock),
         dash_registry,

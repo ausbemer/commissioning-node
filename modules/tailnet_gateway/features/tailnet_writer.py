@@ -6,13 +6,20 @@ declared cadence: freshness) and the saved config (ADR-0004), builds a `WritePla
 saved values, and hands it to the `WriterSlot`. Anything it refuses, and every finished
 outcome, goes out as a `TailnetApplyResult`.
 
-The command carries no values (ADR-0005 §1): hostname, tags and the key's path come from
-this module's own `ConfigView`. Nothing is ever retried on its own (D1).
+The command carries no values (ADR-0005 §1): hostname, tags, routes and the key's path come
+from this module's own `ConfigView`; routes are resolved by `resolve_routes`, the one
+authority for what "auto" means (A3).
+
+Automatic rejoin (A2) is the one thing it starts on its own, and only to rejoin a tailnet the
+operator already joined: the writer's join record exists, `auto_rejoin` is on, a key is
+saved, and the fresh reading says the overlay needs a login. Attempts back off from
+REJOIN_BACKOFF_MIN_S, doubling, to REJOIN_BACKOFF_MAX_S. Operator requests are never retried.
 """
 from __future__ import annotations
 
 import logging
 import time
+import uuid
 from typing import Callable
 
 from pydantic import ValidationError
@@ -21,11 +28,19 @@ from freshness import is_fresh
 from interfaces import (TAILNET_APPLY, TAILNET_APPLY_RESULT, TailnetApply, TailnetApplyResult,
                         __version__ as CONTRACT_VERSION)
 
-from ..interface import (JOIN, LEAVE, MODULE, OPERATIONS, OVERLAY_SNAPSHOT, RENAME,
+from ..interface import (JOIN, LEAVE, MODULE, OPERATIONS, OVERLAY_SNAPSHOT, RENAME, ROUTES,
                          WRITE_OUTCOME, ConfigView, OverlaySnapshot, WriteOutcome, WritePlan,
-                         WriterSlot)
+                         WriterSlot, resolve_routes)
 
 log = logging.getLogger(MODULE)
+
+#: Auto-rejoin backoff, seconds. PROVISIONAL (ADR-0005 A2; TODO.md Evidence).
+REJOIN_BACKOFF_MIN_S = 60.0
+REJOIN_BACKOFF_MAX_S = 1800.0
+#: The overlay state that means "this node needs to log in again" (tailscaled BackendState).
+NEEDS_LOGIN = "NeedsLogin"
+#: Who an automatic rejoin is recorded against, and through which door.
+AUTO_REJOIN_BY, AUTO_REJOIN_DOOR = "auto-rejoin", "node"
 
 
 class TailnetWriter:
@@ -39,14 +54,23 @@ class TailnetWriter:
         self._clock = clock
         self._snapshot: OverlaySnapshot | None = None
         self._snapshot_at: float | None = None
+        self._next_rejoin = 0.0
+        self._backoff = REJOIN_BACKOFF_MIN_S
 
     def handle(self, topic: str, payload: dict) -> list[tuple[str, dict]]:
         if topic == OVERLAY_SNAPSHOT:
             self._snapshot = OverlaySnapshot.model_validate(payload)
             self._snapshot_at = self._clock()
+            self._maybe_rejoin(self._snapshot)
             return []
         if topic == WRITE_OUTCOME:
-            return [self._finished(WriteOutcome.model_validate(payload))]
+            outcome = WriteOutcome.model_validate(payload)
+            if outcome.plan.operation == JOIN and outcome.ok:
+                # Joined: reset the backoff, and give tailscaled one backoff period to report
+                # Running before a "needs login" reading could start a rejoin.
+                self._next_rejoin = self._clock() + REJOIN_BACKOFF_MIN_S
+                self._backoff = REJOIN_BACKOFF_MIN_S
+            return [self._finished(outcome)]
         try:
             command = TailnetApply.model_validate(payload)
         except ValidationError as exc:
@@ -90,9 +114,15 @@ class TailnetWriter:
                               "(tags change only on a join)")
             key_path = self._config.secret_path("auth_key")
             if key_path is None:
-                return None, "no auth key is saved; paste an ephemeral key on this page first"
-            return WritePlan(**base, hostname=hostname, tags=list(self._config.get("tags") or []),
-                             key_path=key_path, clear_key_on_success=True), ""
+                return None, "no auth key is saved; paste a reusable ephemeral key on this page first"
+            return self._join_plan(base, snap, key_path), ""
+        if cmd.operation == ROUTES:
+            if not snap.connected:
+                return None, "the node is not on a tailnet; saved routes are applied by Join"
+            wanted = self._wanted_routes(snap)
+            if snap.join_record is not None and snap.join_record.routes == wanted:
+                return None, f"already advertising {', '.join(wanted) or 'no routes'}"
+            return WritePlan(**base, routes=wanted), ""
         # RENAME
         if not snap.connected:
             return None, "the node is not on a tailnet; a saved hostname is applied by Join"
@@ -101,6 +131,36 @@ class TailnetWriter:
         if hostname == snap.hostname:
             return None, f"the node is already named {hostname}"
         return WritePlan(**base, hostname=hostname), ""
+
+    def _wanted_routes(self, snap: OverlaySnapshot) -> list[str]:
+        return resolve_routes(self._config.get("advertise_routes"), snap.site_networks)
+
+    def _join_plan(self, base: dict, snap: OverlaySnapshot, key_path: str) -> WritePlan:
+        # The key is kept after a join (ADR-0005 A1): clear_key_on_success stays False.
+        return WritePlan(**base, hostname=self._config.get("hostname"),
+                         tags=list(self._config.get("tags") or []),
+                         routes=self._wanted_routes(snap), key_path=key_path)
+
+    def _maybe_rejoin(self, snap: OverlaySnapshot) -> None:
+        """A2: rejoin a tailnet the operator joined, when the overlay needs a login again."""
+        if snap.join_record is None or self._config is None or snap.state != NEEDS_LOGIN:
+            return
+        if not self._config.get("auto_rejoin"):
+            return
+        now = self._clock()
+        if now < self._next_rejoin:
+            return
+        key_path = self._config.secret_path("auth_key")
+        if key_path is None:
+            return
+        base = dict(request_id=uuid.uuid4().hex[:12], operation=JOIN,
+                    requested_by=AUTO_REJOIN_BY, door=AUTO_REJOIN_DOOR)
+        if self._slot.submit(self._join_plan(base, snap, key_path)) is not None:
+            return                                   # an operator request is running
+        self._next_rejoin = now + self._backoff
+        log.warning("tailnet: the node needs a login again; rejoining with the saved key "
+                    "(request %s; next attempt no sooner than %.0fs)", base["request_id"], self._backoff)
+        self._backoff = min(self._backoff * 2, REJOIN_BACKOFF_MAX_S)
 
     # -- reporting -----------------------------------------------------------------------
 

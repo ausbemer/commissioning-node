@@ -6,6 +6,8 @@
 
 CN_ETC=/etc/commissioning-node
 FW_FILE="$CN_ETC/firewall.nft"
+# IPv4 forwarding for the subnet router (ADR-0005 A3).
+SYSCTL_FILE=/etc/sysctl.d/90-commissioning-node.conf
 # Admin credential for the LAN fallback: an scrypt hash, never the password (ADR-0003 §3).
 ADMIN_CRED="$CN_ETC/admin.cred"
 # The fallback's TLS key pair: born on the node, never regenerated once complete.

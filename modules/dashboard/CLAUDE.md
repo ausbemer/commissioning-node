@@ -16,11 +16,11 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Consumes — outward (from the bus):** `system/card` (`NodeCard`), `tailnet/status` (kept under one key, `self`), `tailnet/peers` (`TailnetPeers`), `tailnet/apply-result` (`TailnetApplyResult`, latest under `self`), `camera/announced`, `stream/announced`
 - **Consumes — inward (core → features):** `DashboardState` (shared live-state object, written by `state-collector`, read by `core/http_surface.py`); `PeerDirectory` (tailnet caller resolver, written by `peer-directory`, held by `core/http_surface.py` for the tailnet door, ADR-0003)
 - **Produces — outward (to the bus):** `tailnet/apply` (`TailnetApply`, command, via the injected `Invoker`) — conforms to the ecosystem
-  contract (`interfaces/` v0.4.0)
+  contract (`interfaces/` v0.5.0)
 - **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`, `login-page` on the fallback, `config-page` at `/config`); `Action`s (`config-editor`: set + clear per config field; `tailnet-apply`: join, rename, leave)
 - **Consumes — inward (core):** `ConfigSurface` (the config registry's operator surface, injected by `main.py`; ADR-0004); `AdminAuth` (fallback credential, sessions, login limits) and the pure door functions in `interface/doors.py`
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.5.0; inward
-  contract `__version__` 0.5.0. Both live in `interface/__init__.py`; see
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.6.0; inward
+  contract `__version__` 0.6.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 
@@ -33,8 +33,8 @@ topics/types are local to this module and defined by its own `interface/`.
 | `overview-page` | served | 0.3.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. Shows who is signed in and via which door; on the fallback, a log-out form. |
 | `login-page` | served (fallback only) | 0.3.0 | The admin fallback's login form. No JavaScript; the message is escaped. |
 | `config-editor` | served | 0.4.0 | A set and a clear `Action` per declared config field (`/actions/config/<module>/<name>[/clear]`). Records who and which door; the registry validates. A secret's text goes straight to the registry. |
-| `tailnet-apply` | served | 0.5.0 | Join, Rename, Leave `Action`s, each may-disturb with its warning (`TAILNET_OPERATIONS`). Sends `tailnet/apply` through `invoke()` with `requires=tailnet-gateway:tailnet-writer`; carries no values. |
-| `config-page` | served | 0.4.0 | `/config`: one form per field, no auto-refresh, no JavaScript, values escaped. Secrets are write-only password inputs that read as set/unset. Success returns here via `then` (only a served page is honoured). 0.5.0: the Tailnet panel (node vs saved, the operations that make sense now, the last result). |
+| `tailnet-apply` | served | 0.6.0 | Join, Rename, Routes, Leave `Action`s, each may-disturb with its warning (`TAILNET_OPERATIONS`). Sends `tailnet/apply` through `invoke()` with `requires=tailnet-gateway:tailnet-writer`; carries no values. |
+| `config-page` | served | 0.4.0 | `/config`: one form per field, no auto-refresh, no JavaScript, values escaped. Secrets are write-only password inputs that read as set/unset. Success returns here via `then` (only a served page is honoured). 0.5.0: the Tailnet panel (node vs saved, the operations that make sense now, the last result). 0.6.0: routes (to advertise, advertised, approved), auto-rejoin state, the kept-key note. |
 
 ## Rules for agents working here
 

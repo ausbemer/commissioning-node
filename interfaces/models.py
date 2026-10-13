@@ -115,6 +115,16 @@ class TailnetStatus(Envelope):
     served_routes: list[str] = []
     #: ACL tags this node carries, e.g. "tag:commissioning". Empty when untagged or unknown.
     tags: list[str] = []
+    #: The overlay's own state word, e.g. "Running", "NeedsLogin" (tailscaled's
+    #: BackendState). Open vocabulary; empty when unknown.
+    state: str = ""
+    #: IPv4 networks (CIDR) the node is on right now, detected locally (ADR-0005 A3).
+    site_networks: list[str] = []
+    #: Routes the saved config asks for now, with "auto" expanded to `site_networks`.
+    wanted_routes: list[str] = []
+    #: Routes this node last advertised through its writer (ADR-0005 A3). Advertised is not
+    #: served: the tailnet's admin approves a route; `served_routes` lists the approved ones.
+    advertised_routes: list[str] = []
 
 
 class TailnetPeer(Shape):

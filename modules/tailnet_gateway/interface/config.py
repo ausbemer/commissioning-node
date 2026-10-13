@@ -9,6 +9,7 @@ All three are site-scoped: each belongs to one site's tailnet and is wiped at te
 """
 from __future__ import annotations
 
+import ipaddress
 from typing import Protocol, runtime_checkable
 
 from interfaces import ConfigField
@@ -25,12 +26,53 @@ TAGS = ConfigField(
     max_items=16, max_len=64, pattern=r"tag:[a-z0-9-]+")
 AUTH_KEY = ConfigField(
     module=MODULE, name="auth_key", kind="str", secret=True, label="Tailscale auth key",
-    help="Pasted from the site tailnet's admin console. Use an ephemeral key (ADR-0005 D4), "
-         "ideally single-use and tagged. Deleted once the node has joined.",
+    help="Pasted from the site tailnet's admin console. Use a reusable, ephemeral, tagged "
+         "key: it is kept so the node can rejoin after a power cycle (ADR-0005 A1, A2).",
     pattern=r"tskey-[A-Za-z0-9-]+")
+AUTO = "auto"
+ADVERTISE_ROUTES = ConfigField(
+    module=MODULE, name="advertise_routes", kind="str_list", default=[AUTO],
+    label="Advertised routes",
+    help="IPv4 networks to offer the tailnet, e.g. 192.168.10.0/24. 'auto' means the networks "
+         "the node is on now. Leave empty to advertise none. The tailnet's admin approves them.",
+    max_items=8, max_len=18, pattern=r"auto|(\d{1,3}\.){3}\d{1,3}/\d{1,2}")
+AUTO_REJOIN = ConfigField(
+    module=MODULE, name="auto_rejoin", kind="bool", default=True, label="Rejoin automatically",
+    help="If the node drops off the tailnet it joined (power cycle, ephemeral removal), rejoin "
+         "with the saved key. Never joins a tailnet the operator has not joined first.")
 
 #: Every field this module declares (ADR-0004 §4).
-CONFIG_FIELDS = [HOSTNAME, TAGS, AUTH_KEY]
+CONFIG_FIELDS = [HOSTNAME, TAGS, AUTH_KEY, ADVERTISE_ROUTES, AUTO_REJOIN]
+
+#: Routes may never fall inside the tailnet's own address space.
+TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
+
+
+def route_problem(cidr: str) -> str | None:
+    """Why `cidr` can't be advertised, or None. The one rule for a route (ADR-0005 A3)."""
+    try:
+        net = ipaddress.ip_network(cidr, strict=True)
+    except ValueError:
+        return f"{cidr} is not a network address (e.g. 192.168.10.0/24)"
+    if net.version != 4:
+        return f"{cidr} is not IPv4"
+    if net.overlaps(TAILNET_V4):
+        return f"{cidr} overlaps the tailnet's own 100.64.0.0/10"
+    if net.prefixlen < 8 or net.prefixlen > 31:
+        return f"{cidr} must be between /8 and /31"
+    return None
+
+
+def resolve_routes(saved: list[str] | None, site_networks: list[str]) -> list[str]:
+    """The routes the saved value asks for: "auto" expands to the detected networks; invalid
+    entries are dropped; order kept, duplicates removed. The ONE resolution: status-report
+    publishes it and the writer applies it."""
+    out: list[str] = []
+    for item in [AUTO] if saved is None else saved:
+        for cidr in site_networks if item == AUTO else [item]:
+            if cidr not in out and route_problem(cidr) is None:
+                out.append(cidr)
+    return out
 
 
 @runtime_checkable

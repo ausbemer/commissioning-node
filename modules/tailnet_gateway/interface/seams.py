@@ -1,6 +1,7 @@
 """Vendor-neutral seams (spec §4): protocols here, one adapter per vendor in core/.
 
-Two seams: `OverlayStatusSource` reads (every tick), `OverlayWriter` writes (ADR-0005).
+Three seams: `OverlayStatusSource` and `SiteNetworkSource` read (every tick), `OverlayWriter`
+writes (ADR-0005).
 
 A second overlay (or a fake for tests) is one new adapter and zero feature changes.
 """
@@ -39,8 +40,19 @@ class OverlayWriter(Protocol):
     call re-checks its own inputs before acting (rung 13).
     """
 
-    def join(self, hostname: str | None, tags: list[str], key_path: str) -> WriterReply: ...
+    def join(self, hostname: str | None, tags: list[str], routes: list[str],
+             key_path: str) -> WriterReply: ...
 
     def rename(self, hostname: str) -> WriterReply: ...
 
+    def set_routes(self, routes: list[str]) -> WriterReply: ...
+
     def leave(self) -> WriterReply: ...
+
+
+@runtime_checkable
+class SiteNetworkSource(Protocol):
+    """The IPv4 networks (CIDR) this host is on now, outside loopback and the overlay
+    (ADR-0005 A3). Read-only. Must not raise: unreadable means an empty list."""
+
+    def read(self) -> list[str]: ...

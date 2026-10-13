@@ -22,9 +22,12 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] **ADR-0003 step 6: tailnet-gateway writer** (`docs/adr/0005-tailnet-gateway-writer.md`,
       Accepted 2026-10-13). Join / Rename / Leave through an explicit confirmed Apply; one
       worker, result on `tailnet/apply-result`; the key is deleted after a join; the node is
-      an **ephemeral** device on every site (D4). Steps 2–5 built (2026-10-13). **Next: the
-      rehearsal join** on a test tailnet with an ephemeral key (`CN_TAILNET_WRITER=1`); verify
-      the quirks in `docs/quirks.md`, measure the timeouts, then enable it by default. Then the combined code + security review of ADR-0004 and ADR-0005,
+      an **ephemeral** device on every site (D4). Steps 2–5 built; first rehearsal join
+      passed (2026-10-13). Amended the same day: the key is kept and the node auto-rejoins a
+      recorded join (A1, A2); routes default to the detected site networks (A3), with IPv4
+      forwarding fenced by the firewall. **Next:** re-run `sudo ops/install.sh` (forwarding +
+      forward chain), rehearse Routes (approve in the admin console), a power cycle, and an
+      ephemeral removal (auto-rejoin); then enable the writer by default. Then the combined code + security review of ADR-0004 and ADR-0005,
       and merge `feature/config-registry` to `dev`.
 
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
@@ -92,6 +95,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       `SOURCE_V6_PREFIX = 64`, `MAX_PENDING_LOGINS = 64`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
       `MAX_BODY = 16 KiB`. Ledger: `tools/ledgers/admin-auth/` (scrypt N is already there).
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
+- [ ] `tailnet_writer`: `REJOIN_BACKOFF_MIN_S = 60`, `REJOIN_BACKOFF_MAX_S = 1800` (ADR-0005 A2);
+      `site_networks.IP_TIMEOUT_S = 2.0`.
 - [ ] `tailscale_writer`: `UP_TIMEOUT_S = 60`, `SET_TIMEOUT_S = 15`, `LOGOUT_TIMEOUT_S = 15`,
       `KILL_MARGIN_S = 10`, `OUTPUT_CAP = 4096` (ADR-0005 §2; time the rehearsal join).
 - [ ] `config_registry`: `MAX_VALUE_LEN = 256`, `MAX_LIST_ITEMS = 32`, `MAX_SECRET_LEN = 512`,

@@ -24,7 +24,8 @@ import stat
 import subprocess
 from typing import Callable
 
-from ..interface import AUTH_KEY, HOSTNAME, MODULE, TAGS, WriterReply
+from ..interface import (ADVERTISE_ROUTES, AUTH_KEY, HOSTNAME, MODULE, TAGS, WriterReply,
+                         route_problem)
 
 log = logging.getLogger(MODULE)
 
@@ -61,13 +62,17 @@ class TailscaleCliWriter:
 
     # -- the seam ------------------------------------------------------------------------
 
-    def join(self, hostname: str | None, tags: list[str], key_path: str) -> WriterReply:
+    def join(self, hostname: str | None, tags: list[str], routes: list[str],
+             key_path: str) -> WriterReply:
         problem = (self._check_hostname(hostname) if hostname is not None else None) \
-            or self._check_tags(tags) or self._check_key(key_path)
+            or self._check_tags(tags) or self._check_routes(routes) or self._check_key(key_path)
         if problem:
             return WriterReply(ok=False, message=f"join refused: {problem}")
         argv = [self._binary, "up", f"--operator={self._operator()}",
-                f"--auth-key=file:{key_path}", f"--timeout={UP_TIMEOUT_S}s"]
+                f"--auth-key=file:{key_path}", f"--timeout={UP_TIMEOUT_S}s",
+                # Always passed, empty included: `up` refuses to drop a non-default setting
+                # it isn't told about (ADR-0005 A3).
+                f"--advertise-routes={','.join(routes)}"]
         if hostname is not None:
             argv.append(f"--hostname={hostname}")
         if tags:
@@ -81,6 +86,14 @@ class TailscaleCliWriter:
             return WriterReply(ok=False, message=f"rename refused: {problem}")
         argv = [self._binary, "set", f"--hostname={hostname}"]
         return self._call("rename", argv, SET_TIMEOUT_S, f"renamed to {hostname}")
+
+    def set_routes(self, routes: list[str]) -> WriterReply:
+        problem = self._check_routes(routes)
+        if problem:
+            return WriterReply(ok=False, message=f"routes refused: {problem}")
+        argv = [self._binary, "set", f"--advertise-routes={','.join(routes)}"]
+        shown = ", ".join(routes) or "none"
+        return self._call("routes", argv, SET_TIMEOUT_S, f"now advertising {shown}")
 
     def leave(self) -> WriterReply:
         return self._call("leave", [self._binary, "logout"], LOGOUT_TIMEOUT_S, "left the tailnet")
@@ -120,6 +133,16 @@ class TailscaleCliWriter:
         for tag in tags:
             if not isinstance(tag, str) or not re.fullmatch(TAGS.pattern, tag):
                 return "a tag is not of the form tag:name"
+        return None
+
+    @staticmethod
+    def _check_routes(routes: list[str]) -> str | None:
+        if len(routes) > (ADVERTISE_ROUTES.max_items or 0):
+            return "too many routes"
+        for cidr in routes:
+            problem = route_problem(cidr) if isinstance(cidr, str) else "a route is not text"
+            if problem:
+                return problem
         return None
 
     @staticmethod

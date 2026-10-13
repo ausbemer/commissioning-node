@@ -20,7 +20,7 @@ import main
 from bus import Bus
 from modules.tailnet_gateway.core import tailscale_writer as tw
 from modules.tailnet_gateway.core.tailscale_writer import TailscaleCliWriter, scrub
-from modules.tailnet_gateway.interface import OverlaySnapshot, WriterReply
+from modules.tailnet_gateway.interface import VERSION as GW_VERSION, OverlaySnapshot, WriterReply
 
 KEY = "tskey-auth-kAbC123-DEFghi456"
 
@@ -53,28 +53,49 @@ def adapter(run: Runner) -> TailscaleCliWriter:
 
 def test_join_argv_golden(keyfile) -> None:
     run = Runner()
-    reply = adapter(run).join("site-a-gw", ["tag:commissioning", "tag:site-a"], keyfile)
+    reply = adapter(run).join("site-a-gw", ["tag:commissioning", "tag:site-a"],
+                              ["192.168.137.0/24", "10.20.0.0/16"], keyfile)
     argv, kw = run.calls[0]
     assert argv == ["tailscale", "up", "--operator=admin", f"--auth-key=file:{keyfile}",
-                    f"--timeout={tw.UP_TIMEOUT_S}s", "--hostname=site-a-gw",
+                    f"--timeout={tw.UP_TIMEOUT_S}s",
+                    "--advertise-routes=192.168.137.0/24,10.20.0.0/16", "--hostname=site-a-gw",
                     "--advertise-tags=tag:commissioning,tag:site-a"]
     assert kw["timeout"] == tw.UP_TIMEOUT_S + tw.KILL_MARGIN_S and "shell" not in kw
     assert reply.ok and reply.message == "joined the tailnet as site-a-gw"
     assert KEY not in " ".join(argv)
 
 
-def test_join_without_hostname_or_tags_leaves_them_out(keyfile) -> None:
+def test_join_without_hostname_or_tags_leaves_them_out_but_always_states_routes(keyfile) -> None:
     run = Runner()
-    adapter(run).join(None, [], keyfile)
+    adapter(run).join(None, [], [], keyfile)
     assert run.calls[0][0] == ["tailscale", "up", "--operator=admin", f"--auth-key=file:{keyfile}",
-                               f"--timeout={tw.UP_TIMEOUT_S}s"]
+                               f"--timeout={tw.UP_TIMEOUT_S}s", "--advertise-routes="]
 
 
-def test_rename_and_leave_argv_golden() -> None:
+def test_rename_routes_and_leave_argv_golden() -> None:
     run = Runner()
     assert adapter(run).rename("gw-2").ok
+    assert adapter(run).set_routes(["192.168.137.0/24"]).message == "now advertising 192.168.137.0/24"
+    assert adapter(run).set_routes([]).ok
     assert adapter(run).leave().ok
-    assert [c[0] for c in run.calls] == [["tailscale", "set", "--hostname=gw-2"], ["tailscale", "logout"]]
+    assert [c[0] for c in run.calls] == [["tailscale", "set", "--hostname=gw-2"],
+                                         ["tailscale", "set", "--advertise-routes=192.168.137.0/24"],
+                                         ["tailscale", "set", "--advertise-routes="],
+                                         ["tailscale", "logout"]]
+
+
+@pytest.mark.parametrize("routes, why", [
+    (["192.168.137.5/24"], "not a network address"),
+    (["100.100.0.0/16"], "overlaps the tailnet"),
+    (["fd00::/64"], "not IPv4"),
+    (["4.0.0.0/7"], "between /8 and /31"),
+    ([f"10.{i}.0.0/16" for i in range(9)], "too many routes"),
+])
+def test_routes_are_rechecked_and_never_run(keyfile, routes, why) -> None:
+    run = Runner()
+    assert why in adapter(run).set_routes(routes).message
+    assert why in adapter(run).join("gw", [], routes, keyfile).message
+    assert run.calls == []
 
 
 @pytest.mark.parametrize("hostname, tags, spoil, why", [
@@ -95,20 +116,20 @@ def test_join_rechecks_its_inputs_and_never_runs(tmp_path, keyfile, hostname, ta
         os.rename(keyfile, tmp_path / "real")
         os.symlink(tmp_path / "real", keyfile)
     run = Runner()
-    reply = adapter(run).join(hostname, tags, keyfile)
+    reply = adapter(run).join(hostname, tags, [], keyfile)
     assert not reply.ok and why in reply.message and run.calls == []
 
 
 def test_failure_output_is_scrubbed_and_capped(keyfile) -> None:
     run = Runner(returncode=1, stderr=f"backend error: invalid key: {KEY}\n" + "x" * 10_000)
-    reply = adapter(run).join("gw", [], keyfile)
+    reply = adapter(run).join("gw", [], [], keyfile)
     assert not reply.ok and "exit 1" in reply.message
     assert KEY not in reply.message and len(reply.message) < tw.OUTPUT_CAP + 100
     assert scrub(f"a {KEY} b") == "a tskey-… b"
 
 
 def test_timeout_and_missing_cli_are_in_band(keyfile) -> None:
-    reply = adapter(Runner(raises=subprocess.TimeoutExpired("tailscale", 70))).join("gw", [], keyfile)
+    reply = adapter(Runner(raises=subprocess.TimeoutExpired("tailscale", 70))).join("gw", [], [], keyfile)
     assert not reply.ok and "timed out" in reply.message and "unknown" in reply.message
     gone = TailscaleCliWriter(run=Runner(), which=lambda b: None, operator=lambda: "admin")
     assert "not installed" in gone.leave().message
@@ -118,32 +139,55 @@ def test_timeout_and_missing_cli_are_in_band(keyfile) -> None:
 
 class FakeOverlay:
     def __init__(self, connected: bool = False, hostname: str = "Commissioning-node-pi5",
-                 tags: list[str] | None = None) -> None:
-        self.snapshot = OverlaySnapshot(hostname=hostname, connected=connected, tags=tags or [])
+                 tags: list[str] | None = None, state: str | None = None) -> None:
+        self.snapshot = OverlaySnapshot(hostname=hostname, connected=connected, tags=tags or [],
+                                        state=state or ("Running" if connected else "NeedsLogin"))
 
     def read(self) -> OverlaySnapshot:
         return self.snapshot
 
 
 class FakeWriter:
-    def __init__(self, ok: bool = True, raises: bool = False) -> None:
+    """Acts like tailscale on a FakeOverlay: a successful join makes it Running, a successful
+    leave makes it NeedsLogin, a rename renames it."""
+
+    def __init__(self, ok: bool = True, raises: bool = False, overlay: "FakeOverlay | None" = None) -> None:
         self.calls: list[tuple] = []
-        self.ok, self.raises = ok, raises
+        self.ok, self.raises, self.overlay = ok, raises, overlay
 
     def _reply(self, call: tuple) -> WriterReply:
         self.calls.append(call)
         if self.raises:
             raise RuntimeError("boom")
+        if self.ok and self.overlay is not None:
+            snap = self.overlay.snapshot
+            if call[0] == "join":
+                self.overlay.snapshot = snap.model_copy(update={"connected": True, "state": "Running"})
+            elif call[0] == "leave":
+                self.overlay.snapshot = snap.model_copy(update={"connected": False, "state": "NeedsLogin"})
+            elif call[0] == "rename":
+                self.overlay.snapshot = snap.model_copy(update={"hostname": call[1]})
         return WriterReply(ok=self.ok, message=f"{call[0]} {'ok' if self.ok else 'failed: denied'}")
 
-    def join(self, hostname, tags, key_path):
-        return self._reply(("join", hostname, tuple(tags), key_path))
+    def join(self, hostname, tags, routes, key_path):
+        return self._reply(("join", hostname, tuple(tags), tuple(routes), key_path))
 
     def rename(self, hostname):
         return self._reply(("rename", hostname))
 
+    def set_routes(self, routes):
+        return self._reply(("routes", tuple(routes)))
+
     def leave(self):
         return self._reply(("leave",))
+
+
+class FakeNetworks:
+    def __init__(self, networks: list[str] | None = None) -> None:
+        self.networks = ["192.168.137.0/24"] if networks is None else networks
+
+    def read(self) -> list[str]:
+        return list(self.networks)
 
 
 class Deferred:
@@ -164,11 +208,16 @@ class Clock:
         return self.now
 
 
-def node_with(tmp_path, overlay=None, writer=None, enabled=True, spawn=None, clock=None):
-    node = main.compose(Bus(), overlay_source=overlay or FakeOverlay(), dashboard_port=0,
+def node_with(tmp_path, overlay=None, writer=None, enabled=True, spawn=None, clock=None,
+              networks=None):
+    overlay = overlay or FakeOverlay()
+    if writer is not None and writer.overlay is None:
+        writer.overlay = overlay
+    node = main.compose(Bus(), overlay_source=overlay, dashboard_port=0,
                         config_root=str(tmp_path), tailnet_writer=enabled,
                         overlay_writer=writer or FakeWriter(), clock=clock or Clock(),
-                        writer_spawn=spawn or (lambda work: work()))
+                        writer_spawn=spawn or (lambda work: work()),
+                        site_networks=networks or FakeNetworks())
     results: list[dict] = []
     node.bus.subscribe(interfaces.TAILNET_APPLY_RESULT, lambda t, p: results.append(p))
     return node, results
@@ -193,25 +242,28 @@ def test_disabled_by_default_and_refused_in_band(tmp_path) -> None:
     main.tick(node)
     ok, msg = apply(node, "leave")
     assert not ok and msg == ("tailnet-gateway:tailnet-writer not available — service "
-                              "tailnet-gateway at v0.4.0 has it installed but disabled.")
+                              f"tailnet-gateway at v{GW_VERSION} has it installed but disabled.")
     assert writer.calls == [] and results == []
     assert "tailnet-gateway:tailnet-writer" not in node.capabilities()
     assert main.compose(Bus(), dashboard_port=0).capabilities() == node.capabilities()
 
 
-def test_join_applies_the_saved_values_then_deletes_the_key(tmp_path) -> None:
+def test_join_applies_the_saved_values_keeps_the_key_and_records_the_join(tmp_path) -> None:
     writer = FakeWriter()
     node, results = node_with(tmp_path, writer=writer)
-    save(node, hostname="site-a-gw", tags="tag:commissioning", auth_key=KEY)
+    save(node, hostname="site-a-gw", tags="tag:commissioning", auth_key=KEY,
+         advertise_routes="auto 10.20.0.0/16")
     key_path = node.config.owner_view("tailnet-gateway").secret_path("auth_key")
     main.tick(node)
     assert apply(node, "join")[0] and results == []           # accepted: no result yet
     main.tick(node)                                           # drained on the next tick
-    assert writer.calls == [("join", "site-a-gw", ("tag:commissioning",), key_path)]
+    routes = ("192.168.137.0/24", "10.20.0.0/16")
+    assert writer.calls == [("join", "site-a-gw", ("tag:commissioning",), routes, key_path)]
     result = interfaces.TailnetApplyResult.model_validate(results[-1])
     assert result.ok and result.request_id == "r-join" and result.requested_by == "alice@example.com"
-    assert "auth key was deleted" in result.message
-    assert node.config.owner_view("tailnet-gateway").secret_path("auth_key") is None
+    assert node.config.owner_view("tailnet-gateway").secret_path("auth_key") == key_path   # A1
+    record = json.loads((tmp_path / "site" / "tailnet-gateway.join.json").read_text())
+    assert record["routes"] == list(routes)
 
 
 def test_a_failed_join_keeps_the_key_and_is_not_retried(tmp_path) -> None:
@@ -228,6 +280,7 @@ def test_a_failed_join_keeps_the_key_and_is_not_retried(tmp_path) -> None:
 
 @pytest.mark.parametrize("operation, overlay, values, tick, why", [
     ("join", FakeOverlay(), {}, True, "no auth key is saved"),
+    ("routes", FakeOverlay(), {}, True, "not on a tailnet"),
     ("join", FakeOverlay(connected=True), {"auth_key": KEY}, True, "already on a tailnet"),
     ("join", FakeOverlay(), {"auth_key": KEY}, False, "not known yet"),
     ("rename", FakeOverlay(), {"hostname": "gw"}, True, "not on a tailnet"),
@@ -333,10 +386,12 @@ def call(conn, method, path, form=None, headers=None):
 
 @pytest.fixture
 def served(tmp_path):
-    writer = FakeWriter()
-    node = main.compose(Bus(), overlay_source=FakeOverlay(), dashboard_port=0,
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node = main.compose(Bus(), overlay_source=overlay, dashboard_port=0,
                         dashboard_host="127.0.0.1", config_root=str(tmp_path), tailnet_writer=True,
-                        overlay_writer=writer, writer_spawn=lambda work: work())
+                        overlay_writer=writer, writer_spawn=lambda work: work(),
+                        site_networks=FakeNetworks())
     _, port = node.dashboard.start()
     main.tick(node)
     yield node, writer, http.client.HTTPConnection("127.0.0.1", port, timeout=5), \
@@ -348,7 +403,7 @@ def test_panel_offers_join_only_with_a_key(served) -> None:
     node, _, conn, origin = served
     page = call(conn, "GET", "/config")[2]
     assert "On a tailnet: <strong>no</strong>" in page and 'action="/actions/tailnet/join"' not in page
-    assert "save an ephemeral auth key" in page and "not enabled yet" not in page
+    assert "save a reusable ephemeral auth key" in page and "not enabled yet" not in page
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     page = call(conn, "GET", "/config")[2]
     assert 'action="/actions/tailnet/join"' in page and 'name="confirm"' in page
@@ -368,6 +423,7 @@ def test_join_from_the_page_needs_confirmation_and_reports_back(served, caplog) 
         page = call(conn, "GET", "/config")[2]
     assert writer.calls and writer.calls[0][0] == "join"
     assert "Last: join done" in page and "requested by local via the local door" in page
+    assert "192.168.137.0/24" in page
     assert KEY not in caplog.text and KEY not in page
 
 
@@ -384,3 +440,178 @@ def test_disabled_writer_is_said_on_the_page_and_refused(tmp_path) -> None:
         assert status == 400 and "not available" in body
     finally:
         node.dashboard.stop()
+
+
+# -- ADR-0005 amendment: routes, the join record, automatic rejoin -------------------------
+
+def test_site_networks_adapter_skips_loopback_tailnet_link_local_and_hosts() -> None:
+    from modules.tailnet_gateway.core.site_networks import IpSiteNetworks
+    links = [
+        {"ifname": "lo", "addr_info": [{"local": "127.0.0.1", "prefixlen": 8}]},
+        {"ifname": "eth0", "addr_info": [{"local": "192.168.137.218", "prefixlen": 24}]},
+        {"ifname": "eth1", "addr_info": [{"local": "10.20.3.4", "prefixlen": 16},
+                                         {"local": "169.254.1.2", "prefixlen": 16},
+                                         {"local": "10.9.9.9", "prefixlen": 32}]},
+        {"ifname": "wwan0", "addr_info": [{"local": "100.70.1.2", "prefixlen": 30}]},   # CGNAT
+        {"ifname": "tailscale0", "addr_info": [{"local": "100.95.50.113", "prefixlen": 32}]},
+    ]
+
+    def run(argv, **kw):
+        assert argv == ["ip", "-j", "-4", "addr", "show", "up"]
+        return subprocess.CompletedProcess(argv, 0, json.dumps(links), "")
+
+    assert IpSiteNetworks(run=run, which=lambda b: "/usr/sbin/ip").read() == ["192.168.137.0/24", "10.20.0.0/16"]
+    broken = IpSiteNetworks(run=Runner(raises=OSError(2, "gone")), which=lambda b: "/usr/sbin/ip")
+    assert broken.read() == []
+
+
+def test_resolve_routes_is_the_one_authority() -> None:
+    from modules.tailnet_gateway.interface import resolve_routes
+    detected = ["192.168.137.0/24"]
+    assert resolve_routes(None, detected) == detected                    # unset = auto
+    assert resolve_routes(["auto"], []) == []                             # nothing detected
+    assert resolve_routes([], detected) == []                             # advertise none
+    assert resolve_routes(["10.0.0.0/8", "auto", "10.0.0.0/8", "10.0.0.1/8"], detected) == \
+        ["10.0.0.0/8", "192.168.137.0/24"]                                # dedupe, drop invalid
+
+
+def test_status_carries_state_networks_wanted_and_advertised(tmp_path) -> None:
+    node, _ = node_with(tmp_path, writer=FakeWriter())
+    seen: list[dict] = []
+    node.bus.subscribe(interfaces.TAILNET_STATUS, lambda t, p: seen.append(p))
+    save(node, auth_key=KEY, advertise_routes="auto 10.20.0.0/16")
+    main.tick(node)
+    status = interfaces.TailnetStatus.model_validate(seen[-1])
+    assert status.state == "NeedsLogin" and status.site_networks == ["192.168.137.0/24"]
+    assert status.wanted_routes == ["192.168.137.0/24", "10.20.0.0/16"] and status.advertised_routes == []
+    apply(node, "join")
+    main.tick(node)
+    status = interfaces.TailnetStatus.model_validate(seen[-1])
+    assert status.state == "Running" and status.advertised_routes == status.wanted_routes
+
+
+def test_routes_updates_a_joined_node_and_its_record(tmp_path) -> None:
+    writer = FakeWriter()
+    networks = FakeNetworks()
+    node, results = node_with(tmp_path, writer=writer, networks=networks)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    apply(node, "routes")
+    assert "already advertising 192.168.137.0/24" in results[-1]["message"]
+    networks.networks = ["192.168.50.0/24"]                   # the node moved networks
+    main.tick(node)
+    apply(node, "routes")
+    main.tick(node)
+    assert writer.calls[-1] == ("routes", ("192.168.50.0/24",)) and results[-1]["ok"]
+    record = json.loads((tmp_path / "site" / "tailnet-gateway.join.json").read_text())
+    assert record["routes"] == ["192.168.50.0/24"]
+
+
+def test_leave_deletes_the_record_and_keeps_the_key(tmp_path) -> None:
+    node, results = node_with(tmp_path, writer=FakeWriter())
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    apply(node, "leave")
+    main.tick(node)
+    assert results[-1]["ok"] and not (tmp_path / "site" / "tailnet-gateway.join.json").exists()
+    assert node.config.owner_view("tailnet-gateway").secret_path("auth_key") is not None
+
+
+def joined_then_dropped(tmp_path, clock, **values):
+    """The operator joined; then the tailnet dropped the node (power cycle, ephemeral removal)."""
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, results = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock)
+    save(node, auth_key=KEY, **values)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    writer.calls.clear()
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+    return node, results, writer, overlay
+
+
+def test_auto_rejoin_after_the_node_drops_off(tmp_path) -> None:
+    clock = Clock()
+    node, results, writer, _ = joined_then_dropped(tmp_path, clock, hostname="gw")
+    main.tick(node)
+    assert writer.calls == []                                  # held off just after a join
+    clock.now += 61
+    main.tick(node)
+    assert writer.calls and writer.calls[0][:2] == ("join", "gw")
+    main.tick(node)                                            # drain
+    assert results[-1]["ok"] and results[-1]["requested_by"] == "auto-rejoin"
+    assert results[-1]["door"] == "node"
+
+
+def test_auto_rejoin_backs_off_and_never_hammers(tmp_path) -> None:
+    clock = Clock()
+    node, results, writer, _ = joined_then_dropped(tmp_path, clock)
+    writer.ok = False                                          # e.g. the key expired
+    clock.now += 61
+    attempts = []
+    for _ in range(40 * 60 // 5):                              # 40 minutes of 5 s ticks
+        clock.now += 5
+        before = len(writer.calls)
+        main.tick(node)
+        if len(writer.calls) > before:
+            attempts.append(clock.now)
+    gaps = [b - a for a, b in zip(attempts, attempts[1:])]
+    assert len(attempts) <= 6 and all(g >= 60 for g in gaps) and gaps == sorted(gaps)
+    assert not results[-1]["ok"] and results[-1]["requested_by"] == "auto-rejoin"
+
+
+@pytest.mark.parametrize("why", ["no record", "switched off", "no key", "not needs-login", "disabled"])
+def test_auto_rejoin_never_acts_without_every_condition(tmp_path, why) -> None:
+    clock = Clock()
+    if why == "no record":                                     # never joined by the operator
+        writer = FakeWriter()
+        node, _ = node_with(tmp_path, writer=writer, clock=clock)
+        save(node, auth_key=KEY)
+    else:
+        node, _, writer, overlay = joined_then_dropped(tmp_path, clock)
+        if why == "switched off":
+            save(node, auto_rejoin="false")
+        elif why == "no key":
+            node.config.operator_surface().clear("tailnet-gateway.auth_key", "test")
+        elif why == "not needs-login":
+            overlay.snapshot = overlay.snapshot.model_copy(update={"state": "Stopped"})
+        elif why == "disabled":
+            node.registries[0]._enabled.discard("tailnet-writer")
+    for _ in range(30):
+        clock.now += 61
+        main.tick(node)
+    assert writer.calls == []
+
+
+def test_teardown_wipes_the_join_record(tmp_path) -> None:
+    import shutil
+    clock = Clock()
+    node, _, _, _ = joined_then_dropped(tmp_path, clock)
+    assert (tmp_path / "site" / "tailnet-gateway.join.json").exists()
+    shutil.rmtree(tmp_path / "site")
+    writer = FakeWriter()
+    node, _ = node_with(tmp_path, writer=writer, clock=clock)
+    for _ in range(5):
+        clock.now += 61
+        main.tick(node)
+    assert writer.calls == []                                  # no record, no key: never joins
+
+
+def test_panel_offers_routes_and_flags_unapproved(served) -> None:
+    node, writer, conn, origin = served
+    call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
+    call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
+    main.tick(node)
+    page = call(conn, "GET", "/config")[2]
+    assert "Routes advertised: <strong>192.168.137.0/24</strong>" in page
+    assert "Not yet approved by the tailnet: 192.168.137.0/24" in page
+    assert 'action="/actions/tailnet/routes"' not in page      # nothing to change
+    call(conn, "POST", "/actions/config/tailnet-gateway/advertise_routes", {"value": "10.20.0.0/16"}, origin)
+    main.tick(node)
+    page = call(conn, "GET", "/config")[2]
+    assert 'action="/actions/tailnet/routes"' in page and "Advertise 10.20.0.0/16" in page

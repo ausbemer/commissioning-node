@@ -81,10 +81,13 @@ TAILNET_WRITER = "tailnet-gateway:tailnet-writer"
 #: are what the confirm checkbox says and what the action manifest will publish (§5).
 TAILNET_OPERATIONS = {
     "join": ("/actions/tailnet/join",
-             "Joins the site tailnet with the saved auth key, which is then deleted. Use an "
-             "ephemeral key: the node is removed from the tailnet when it goes offline."),
+             "Joins the site tailnet with the saved auth key and advertises the saved routes. "
+             "The key is kept for rejoining, so it must be reusable and ephemeral."),
     "rename": ("/actions/tailnet/rename",
                "Changes this node's tailnet name; links using the old name stop working."),
+    "routes": ("/actions/tailnet/routes",
+               "Changes the site networks this node offers the tailnet; tailnet users lose "
+               "access to any network it stops advertising."),
     "leave": ("/actions/tailnet/leave",
               "Disconnects this node from the tailnet. Tailnet sessions to it end; recovery is "
               "the LAN fallback on :8443."),

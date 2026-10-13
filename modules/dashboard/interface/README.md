@@ -1,10 +1,10 @@
-# dashboard Inward Interface — v0.5.0
+# dashboard Inward Interface — v0.6.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
 
 **Two versions, two meanings (spec §4 dual versioning).** `__version__` (here,
-`0.5.0`) is the *inward contract* version: it bumps only when this `interface/`
+`0.6.0`) is the *inward contract* version: it bumps only when this `interface/`
 package changes. `VERSION` is the module's *release* version: it bumps with features and
 implementation. A module shipping features behind an unchanged interface bumps `VERSION`
 only.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"dashboard"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.5.0`).
-- `__version__` — the inward interface semver (`0.5.0`).
+- `VERSION` — the module release version (`0.6.0`).
+- `__version__` — the inward interface semver (`0.6.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -64,6 +64,7 @@ interface objects").
 
 ## Changelog
 
+- v0.6.0 — `TAILNET_OPERATIONS` gains `routes`; the Join warning now says the key is kept (additive).
 - v0.5.0 — `Invoker`, `TAILNET_WRITER`, `TAILNET_OPERATIONS`; state kind `tailnet_apply` (additive). The `tailnet` kind is keyed `self`, not by hostname (a rename no longer leaves a stale row).
 - v0.4.0 — `ConfigSurface` and its helpers (`config.py`); HTML views may receive `config` (additive).
 - v0.3.0 — `Action`, `ActionResult`, `doors` (`classify`, `host_allowed`, `same_origin`,

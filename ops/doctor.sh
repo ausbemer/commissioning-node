@@ -78,9 +78,20 @@ if ((EUID == 0)); then
   check "dashboard 8080 dropped on the site LAN (live rule)" \
     "no live 8080 drop rule — the dashboard's tailnet door is open to the site LAN" \
     grep -q 'tcp dport 8080 drop' <<< "$table"
+  if [[ "$(sysctl -n net.ipv4.ip_forward 2>/dev/null)" == 1 ]]; then
+    check "forwarding fenced: only the tailnet opens forwarded connections (live rule)" \
+      "IPv4 forwarding is ON but the forward chain is missing — the site LAN can route through the node" \
+      grep -q 'only the tailnet opens' <<< "$table"
+  fi
 else
   skip "nftables table check needs root (sudo ops/doctor.sh)"
 fi
+fwd="$(sysctl -n net.ipv4.ip_forward 2>/dev/null)"
+check_warn "IPv4 forwarding on (subnet routes can be served, ADR-0005)" \
+  "IPv4 forwarding is off — advertised routes will not carry traffic; re-run sudo ops/install.sh" \
+  test "$fwd" == 1
+check "$SYSCTL_FILE matches the repo" "$SYSCTL_FILE differs from the repo — re-run the installer" \
+  cmp -s "$OPS_DIR/sysctl/90-commissioning-node.conf" "$SYSCTL_FILE"
 
 section "MediaMTX (pinned $MEDIAMTX_VERSION)"
 bin=/opt/mediamtx/current/mediamtx

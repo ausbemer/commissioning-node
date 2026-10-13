@@ -6,7 +6,8 @@
 #   2. Tailscale from its signed apt repo (key fingerprint pinned), exact version, held,
 #      with the daemon user as its operator (ADR-0003)
 #   3. the commissioning-node firewall table + unit (MediaMTX + dashboard ports: tailnet +
-#      loopback)
+#      loopback; forwarding only from the tailnet), then IPv4 forwarding for the subnet
+#      router (ADR-0005), never before the forward chain is loaded
 #   4. MediaMTX from the sha256-pinned release tarball, its system user, config and unit
 #   5. the admin fallback's TLS key pair, generated on the node once (ADR-0003)
 #   6. the commissioning-node daemon unit (runs main.py); systemd creates its state
@@ -174,6 +175,21 @@ fi
 sync_file "$OPS_DIR/firewall/commissioning-node.nft" "$FW_FILE" 0644
 sync_file "$OPS_DIR/systemd/commissioning-node-firewall.service" "$UNIT_DIR/commissioning-node-firewall.service" 0644
 ensure_service commissioning-node-firewall.service "$CHANGED"
+
+# Forwarding only after the fence is up: a node that routes without the forward chain would
+# let the site LAN reach the tailnet through it (ADR-0005 A3).
+forward_fenced() { nft list chain inet commissioning_node forward 2>/dev/null | grep -q 'only the tailnet opens'; }
+CHANGED=0
+sync_file "$OPS_DIR/sysctl/90-commissioning-node.conf" "$SYSCTL_FILE" 0644
+if [[ "$(sysctl -n net.ipv4.ip_forward 2>/dev/null)" == 1 ]] && ! ((CHANGED)); then
+  ok "IPv4 forwarding on"
+elif ((DRY_RUN)); then
+  echo "    would: check the forward chain is loaded, then sysctl -p $SYSCTL_FILE"
+elif forward_fenced; then
+  act "enable IPv4 forwarding (sysctl -p $SYSCTL_FILE)" sysctl -q -p "$SYSCTL_FILE"
+else
+  refuse "the firewall's forward chain is not loaded; not enabling forwarding (check commissioning-node-firewall)"
+fi
 
 # ---------------------------------------------------------------------------------------
 step "MediaMTX $MEDIAMTX_VERSION"

@@ -58,6 +58,7 @@ class TailscaleCliStatusSource:
             addresses=[str(a) for a in me.get("TailscaleIPs") or []],
             served_routes=[str(r) for r in me.get("PrimaryRoutes") or []],
             tags=[str(t) for t in me.get("Tags") or []],
+            state=str(data.get("BackendState") or ""),
             peers=self._peers(data),
         )
 

@@ -27,3 +27,22 @@ def test_config_state_directory_matches_paths_sh() -> None:
     """ADR-0004 D1: systemd creates /var/lib/<StateDirectory>, 0700; paths.sh names it."""
     assert shell_var("CN_STATE") == f"/var/lib/{unit_setting('StateDirectory')}"
     assert unit_setting("StateDirectoryMode") == "0700"
+
+
+def test_forwarding_is_fenced_before_it_is_enabled() -> None:
+    """ADR-0005 A3: the forward chain lets only the tailnet open forwarded connections, and
+    the installer turns forwarding on only once that chain is loaded."""
+    nft = (OPS / "firewall" / "commissioning-node.nft").read_text()
+    chain = nft[nft.index("chain forward"):]
+    rules = [line.strip() for line in chain.splitlines()[1:] if line.strip() and not line.strip().startswith("#")]
+    assert rules[:4] == ["type filter hook forward priority filter - 10; policy accept;",
+                         "ct state established,related accept",
+                         'iifname "tailscale0" accept',
+                         'drop comment "forwarding: only the tailnet opens connections (ADR-0005)"']
+    sysctl = (OPS / "sysctl" / "90-commissioning-node.conf").read_text()
+    assert "net.ipv4.ip_forward = 1" in sysctl and "ipv6" not in sysctl.split("#")[-1]
+    install = (OPS / "install.sh").read_text()
+    assert install.index("ensure_service commissioning-node-firewall.service") \
+        < install.index('sysctl -q -p "$SYSCTL_FILE"')
+    assert "elif forward_fenced; then" in install
+    assert shell_var("SYSCTL_FILE") == "/etc/sysctl.d/90-commissioning-node.conf"

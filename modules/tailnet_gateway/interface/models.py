@@ -31,9 +31,28 @@ class OverlaySnapshot(Shape):
     served_routes: list[str] = []
     #: ACL tags this node carries. Empty when untagged, or when the overlay doesn't say.
     tags: list[str] = []
+    #: The overlay's state word (tailscaled's BackendState, e.g. "NeedsLogin"); "" unknown.
+    state: str = ""
+    #: Stamped by core: IPv4 networks the node is on now (`SiteNetworkSource`, ADR-0005 A3).
+    site_networks: list[str] = []
+    #: Stamped by core: the writer's record of the last join, None when there is none.
+    join_record: "JoinRecord | None" = None
     #: Every other node visible on the overlay. Empty when disconnected.
     peers: list[OverlayPeer] = []
     #: Stamped by core, not the adapter: when the reading was taken (Unix seconds) and the
     #: tick cadence it rides (§11 rung 11). None only in adapter-level tests.
     observed_at: float | None = None
     period_s: float | None = None
+
+
+class JoinRecord(Shape):
+    """The writer's record that the operator joined this node to the site tailnet (ADR-0005
+    A2). Written by core's worker after a successful join, updated by Routes, deleted by
+    Leave. Its presence is the intent auto-rejoin acts on. Site-scoped: teardown wipes it."""
+
+    joined_at: float
+    #: The routes the writer last advertised.
+    routes: list[str] = []
+
+
+OverlaySnapshot.model_rebuild()

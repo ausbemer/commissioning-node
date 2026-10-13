@@ -21,8 +21,8 @@ from interfaces import Shape
 #: published on the bus.
 WRITE_OUTCOME = "tailnet-gateway/write-outcome"
 
-JOIN, RENAME, LEAVE = "join", "rename", "leave"
-OPERATIONS = (JOIN, RENAME, LEAVE)
+JOIN, RENAME, ROUTES, LEAVE = "join", "rename", "routes", "leave"
+OPERATIONS = (JOIN, RENAME, ROUTES, LEAVE)
 
 
 class WritePlan(Shape):
@@ -35,8 +35,11 @@ class WritePlan(Shape):
     door: str
     hostname: str | None = None
     tags: list[str] = []
+    #: Routes to advertise (join, routes), already resolved and checked.
+    routes: list[str] = []
     key_path: str | None = None
-    #: After a successful join, delete the stored auth key (ADR-0005 D3).
+    #: After a successful join, delete the stored auth key. Always False since ADR-0005 A1
+    #: (the key is kept for rejoining); kept so the field never changes meaning (§8.6).
     clear_key_on_success: bool = False
 
 

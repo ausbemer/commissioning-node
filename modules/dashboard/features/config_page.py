@@ -97,34 +97,54 @@ def _tailnet_panel(snapshot: dict, rows: list[dict], csrf: str | None) -> str:
     want_name = (saved.get("hostname") or {}).get("value")
     want_tags = list((saved.get("tags") or {}).get("value") or [])
     key_saved = bool((saved.get("auth_key") or {}).get("is_set"))
+    auto_rejoin = (saved.get("auto_rejoin") or {}).get("value")
+    # Routes come resolved from tailnet-gateway (the one authority for what "auto" means).
+    wanted = list(status.get("wanted_routes") or [])
+    advertised = list(status.get("advertised_routes") or [])
+    approved = list(status.get("served_routes") or [])
+    detected = list(status.get("site_networks") or [])
     capabilities = {c for n in (snapshot.get("nodes") or {}).values()
                     for m in n.get("modules", []) for c in m.get("capabilities", [])}
 
-    facts = [f"On a tailnet: <strong>{'yes' if joined else 'no'}</strong>"]
+    def shown(items: list[str]) -> str:
+        return escape(", ".join(items) or "none")
+
+    state = status.get("state") or ("Running" if joined else "unknown")
+    facts = [f"On a tailnet: <strong>{'yes' if joined else 'no'}</strong> ({escape(state)})"]
     if joined:
         facts.append(f"Name: <strong>{escape(status.get('hostname', ''))}</strong>; tags: "
                      f"<strong>{escape(' '.join(node_tags) or 'none')}</strong>")
+        facts.append(f"Routes advertised: <strong>{shown(advertised)}</strong>; approved by the "
+                     f"tailnet: <strong>{shown(approved)}</strong>")
     facts.append(f"Saved: name <strong>{escape(want_name or 'not set')}</strong>; tags "
                  f"<strong>{escape(' '.join(want_tags) or 'none')}</strong>; auth key "
                  f"<strong>{'saved' if key_saved else 'not saved'}</strong>")
+    facts.append(f"Routes to advertise: <strong>{shown(wanted)}</strong> (networks detected now: "
+                 f"{shown(detected)}); rejoin automatically: <strong>{'on' if auto_rejoin else 'off'}</strong>")
     notes, buttons = [], []
     if TAILNET_WRITER not in capabilities:
         notes.append("The tailnet writer is installed but not enabled yet (ADR-0005: it is enabled "
                      "after a rehearsal join). Join manually for now; these buttons will refuse.")
     if key_saved:
-        notes.append("An auth key is stored. It is deleted after a successful join; delete it "
-                     "below if it is no longer needed.")
+        notes.append("An auth key is stored and kept, so the node can rejoin after a power cycle. "
+                     "It must be reusable and ephemeral; the site teardown wipes it.")
     if not joined:
         if key_saved:
             buttons.append(_button("join", "Join the tailnet", csrf))
         else:
-            notes.append("To join: save an ephemeral auth key below, then Join.")
+            notes.append("To join: save a reusable ephemeral auth key below, then Join.")
     else:
         if want_name and want_name != status.get("hostname"):
             buttons.append(_button("rename", f"Rename to {want_name}", csrf))
+        if sorted(wanted) != sorted(advertised):
+            buttons.append(_button("routes", f"Advertise {', '.join(wanted) or 'no routes'}", csrf))
+        unapproved = [r for r in advertised if r not in approved]
+        if unapproved:
+            notes.append(f"Not yet approved by the tailnet: {', '.join(unapproved)}. Approve them in "
+                         "the tailnet's admin console (or with an autoApprovers rule).")
         if sorted(want_tags) != sorted(node_tags):
             notes.append("The saved tags differ from the node's. Tags change only on a join: "
-                         "Leave, save a new ephemeral key, then Join.")
+                         "Leave, then Join (the saved key is reused).")
         buttons.append(_button("leave", "Leave the tailnet", csrf))
 
     last = (snapshot.get("tailnet_apply") or {}).get("self")

@@ -17,9 +17,9 @@ from .views import View
 #: Module identity (kebab-case) for capability flags and logging. Lives here, not in core.
 MODULE = "dashboard"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
            "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",
