@@ -7,6 +7,14 @@ file changes, so a rotation ends every existing session without a restart.
 
 Fails closed: with no credential, or a malformed one, nobody logs in. Limits are its own,
 never PAM faillock, so attacking the fallback cannot lock the operator out of SSH.
+
+Brute force vs. lockout. The fallback faces an untrusted LAN whose hosts can claim many
+addresses, so no limit may be one an attacker can trip on everyone's behalf:
+- per source, keyed on the IPv4 address or the IPv6 /64 (rotating addresses inside a
+  prefix gains nothing), a source gets LOGIN_FAILS_PER_SRC failures per window;
+- globally, verifications run one at a time and first come, first served, with at most one
+  pending per source. scrypt's cost then caps guessing for the whole node (about 4/s on the
+  RevPi), and the operator's login waits its turn instead of being refused.
 """
 from __future__ import annotations
 
@@ -14,7 +22,9 @@ import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
 import json
+import logging
 import math
 import os
 import secrets
@@ -27,14 +37,18 @@ from typing import Callable
 from .doors import Refusal
 from .identity import parse_address
 
+# The module name; interface/__init__ defines MODULE after importing this file.
+log = logging.getLogger("dashboard")
+
 #: PROVISIONAL (ADR-0003 §3; TODO.md Evidence): not yet measured.
 SESSION_IDLE_S = 900.0
 SESSION_MAX_S = 28800.0
 LOGIN_FAILS_PER_SRC = 5
 LOGIN_WINDOW_S = 900.0
-#: Global backoff: after any failed login, every login waits this long. Many sources then
-#: get one guess per second between them, while the operator is never locked out.
-LOGIN_GLOBAL_GAP_S = 1.0
+#: IPv6 sources are counted per prefix of this length (one SLAAC/link-local network).
+SOURCE_V6_PREFIX = 64
+#: Logins waiting for their turn at once; beyond this, "busy" (bounds threads held).
+MAX_PENDING_LOGINS = 64
 #: Memory bounds (§8.8).
 MAX_SESSIONS = 32
 MAX_TRACKED_SOURCES = 4096
@@ -76,18 +90,30 @@ def _parse_cred(raw: bytes) -> _Cred:
     return _Cred(id=d["hash"], n=n, r=r, p=p, salt=salt, digest=digest)
 
 
+def source_key(address: str) -> str:
+    """The rate-limit key for a peer address: the IPv4 address, or the IPv6 /64."""
+    addr = parse_address(address)
+    if addr is None:
+        return address
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/{SOURCE_V6_PREFIX}", strict=False))
+    return str(addr)
+
+
 class AdminAuth:
     def __init__(self, cred_path: str, clock: Callable[[], float] = time.monotonic) -> None:
         self._path = cred_path
         self._clock = clock
         self._lock = threading.Lock()          # state below
-        self._login_lock = threading.Lock()    # one login at a time: bounds scrypt CPU
+        self._turn = threading.Condition()     # FIFO tickets: one verification at a time
+        self._next_ticket = 0
+        self._serving = 0
+        self._pending: set[str] = set()
         self._cred: _Cred | None = None
         self._cred_key: tuple | None = None
         self._cred_error = "not loaded"
         self._sessions: dict[str, Session] = {}
         self._fails: dict[str, deque[float]] = {}
-        self._last_fail = -math.inf
 
     # --- credential -------------------------------------------------------------------
 
@@ -107,6 +133,7 @@ class AdminAuth:
                 self._cred_error = ""
             except (OSError, ValueError, KeyError, TypeError, binascii.Error) as exc:
                 self._cred, self._cred_error = None, f"the admin credential is unusable ({exc})"
+                log.error("admin fallback: %s", self._cred_error)
         return self._cred
 
     def status(self) -> tuple[bool, str]:
@@ -117,41 +144,68 @@ class AdminAuth:
     # --- login ------------------------------------------------------------------------
 
     def login(self, source: str, password: str) -> Session | Refusal:
-        src = str(parse_address(source) or source)
-        with self._login_lock:
-            now = self._clock()
+        key = source_key(source)
+        with self._lock:
+            refused = self._limited(key, self._clock())
+            if refused is not None:
+                return refused
+            if key in self._pending:
+                return Refusal(429, "rate-limited", "a login from this address is already in progress")
+            if len(self._pending) >= MAX_PENDING_LOGINS:
+                return Refusal(503, "busy", "too many logins in progress; try again shortly")
+            self._pending.add(key)
+            ticket, self._next_ticket = self._next_ticket, self._next_ticket + 1
+        try:
+            with self._turn:
+                while self._serving != ticket:
+                    self._turn.wait()
+            try:
+                return self._verify(key, password)
+            finally:
+                with self._turn:
+                    self._serving += 1
+                    self._turn.notify_all()
+        finally:
             with self._lock:
-                fails = self._fails.get(src)
-                while fails and now - fails[0] > LOGIN_WINDOW_S:
-                    fails.popleft()
-                if fails is not None and len(fails) >= LOGIN_FAILS_PER_SRC:
-                    wait = math.ceil(LOGIN_WINDOW_S - (now - fails[0]))
-                    return Refusal(429, "rate-limited",
-                                   f"too many failed logins from {src}; try again in {wait} s")
-                if now - self._last_fail < LOGIN_GLOBAL_GAP_S:
-                    return Refusal(429, "rate-limited", "a login just failed; try again in a second")
-                cred = self._load()
-                if cred is None:
-                    return Refusal(503, "disabled", f"the fallback is off: {self._cred_error}")
-            raw = password.encode()
-            ok = len(raw) <= MAX_PASSWORD_BYTES and hmac.compare_digest(
-                hashlib.scrypt(raw, salt=cred.salt, n=cred.n, r=cred.r, p=cred.p,
-                               dklen=len(cred.digest), maxmem=256 * cred.n * cred.r),
-                cred.digest)
-            with self._lock:
-                if not ok:
-                    self._last_fail = now
-                    self._fails.setdefault(src, deque()).append(now)
-                    while len(self._fails) > MAX_TRACKED_SOURCES:
-                        self._fails.pop(next(iter(self._fails)))
-                    return Refusal(401, "bad-password", "wrong password")
-                self._fails.pop(src, None)
-                session = Session(secrets.token_urlsafe(32), secrets.token_urlsafe(32),
-                                  now, now, cred.id)
-                self._sessions[session.token] = session
-                while len(self._sessions) > MAX_SESSIONS:
-                    self._sessions.pop(min(self._sessions.values(), key=lambda s: s.last_seen).token)
-                return session
+                self._pending.discard(key)
+
+    def _limited(self, key: str, now: float) -> Refusal | None:
+        """The per-source refusal, if this source has used up its window. Caller holds _lock."""
+        fails = self._fails.get(key)
+        while fails and now - fails[0] >= LOGIN_WINDOW_S:
+            fails.popleft()
+        if fails is not None and len(fails) >= LOGIN_FAILS_PER_SRC:
+            wait = math.ceil(LOGIN_WINDOW_S - (now - fails[0]))
+            return Refusal(429, "rate-limited", f"too many failed logins from {key}; "
+                                                f"try again in {wait} s")
+        return None
+
+    def _verify(self, key: str, password: str) -> Session | Refusal:
+        """One verification; only ever runs on its turn."""
+        with self._lock:
+            cred = self._load()
+            if cred is None:
+                # The detail goes to the journal (_load), never to an unauthenticated client.
+                return Refusal(503, "disabled", "the admin fallback is off; see the node's journal")
+        raw = password.encode()
+        ok = len(raw) <= MAX_PASSWORD_BYTES and hmac.compare_digest(
+            hashlib.scrypt(raw, salt=cred.salt, n=cred.n, r=cred.r, p=cred.p,
+                           dklen=len(cred.digest), maxmem=256 * cred.n * cred.r),
+            cred.digest)
+        now = self._clock()
+        with self._lock:
+            if not ok:
+                self._fails.setdefault(key, deque()).append(now)
+                while len(self._fails) > MAX_TRACKED_SOURCES:
+                    self._fails.pop(next(iter(self._fails)))
+                return Refusal(401, "bad-password", "wrong password")
+            self._fails.pop(key, None)
+            session = Session(secrets.token_urlsafe(32), secrets.token_urlsafe(32),
+                              now, now, cred.id)
+            self._sessions[session.token] = session
+            while len(self._sessions) > MAX_SESSIONS:
+                self._sessions.pop(min(self._sessions.values(), key=lambda s: s.last_seen).token)
+            return session
 
     # --- sessions ---------------------------------------------------------------------
 

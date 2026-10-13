@@ -263,8 +263,9 @@ them is this ADR's mechanism for those decisions.
 3. ~~Ops: the admin-password script, TLS key generation, the 8080 firewall entry, the doctor
    checks.~~ Done 2026-10-13 (`ops/set-admin-password.sh`, `ops/paths.sh`; scrypt N ledgered in
    `tools/ledgers/admin-auth/`).
-4. Dashboard: door classification, the fallback listener + sessions + CSRF + rate limit, and
-   `authorize()`. Lift the `http_surface.py` guard in this step and no earlier (rung 12).
+4. ~~Dashboard: door classification, the fallback listener + sessions + CSRF + rate limit, and
+   `authorize()`. Lift the `http_surface.py` guard in this step and no earlier (rung 12).~~
+   Done 2026-10-13 (see Amendments).
 5. Config registry: its own ADR (§6 graduation cost), with secret fields.
 6. `tailnet-gateway` writer (hostname, tags, auth-key join): its own Safety ADR, with the
    action-manifest entries.
@@ -280,4 +281,35 @@ them is this ADR's mechanism for those decisions.
 
 ## Amendments
 
-None yet.
+- **2026-10-13 — step 4 implementation choices.** Filled in while building, inside the
+  decisions above:
+  - **DNS rebinding.** On 8080 the Host header must be the address the request arrived on
+    (or `localhost` on loopback), or the request gets 421. Without this, a page in a tailnet
+    user's browser could rebind its own name to the node and act as that user. Names are
+    refused, including the node's own: a bare host name resolves through LLMNR, mDNS or the
+    site's DNS, which a site-LAN attacker can answer, and a hostile resolver can answer
+    `*.ts.net` for a client not using MagicDNS (security review, 2026-10-13). So tailnet
+    users open the node by its tailnet IP for now. Accepting the exact MagicDNS FQDN is a
+    follow-up that needs the name in the contract and a decision on that residual risk.
+  - **CSRF on the 8080 doors.** They have no cookies, so writes there are gated by the
+    browser's `Origin` matching the listener, which `authorize()` checks on every door. The
+    fallback adds the per-session token on top. Clients that are not browsers send `Origin`
+    too.
+  - **The global limit is the scrypt cost, not a backoff.** A first version made every
+    login wait a second after any failure. The security review showed that a LAN attacker
+    failing once a second from rotating addresses then refused every operator login
+    (0 of 30). It was replaced (2026-10-13):
+    - Per-source failures are keyed on the IPv4 address or the IPv6 /64.
+    - Verifications run one at a time, first come first served, with at most one pending
+      per source and `MAX_PENDING_LOGINS = 64` in all.
+    - scrypt's cost caps guessing for the whole node at about 4/s, and the operator's login
+      waits its turn instead of being refused. Replayed against the real credential under a
+      40 req/s attack: 15 of 15 operator logins, about 1 s each.
+    - A determined attacker with many IPv4 addresses can still make the operator wait
+      longer; it cannot make them fail.
+  - **Rotation** ends every session: the credential is re-read when the file changes, and
+    each session is tied to the credential it was issued under.
+  - **No actions ship yet.** `authorize()` gates logout and any `Action` a feature offers;
+    the first real ones arrive with the config registry (step 5).
+  - **Idle timeout and auto-refresh.** The overview page refreshes itself every 5 s, so an
+    open tab keeps its session alive until the 8-hour absolute limit. Accepted for now.

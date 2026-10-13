@@ -1,7 +1,8 @@
 """commissioning-node composition root (spec §4): composes modules onto the bus and owns
 the serve loop. Imports everything; imported by nothing (tests excepted).
 
-Daemon mode (`python main.py`): starts the dashboard on loopback, then ticks on a
+Daemon mode (`python main.py`): starts the dashboard (8080: local + tailnet doors; 8443: the
+TLS admin fallback when a password is set, ADR-0003), then ticks on a
 wall-clock deadline (§8.8). Each tick publishes `system/tick` (the cadence is declared in
 the payload) and the node card. SIGINT/SIGTERM stop cleanly. There are no one-shot CLI
 modes yet. When one arrives, it runs on a private Bus instance (§4).
@@ -36,9 +37,15 @@ log = logging.getLogger("main")
 
 #: Tick cadence, seconds. PROVISIONAL — not yet measured (TODO.md, §8.11).
 TICK_PERIOD_S = 5.0
-#: Loopback only until tailnet identity + admin auth exist (ADR-0001).
-DASHBOARD_HOST = "127.0.0.1"
+#: Every address: the dashboard sorts each request into a door itself, and the firewall
+#: drops 8080 off lo/tailscale0 (ADR-0003 §1).
+DASHBOARD_HOST = "::"
 DASHBOARD_PORT_DEFAULT = 8080
+#: The admin fallback (ADR-0003 §3). Paths match ops/paths.sh, which creates the files.
+FALLBACK_PORT = 8443
+ADMIN_CRED_PATH = "/etc/commissioning-node/admin.cred"
+TLS_CERT_PATH = "/etc/commissioning-node/tls/fallback.crt"
+TLS_KEY_PATH = "/etc/commissioning-node/tls/fallback.key"
 
 INTERFACES = {
     "camera-config": camera_config_if,
@@ -78,11 +85,14 @@ class Node:
 
 
 def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.monotonic,
-            dashboard_port: int = DASHBOARD_PORT_DEFAULT) -> Node:
-    """Wire every module onto `bus`. Tests pass a fake overlay source and clock."""
+            dashboard_port: int = DASHBOARD_PORT_DEFAULT, dashboard_host: str = DASHBOARD_HOST,
+            fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
+            actions: list | None = None) -> Node:
+    """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
-    dash_registry, node.dashboard = dashboard.build(sub, pub, DASHBOARD_HOST, dashboard_port)
+    dash_registry, node.dashboard = dashboard.build(sub, pub, dashboard_host, dashboard_port,
+                                                    fallback, admin_cred, actions)
     node.registries = [
         tailnet_gateway.build(sub, pub, overlay_source),
         camera_config.build(sub, pub),
@@ -136,7 +146,9 @@ def _port_from_env() -> int:
 
 def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    node = compose(Bus(), dashboard_port=_port_from_env())
+    node = compose(Bus(), dashboard_port=_port_from_env(),
+                   fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
+                   admin_cred=ADMIN_CRED_PATH)
     try:
         node.dashboard.start()
     except OSError as exc:

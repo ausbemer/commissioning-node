@@ -1,7 +1,8 @@
 """overview-page — the operator's one-page view of the node (config + ops surface).
 
 Server-rendered HTML with no JavaScript: nothing ships unparsed (§8.1). Every value is
-HTML-escaped. Read-only: the page has no forms, and the surface refuses non-GET methods.
+HTML-escaped. The only form is "log out" on the fallback door; writes arrive as Actions
+(ADR-0003 §4), each behind `authorize()`.
 """
 from __future__ import annotations
 
@@ -56,6 +57,14 @@ class OverviewPage:
             for topic, version in sorted(snapshot.get("wire", {}).items())
         ]
         host = escape(nodes[0].get("hostname", "")) if nodes else "unknown node"
+        viewer = snapshot.get("viewer") or {}
+        who = ""
+        if viewer:
+            who = (f'<p class="sub">Signed in as {escape(viewer.get("label", ""))} '
+                   f'via the {escape(viewer.get("door", ""))} door.</p>')
+            if viewer.get("csrf"):
+                who += ('<form method="post" action="/logout"><input type="hidden" name="csrf" '
+                        f'value="{escape(viewer["csrf"])}"><button type="submit">Log out</button></form>')
         return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -76,7 +85,8 @@ th, td {{ text-align:left; padding:.35rem .6rem; border-bottom:1px solid var(--l
 th {{ color:var(--muted); font-weight:600; }}
 </style></head><body><main>
 <h1>commissioning-node · {host}</h1>
-<p class="sub">Read-only operator view. Contract v{escape(CONTRACT_VERSION)}. Refreshes every {REFRESH_S}s.</p>
+<p class="sub">Operator view. Contract v{escape(CONTRACT_VERSION)}. Refreshes every {REFRESH_S}s.</p>
+{who}
 <h2>Tailnet</h2>
 {_table(["Host", "Connected", "Addresses", "Served routes"], tailnet_rows, "No tailnet status yet.")}
 <h2>Cameras</h2>

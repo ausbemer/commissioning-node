@@ -15,7 +15,8 @@ adjustable by an operator but automatic where possible. A local dashboard is the
 ops surface.
 
 Trust boundary (ADR-0001): the tailnet, with a local admin-credential fallback for when
-the tailnet is unavailable. Until both exist, every surface is loopback-only and read-only.
+the tailnet is unavailable. Both doors exist (ADR-0003): the dashboard serves the local door
+(loopback) and the tailnet door on 8080, and the TLS admin fallback on 8443.
 
 ## Architecture stage
 
@@ -66,7 +67,7 @@ neutral packages `freshness/` · bus-coupled infra none yet · ops tier `ops/` �
 | `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table now; will auto-detect the site subnet and propose routes for operator confirmation. Sole writer of Tailscale state. | 0.2.0 |
 | `camera-config` (`modules/camera_config/`) | Bridge to Axis VAPIX: knows the site's cameras; will probe and (operator-confirmed) configure them. Sole writer to cameras. | 0.1.0 |
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: read-only, loopback-only HTTP view of node card, tailnet, cameras, streams and wire versions; holds the tailnet caller resolver (ADR-0003). | 0.3.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003). | 0.3.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.
@@ -97,8 +98,10 @@ directory and import path.
 12. Secrets are secrets from birth (§8.9): flagged at declaration, masked, never on the bus
     or in logs.
 13. **Domain-specific:** the site LAN is untrusted. Never advertise a stream or surface on a
-    site-LAN address; tailnet addresses only (ADR-0001). No surface leaves loopback, and none
-    accepts writes, until the identity/admin-auth ADR exists.
+    site-LAN address; tailnet addresses only (ADR-0001). The one exception is the TLS admin
+    fallback on 8443 (ADR-0003). Every request is sorted into a door and every write passes
+    the dashboard's single `authorize()`; a new surface or write path goes through the same
+    doors, never around them.
 14. **Domain-specific:** Axis cameras belong to the site — the first write to any camera is
     operator-confirmed (§11 rung 3), and its warning appears in the action manifest (§5).
 15. **Domain-specific:** MediaMTX's ports and the dashboard's 8080 are reachable only from the tailnet and loopback.

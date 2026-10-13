@@ -7,11 +7,13 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Drafted as
       `docs/adr/0003-operator-doors-identity-and-admin-fallback.md` (Accepted); implement in
-      its order. Steps 2 and 3 done (`tailnet/peers`, `freshness`, dashboard `PeerDirectory`;
-      admin-password script, fallback TLS key, 8080 firewall entry, operator, doctor checks).
-      Next: step 4 (dashboard doors, fallback listener, sessions, CSRF, rate limit,
-      `authorize()`; lift the `http_surface.py` guard only then). Until step 4 lands, the
-      dashboard stays loopback-only and read-only.
+      its order. Steps 2–4 done: peer table and resolver; ops (admin password, TLS key, 8080
+      firewall, operator, doctor); the dashboard's three doors, fallback login, sessions,
+      CSRF, login limits and `authorize()`. Next: step 5, the config registry ADR.
+- [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
+      `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
+      in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
+      a client not using MagicDNS resolves `*.ts.net` through a resolver the site may control.
 - [ ] **Config registry** (§6 sanctioned exception). Features declare fields, the
       dashboard reads and edits them, and secrets are flagged at declaration. Document the
       graduation cost.
@@ -56,6 +58,10 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] `freshness.STALE_MIN_S = 5.0`, `STALE_MAX_S = 120.0`, `PERIODS = 3` (the staleness
       window for every renewed level: stream endpoints and tailnet caller identity)
 - [ ] `relay_planner.MAX_CAMERAS = 512`
+- [ ] Admin fallback (`dashboard/interface/admin.py`): `SESSION_IDLE_S = 900`,
+      `SESSION_MAX_S = 28800`, `LOGIN_FAILS_PER_SRC = 5` per `LOGIN_WINDOW_S = 900`,
+      `SOURCE_V6_PREFIX = 64`, `MAX_PENDING_LOGINS = 64`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
+      `MAX_BODY = 16 KiB`. Ledger: `tools/ledgers/admin-auth/` (scrypt N is already there).
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture
       in `tests/test_tailscale_cli.py`. Verify the field mapping in `docs/quirks.md`.

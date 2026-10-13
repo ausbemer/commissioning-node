@@ -6,8 +6,9 @@ Pure functions; the HTTP core does the I/O and calls them for every request.
   loopback is the *local* door; anything else must resolve to a tailnet peer, or it is
   refused (403, or 503 while the peer table is stale). Never by address range (a site LAN
   can use CGNAT space too).
-- `host_allowed()` refuses a Host header that does not name this node, so a DNS-rebinding
-  page in a tailnet user's browser cannot read or write through that user's identity.
+- `host_allowed()` refuses a Host header that is not this node's address (or an exact
+  name the core vouches for), so a DNS-rebinding page in a tailnet user's browser cannot
+  read or write through that user's identity.
 - `authorize()` is the ONLY gate in front of a write: authenticated caller, same-origin
   request, the fallback session's CSRF token, and rung-4 confirmation. Every door that
   authenticates may write (decision D2).
@@ -77,9 +78,15 @@ def _host_name(host_header: str) -> str:
     return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
 
 
-def host_allowed(host_header: str | None, local_addr: str, node_names: Iterable[str]) -> bool:
+def host_allowed(host_header: str | None, local_addr: str, node_names: Iterable[str] = ()) -> bool:
     """True if Host names this node: the address the request arrived on, `localhost` on
-    loopback, one of its host names, or `<name>.<tailnet>.ts.net` for one of them."""
+    loopback, or exactly one of `node_names`.
+
+    Names are where rebinding lives. A bare host name resolves through LLMNR, mDNS or the
+    site's DNS, all of which a site-LAN attacker can answer; so can a hostile resolver for
+    `*.ts.net` when the client is not using MagicDNS. So `node_names` must hold only names
+    whose resolution the attacker cannot control. Today the core passes none: tailnet
+    callers use the node's tailnet IP (TODO.md: the MagicDNS FQDN, with its residual risk)."""
     if not host_header:
         return False
     name = _host_name(host_header)
@@ -89,11 +96,7 @@ def host_allowed(host_header: str | None, local_addr: str, node_names: Iterable[
         return local is not None and (as_ip == local or (as_ip.is_loopback and local.is_loopback))
     if name == "localhost":
         return local is not None and local.is_loopback
-    names = {n.lower() for n in node_names if n}
-    if name in names:
-        return True
-    # MagicDNS: only Tailscale answers for ts.net, so a page cannot rebind one to this node.
-    return name.endswith(".ts.net") and name.split(".", 1)[0] in names
+    return name in {n.lower() for n in node_names if n}
 
 
 def same_origin(origin: str | None, scheme: str, host_header: str | None) -> bool:
