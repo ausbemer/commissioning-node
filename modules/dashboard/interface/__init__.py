@@ -4,6 +4,8 @@ The ONLY package features may import from this module (spec §4).
 """
 from .actions import Action, ActionResult
 from .admin import AdminAuth, Session
+from .config import (CONFIG_ACTIONS, ConfigFieldState, ConfigSurface, ConfigWriteResult,
+                     clear_path, config_key, config_rows, set_path)
 from .doors import (DOORS, FALLBACK, LOCAL, TAILNET, Caller, Decision, Refusal, authorize,
                     classify, host_allowed, same_origin)
 from .feature import Feature
@@ -14,12 +16,14 @@ from .views import View
 #: Module identity (kebab-case) for capability flags and logging. Lives here, not in core.
 MODULE = "dashboard"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
            "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",
            "Action", "ActionResult", "AdminAuth", "Session",
            "DOORS", "LOCAL", "TAILNET", "FALLBACK", "Caller", "Refusal", "Decision",
-           "authorize", "classify", "host_allowed", "same_origin"]
+           "authorize", "classify", "host_allowed", "same_origin",
+           "ConfigSurface", "ConfigFieldState", "ConfigWriteResult", "CONFIG_ACTIONS",
+           "config_key", "config_rows", "set_path", "clear_path"]

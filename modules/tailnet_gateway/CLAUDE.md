@@ -16,10 +16,11 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Consumes — outward (from the bus):** `system/tick` (`Tick`)
 - **Consumes — inward (core → features):** `tailnet-gateway/overlay-snapshot` → `OverlaySnapshot`, stamped by core with `observed_at` and the tick's `period_s`, produced from the `OverlayStatusSource` adapter (`core/tailscale_cli.py`, read-only `tailscale status --json`)
 - **Produces — outward (to the bus):** `tailnet/status` (`TailnetStatus`), `tailnet/peers` (`TailnetPeers`) — conforms to the ecosystem
-  contract (`interfaces/` v0.2.0)
+  contract (`interfaces/` v0.3.0)
 - **Produces — inward (features → core):** none yet
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.2.0; inward
-  contract `__version__` 0.2.0. Both live in `interface/__init__.py`; see
+- **Config (ADR-0004):** declares `CONFIG_FIELDS` in `interface/config.py`: `hostname`, `tags`, `auth_key` (secret), all site-scoped. Reads them through the `ConfigView` seam, injected with the writer (ADR-0003 step 6); nothing reads them yet.
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.3.0; inward
+  contract `__version__` 0.3.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 

@@ -26,8 +26,8 @@ from typing import Mapping
 from urllib.parse import parse_qsl
 
 from ..interface import (FALLBACK, MODULE, Action, ActionResult, AdminAuth, Caller,
-                         DashboardState, PeerDirectory, Refusal, View, authorize, classify,
-                         host_allowed, same_origin)
+                         ConfigSurface, DashboardState, PeerDirectory, Refusal, View, authorize,
+                         classify, config_rows, host_allowed, same_origin)
 from ..interface.admin import COOKIE, LABEL
 
 log = logging.getLogger(MODULE)
@@ -133,13 +133,14 @@ class HttpSurface:
     def __init__(self, state: DashboardState, views: list[View], host: str, port: int,
                  peers: PeerDirectory, actions: list[Action] | None = None,
                  admin: AdminAuth | None = None, fallback: FallbackConfig | None = None,
-                 login_view: View | None = None,
+                 login_view: View | None = None, config: ConfigSurface | None = None,
                  ) -> None:
         self._state = state
         self._peers = peers
         self._views = {v.path: v for v in views}
         self._actions = {a.path: a for a in (actions or [])}
         self._login_view = login_view
+        self._config = config
         reserved = {LOGIN_PATH, LOGOUT_PATH, STATE_PATH}
         clash = (set(self._views) & set(self._actions)) | (reserved & (set(self._views) | set(self._actions)))
         if clash:
@@ -248,6 +249,8 @@ class HttpSurface:
                     return self._refuse(404, "not found")
                 snap = surface._state.snapshot()
                 snap["viewer"] = {"label": caller.label, "door": caller.door, "csrf": caller.csrf}
+                if surface._config is not None:
+                    snap["config"] = config_rows(surface._config)   # secrets carry no value
                 self._send(200, view.content_type, view.render(snap))
 
             # -- POST --------------------------------------------------------------------
@@ -279,6 +282,10 @@ class HttpSurface:
                 if isinstance(action, _Logout):
                     surface._admin.logout(self._cookie())
                     return self._redirect(LOGIN_PATH, clear_cookie=True)
+                # A browser form names the page to return to; only a page this surface
+                # serves is honoured (never an open redirect). Refusals always stay in-band.
+                if result.ok and form.get("then") in surface._views:
+                    return self._redirect(form["then"])
                 self._send(200 if result.ok else 400, "text/plain; charset=utf-8",
                            result.message + "\n")
 

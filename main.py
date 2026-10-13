@@ -32,6 +32,7 @@ import modules.stream_relay.interface as stream_relay_if
 import modules.tailnet_gateway as tailnet_gateway
 import modules.tailnet_gateway.interface as tailnet_gateway_if
 from bus import Bus
+from config_registry import ConfigRegistry
 
 log = logging.getLogger("main")
 
@@ -46,6 +47,9 @@ FALLBACK_PORT = 8443
 ADMIN_CRED_PATH = "/etc/commissioning-node/admin.cred"
 TLS_CERT_PATH = "/etc/commissioning-node/tls/fallback.crt"
 TLS_KEY_PATH = "/etc/commissioning-node/tls/fallback.key"
+#: The config registry's root (ADR-0004). systemd creates it (StateDirectory=); matches
+#: CN_STATE in ops/paths.sh.
+CONFIG_ROOT = "/var/lib/commissioning-node"
 
 INTERFACES = {
     "camera-config": camera_config_if,
@@ -60,6 +64,7 @@ class Node:
     bus: Bus
     registries: list = field(default_factory=list)
     dashboard: dashboard.HttpSurface | None = None
+    config: ConfigRegistry | None = None
 
     def capabilities(self) -> set[str]:
         """The in-process capability registry (§5): every enabled "module:feature" flag."""
@@ -87,12 +92,20 @@ class Node:
 def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.monotonic,
             dashboard_port: int = DASHBOARD_PORT_DEFAULT, dashboard_host: str = DASHBOARD_HOST,
             fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
-            actions: list | None = None) -> Node:
-    """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners."""
+            actions: list | None = None, config_root: str | None = None) -> Node:
+    """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
+
+    With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
+    from every module's declared `CONFIG_FIELDS`, and the dashboard gets its operator
+    surface. Without it there is no config editing."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
+    if config_root is not None:
+        declared = [f for mod in INTERFACES.values() for f in getattr(mod, "CONFIG_FIELDS", [])]
+        node.config = ConfigRegistry(config_root, declared)
+    surface = node.config.operator_surface() if node.config else None
     dash_registry, node.dashboard = dashboard.build(sub, pub, dashboard_host, dashboard_port,
-                                                    fallback, admin_cred, actions)
+                                                    fallback, admin_cred, actions, surface)
     node.registries = [
         tailnet_gateway.build(sub, pub, overlay_source),
         camera_config.build(sub, pub),
@@ -148,7 +161,7 @@ def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     node = compose(Bus(), dashboard_port=_port_from_env(),
                    fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
-                   admin_cred=ADMIN_CRED_PATH)
+                   admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT)
     try:
         node.dashboard.start()
     except OSError as exc:

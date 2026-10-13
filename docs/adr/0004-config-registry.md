@@ -248,7 +248,8 @@ the writer exists (§8.4 "merge early, register disabled").
    unknown keys kept.~~ Done 2026-10-13.
 3. ~~Ops: `StateDirectory=`, `paths.sh`, doctor checks.~~ Done 2026-10-13. Re-run `install.sh` on
    the node.
-4. Wiring: `tailnet-gateway` declares the three fields and gets `ConfigView`; the dashboard
+4. ~~Wiring~~ (done 2026-10-13; `ConfigView` is defined now and injected with step 6's
+   writer, its first reader): `tailnet-gateway` declares the three fields and gets `ConfigView`; the dashboard
    gets `ConfigSurface`, the Config section and the `config.*` actions through `authorize()`.
    Security review (§8.10: approval surface and the first stored network secret).
 5. Then step 6: the `tailnet-gateway` writer, with its own Safety ADR.

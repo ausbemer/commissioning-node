@@ -1,10 +1,10 @@
-# dashboard Inward Interface — v0.3.0
+# dashboard Inward Interface — v0.4.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
 
 **Two versions, two meanings (spec §4 dual versioning).** `__version__` (here,
-`0.3.0`) is the *inward contract* version: it bumps only when this `interface/`
+`0.4.0`) is the *inward contract* version: it bumps only when this `interface/`
 package changes. `VERSION` is the module's *release* version: it bumps with features and
 implementation. A module shipping features behind an unchanged interface bumps `VERSION`
 only.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"dashboard"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.3.0`).
-- `__version__` — the inward interface semver (`0.3.0`).
+- `VERSION` — the module release version (`0.4.0`).
+- `__version__` — the inward interface semver (`0.4.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -43,6 +43,8 @@ Every feature implements `feature.py`'s protocol:
 | `parse_address` (`identity.py`) | 0.3.0 | Socket address → IP (zone stripped, IPv4-mapped unwrapped); the one parser every door check uses |
 | `Action`, `ActionResult` (protocol, `actions.py`) | 0.3.0 | A feature-supplied write: `name`, POST `path`, `may_disturb` (rung-4 warning or None), `run(form, caller)`. Core calls `run` only after `authorize()` |
 | `classify`, `host_allowed`, `same_origin`, `authorize`, `Caller`, `Refusal`, `Decision`, door names (`doors.py`) | 0.3.0 | The three doors and the one ownership check (ADR-0003 §1, §4). Pure functions. `host_allowed` accepts the arrival address, `localhost` on loopback, and only exact `node_names` (rebinding) |
+| `ConfigSurface`, `ConfigFieldState`, `ConfigWriteResult` (protocols, `config.py`) | 0.4.0 | Seam to the config registry's operator surface (ADR-0004): list fields, read state (a secret has no value), set from operator text, clear. Injected by `main.py`; the dashboard never imports the registry |
+| `config_key`, `set_path`, `clear_path`, `config_rows`, `CONFIG_ACTIONS` (`config.py`) | 0.4.0 | Pure helpers: a field's key and action paths, and its rows for a View's snapshot (`snapshot["config"]`, present only when a registry is wired) |
 | `AdminAuth`, `Session` (`admin.py`) | 0.3.0 | Fallback login: scrypt credential (re-read on change; rotation ends sessions), in-memory sessions with idle/absolute expiry and a CSRF token; failures limited per IPv4 address or IPv6 /64; verifications run one at a time, first come first served (no global refusal, so an attacker cannot lock the operator out). Fails closed |
 
 All models tolerate unknown fields (`extra="ignore"`). Nested shapes are models too, never
@@ -61,6 +63,7 @@ interface objects").
 
 ## Changelog
 
+- v0.4.0 — `ConfigSurface` and its helpers (`config.py`); HTML views may receive `config` (additive).
 - v0.3.0 — `Action`, `ActionResult`, `doors` (`classify`, `host_allowed`, `same_origin`,
   `authorize`), `AdminAuth`, `Session`, `parse_address`; views may receive `viewer` (additive).
 - v0.2.0 — `PeerDirectory`, `PeerIdentity`, `Unresolved` (additive).

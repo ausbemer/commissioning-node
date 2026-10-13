@@ -1,8 +1,8 @@
 """overview-page — the operator's one-page view of the node (config + ops surface).
 
 Server-rendered HTML with no JavaScript: nothing ships unparsed (§8.1). Every value is
-HTML-escaped. The only form is "log out" on the fallback door; writes arrive as Actions
-(ADR-0003 §4), each behind `authorize()`.
+HTML-escaped. The only form is "log out" on the fallback door. Config is edited on its own
+page (`/config`, config-page), which does not auto-refresh under a half-typed value.
 """
 from __future__ import annotations
 
@@ -85,7 +85,8 @@ th, td {{ text-align:left; padding:.35rem .6rem; border-bottom:1px solid var(--l
 th {{ color:var(--muted); font-weight:600; }}
 </style></head><body><main>
 <h1>commissioning-node · {host}</h1>
-<p class="sub">Operator view. Contract v{escape(CONTRACT_VERSION)}. Refreshes every {REFRESH_S}s.</p>
+<p class="sub">Operator view. Contract v{escape(CONTRACT_VERSION)}. Refreshes every {REFRESH_S}s.
+<a href="/config">Config</a></p>
 {who}
 <h2>Tailnet</h2>
 {_table(["Host", "Connected", "Addresses", "Served routes"], tailnet_rows, "No tailnet status yet.")}

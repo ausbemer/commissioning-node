@@ -1,0 +1,116 @@
+"""config-page — the operator's form for the config registry (ADR-0004 §3), at /config.
+
+Server-rendered, no JavaScript, every value escaped. It does not auto-refresh, so a value
+being typed is never wiped. A secret is a write-only password input, never pre-filled, and
+reads only as set or unset (§8.9). Each form posts to a config `Action`, behind
+`authorize()`; on success core sends the browser back here (`then`).
+"""
+from __future__ import annotations
+
+from html import escape
+
+PATH = "/config"
+
+
+def _shown(value: object, kind: str) -> str:
+    if value is None:
+        return "none"
+    if kind == "str_list":
+        return " ".join(value) if value else "none"
+    if kind == "bool":
+        return "true" if value else "false"
+    return str(value)
+
+
+def _input(field: dict, row: dict) -> str:
+    kind = field.get("kind")
+    current = "" if not row.get("is_set") or field.get("secret") else _shown(row.get("value"), kind)
+    if field.get("secret"):
+        return ('<input type="password" name="value" autocomplete="off" spellcheck="false" '
+                'placeholder="paste to replace" required>')
+    if kind == "bool":
+        options = "".join(f'<option value="{v}"{" selected" if current == v else ""}>{v}</option>'
+                          for v in ("true", "false"))
+        return f'<select name="value">{options}</select>'
+    kind_attr = 'type="number"' if kind == "int" else 'type="text" spellcheck="false"'
+    return f'<input {kind_attr} name="value" value="{escape(current)}" autocomplete="off">'
+
+
+def _hidden(csrf: str | None) -> str:
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    return f'{token}<input type="hidden" name="then" value="{PATH}">'
+
+
+def _field(row: dict, csrf: str | None) -> str:
+    field = row.get("field", {})
+    secret, is_set = field.get("secret"), row.get("is_set")
+    label = escape(field.get("label") or row.get("key", ""))
+    if secret:
+        status = "set" if is_set else "not set"
+    elif is_set:
+        status = escape(_shown(row.get("value"), field.get("kind")))
+    else:
+        status = f'not set (default: {escape(_shown(field.get("default"), field.get("kind")))})'
+    warning = field.get("may_disturb")
+    confirm = (f'<label class="warn"><input type="checkbox" name="confirm" value="yes"> '
+               f'{escape(warning)}</label>') if warning else ""
+    clear = ""
+    if is_set:
+        clear = (f'<form method="post" action="{escape(row.get("clear_path", ""))}">{_hidden(csrf)}'
+                 f'{confirm}<button type="submit">{"Delete" if secret else "Reset to default"}'
+                 '</button></form>')
+    return f"""<section class="field">
+<h3>{label} <span class="tag">{escape(field.get("scope", ""))}{" · secret" if secret else ""}</span></h3>
+<p class="sub">{escape(field.get("help", ""))}</p>
+<p>Current: <strong>{status}</strong></p>
+<form method="post" action="{escape(row.get("set_path", ""))}">{_hidden(csrf)}
+{_input(field, row)} {confirm}<button type="submit">Save</button></form>
+{clear}
+</section>"""
+
+
+class ConfigPage:
+    path = PATH
+    content_type = "text/html; charset=utf-8"
+
+    def render(self, snapshot: dict) -> str:
+        rows = snapshot.get("config")
+        csrf = (snapshot.get("viewer") or {}).get("csrf")
+        if rows is None:
+            body = '<p class="empty">The config registry is not available on this node.</p>'
+        elif not rows:
+            body = '<p class="empty">No module declares any config yet.</p>'
+        else:
+            modules: dict[str, list[dict]] = {}
+            for row in rows:
+                modules.setdefault(row.get("field", {}).get("module", ""), []).append(row)
+            body = "".join(f"<h2>{escape(module)}</h2>" + "".join(_field(r, csrf) for r in group)
+                           for module, group in modules.items())
+        return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>commissioning-node · config</title>
+<style>
+:root {{ --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --line:#d9d9d4; --warn:#a33a00; color-scheme: light; }}
+@media (prefers-color-scheme: dark) {{
+  :root {{ --bg:#18181a; --fg:#ececea; --muted:#9a9a95; --line:#34343a; --warn:#ff9a5c; color-scheme: dark; }}
+}}
+body {{ background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; margin:0; padding:1.5rem 1rem; }}
+main {{ max-width:44rem; margin:0 auto; }}
+h1 {{ font-size:1.3rem; margin:0 0 .25rem; }} h2 {{ font-size:1rem; margin:2rem 0 .5rem; }}
+h3 {{ font-size:.95rem; margin:0 0 .25rem; }}
+.sub, .empty, .tag {{ color:var(--muted); }} .tag {{ font-weight:400; font-size:.85rem; }}
+.warn {{ color:var(--warn); display:block; margin:.5rem 0; }}
+.field {{ border-top:1px solid var(--line); padding:1rem 0; }}
+form {{ margin:.5rem 0 0; }}
+input[type=text], input[type=password], input[type=number], select {{ width:100%; max-width:28rem;
+  box-sizing:border-box; padding:.45rem; font:inherit; background:var(--bg); color:var(--fg);
+  border:1px solid var(--line); border-radius:4px; }}
+button {{ margin-top:.5rem; padding:.4rem .9rem; font:inherit; }}
+</style></head><body><main>
+<h1>Config</h1>
+<p class="sub"><a href="/">Back to the overview</a>. Values marked <em>site</em> are wiped when
+the node leaves a site. Saving stores a value; nothing is applied to the node from here yet.</p>
+{body}
+</main></body></html>
+"""
