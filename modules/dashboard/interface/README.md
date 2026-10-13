@@ -1,10 +1,10 @@
-# dashboard Inward Interface — v0.2.0
+# dashboard Inward Interface — v0.3.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
 
 **Two versions, two meanings (spec §4 dual versioning).** `__version__` (here,
-`0.1.0`) is the *inward contract* version: it bumps only when this `interface/`
+`0.3.0`) is the *inward contract* version: it bumps only when this `interface/`
 package changes. `VERSION` is the module's *release* version: it bumps with features and
 implementation. A module shipping features behind an unchanged interface bumps `VERSION`
 only.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"dashboard"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.2.0`).
-- `__version__` — the inward interface semver (`0.2.0`).
+- `VERSION` — the module release version (`0.3.0`).
+- `__version__` — the inward interface semver (`0.3.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -39,7 +39,11 @@ Every feature implements `feature.py`'s protocol:
 |-------|-------|---------|
 | `DashboardState` | 0.1.0 | Thread-safe bounded latest-value store shared by collector and HTTP core (§4 "features meet in interface objects") |
 | `PeerDirectory`, `PeerIdentity`, `Unresolved` (`identity.py`) | 0.2.0 | The one tailnet caller resolver (ADR-0003 §2): latest peer table, fresh by the producer's cadence, fails toward deny with a reason (`stale`, `unknown`, `ambiguous`, `invalid`) |
-| `View` (protocol, `views.py`) | 0.1.0 | A feature-supplied page: `path`, `content_type`, pure `render(snapshot)` |
+| `View` (protocol, `views.py`) | 0.1.0 | A feature-supplied page: `path`, `content_type`, pure `render(snapshot)`. Since 0.3.0 the snapshot passed to an HTML view may carry `viewer` (`label`, `door`, `csrf`) |
+| `parse_address` (`identity.py`) | 0.3.0 | Socket address → IP (zone stripped, IPv4-mapped unwrapped); the one parser every door check uses |
+| `Action`, `ActionResult` (protocol, `actions.py`) | 0.3.0 | A feature-supplied write: `name`, POST `path`, `may_disturb` (rung-4 warning or None), `run(form, caller)`. Core calls `run` only after `authorize()` |
+| `classify`, `host_allowed`, `same_origin`, `authorize`, `Caller`, `Refusal`, `Decision`, door names (`doors.py`) | 0.3.0 | The three doors and the one ownership check (ADR-0003 §1, §4). Pure functions |
+| `AdminAuth`, `Session` (`admin.py`) | 0.3.0 | Fallback login: scrypt credential (re-read on change; rotation ends sessions), in-memory sessions with idle/absolute expiry and a CSRF token, per-source and global login limits. Fails closed |
 
 All models tolerate unknown fields (`extra="ignore"`). Nested shapes are models too, never
 bare `dict`s, so their inner keys stay under the additive rules (spec §3).
@@ -57,5 +61,7 @@ interface objects").
 
 ## Changelog
 
+- v0.3.0 — `Action`, `ActionResult`, `doors` (`classify`, `host_allowed`, `same_origin`,
+  `authorize`), `AdminAuth`, `Session`, `parse_address`; views may receive `viewer` (additive).
 - v0.2.0 — `PeerDirectory`, `PeerIdentity`, `Unresolved` (additive).
 - v0.1.0 — initial interface.

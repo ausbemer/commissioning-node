@@ -1,18 +1,25 @@
-"""dashboard inward interface — the contract between this module's core and features.
+"""dashboard inward interface — the contract between this module's core and its features.
 
 The ONLY package features may import from this module (spec §4).
 """
+from .actions import Action, ActionResult
+from .admin import AdminAuth, Session
+from .doors import (DOORS, FALLBACK, LOCAL, TAILNET, Caller, Decision, Refusal, authorize,
+                    classify, host_allowed, same_origin)
 from .feature import Feature
-from .identity import PeerDirectory, PeerIdentity, Unresolved
+from .identity import PeerDirectory, PeerIdentity, Unresolved, parse_address
 from .models import DashboardState
 from .views import View
 
 #: Module identity (kebab-case) for capability flags and logging. Lives here, not in core.
 MODULE = "dashboard"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
-           "PeerDirectory", "PeerIdentity", "Unresolved"]
+           "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",
+           "Action", "ActionResult", "AdminAuth", "Session",
+           "DOORS", "LOCAL", "TAILNET", "FALLBACK", "Caller", "Refusal", "Decision",
+           "authorize", "classify", "host_allowed", "same_origin"]

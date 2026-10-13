@@ -63,7 +63,7 @@ class PeerDirectory:
         for peer in snapshot.peers:
             who = PeerIdentity(node_name=peer.node_name, login=peer.login, tags=tuple(peer.tags))
             for raw in peer.addresses:
-                addr = _parse(raw)
+                addr = parse_address(raw)
                 if addr is None:
                     continue
                 # Two peers claiming one address: resolve it to nobody (None marks ambiguous).
@@ -74,7 +74,7 @@ class PeerDirectory:
             self._period_s = snapshot.period_s
 
     def resolve(self, address: str) -> PeerIdentity | Unresolved:
-        addr = _parse(address)
+        addr = parse_address(address)
         if addr is None:
             return Unresolved("invalid", f"{address!r} is not an IP address")
         with self._lock:
@@ -90,7 +90,7 @@ class PeerDirectory:
         return who
 
 
-def _parse(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+def parse_address(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse an address as a socket reports it: strips an IPv6 zone and unwraps IPv4-mapped."""
     try:
         addr = ipaddress.ip_address(raw.split("%", 1)[0])

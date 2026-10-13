@@ -18,8 +18,8 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Produces — outward (to the bus):** none — conforms to the ecosystem
   contract (`interfaces/` v0.2.0)
 - **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`)
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.2.0; inward
-  contract `__version__` 0.2.0. Both live in `interface/__init__.py`; see
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.3.0; inward
+  contract `__version__` 0.3.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 
