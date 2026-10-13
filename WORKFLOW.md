@@ -73,7 +73,7 @@ per-merge reviews can't see: cross-feature interactions and semantic drift (§8.
 ```bash
 python3 main.py                       # daemon: ticks every 5 s; dashboard doors (ADR-0003):
                                       #   http://127.0.0.1:8080/       local
-                                      #   http://<tailnet name>:8080/  tailnet peers
+                                      #   http://<tailnet IP>:8080/    tailnet peers (IP: names are refused)
                                       #   https://<node LAN IP>:8443/  admin fallback (needs a password)
 CN_DASHBOARD_PORT=8099 python3 main.py
 ssh -L 8080:127.0.0.1:8080 pi@<node>  # the local door from elsewhere

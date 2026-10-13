@@ -16,7 +16,6 @@ import socket
 import ssl
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlencode
@@ -115,16 +114,23 @@ def test_stale_peer_table_is_503() -> None:
     ("localhost:8080", "127.0.0.1", True),
     ("localhost:8080", "100.64.0.7", False),              # localhost only means loopback
     ("127.0.0.1:8080", "::ffff:127.0.0.1", True),
-    ("cn-01:8080", "100.64.0.7", True),
-    ("CN-01.tail1234.ts.net:8080", "100.64.0.7", True),
-    ("cn-01.evil.example:8080", "100.64.0.7", False),
-    ("evil.example:8080", "100.64.0.7", False),           # rebinding: attacker's name
-    ("other.tail1234.ts.net", "100.64.0.7", False),
+    # Names are where rebinding lives: a LAN attacker answers LLMNR/mDNS/site DNS for bare
+    # names, and a hostile resolver can answer ts.net for a client without MagicDNS.
+    ("cn-01:8080", "100.64.0.7", False),
+    ("cn-01.tail1234.ts.net:8080", "100.64.0.7", False),
+    ("evil.example:8080", "100.64.0.7", False),
     ("", "100.64.0.7", False),
     (None, "127.0.0.1", False),
 ])
-def test_host_must_name_this_node(host, local, ok) -> None:
-    assert host_allowed(host, local, {"cn-01"}) is ok
+def test_host_must_be_this_nodes_address(host, local, ok) -> None:
+    assert host_allowed(host, local) is ok
+
+
+def test_vouched_names_match_exactly() -> None:
+    fqdn = {"cn-01.tail1234.ts.net"}
+    assert host_allowed("CN-01.tail1234.ts.net:8080", "100.64.0.7", fqdn)
+    assert not host_allowed("cn-01:8080", "100.64.0.7", fqdn)
+    assert not host_allowed("cn-01.tail1234.ts.net.evil.example", "100.64.0.7", fqdn)
 
 
 def test_same_origin() -> None:
@@ -189,20 +195,62 @@ def test_missing_or_malformed_credential_is_off(tmp_path: Path, content) -> None
     assert isinstance(out, Refusal) and (out.status, out.reason) == (503, "disabled")
 
 
-def test_per_source_limit_and_global_gap(tmp_path: Path) -> None:
+def test_per_source_limit(tmp_path: Path) -> None:
     write_cred(tmp_path / "c")
     clock = Clock()
     auth = AdminAuth(str(tmp_path / "c"), clock=clock)
     for _ in range(admin_mod.LOGIN_FAILS_PER_SRC):
         assert auth.login("192.168.36.20", "wrong").reason == "bad-password"
-        assert auth.login("192.168.36.20", PASSWORD).reason == "rate-limited"   # global gap
-        clock.now += admin_mod.LOGIN_GLOBAL_GAP_S
     # That source is now out, even with the right password; another source is not.
     out = auth.login("::ffff:192.168.36.20", PASSWORD)
     assert out.reason == "rate-limited" and "try again in" in out.message
     assert isinstance(auth.login("192.168.36.21", PASSWORD), Session)
     clock.now += admin_mod.LOGIN_WINDOW_S
     assert isinstance(auth.login("192.168.36.20", PASSWORD), Session)
+
+
+def test_ipv6_sources_count_per_64(tmp_path: Path) -> None:
+    write_cred(tmp_path / "c")
+    auth = AdminAuth(str(tmp_path / "c"), clock=Clock())
+    for i in range(admin_mod.LOGIN_FAILS_PER_SRC):
+        assert auth.login(f"fe80::{i + 1}", "wrong").reason == "bad-password"   # rotating
+    assert auth.login("fe80::99", PASSWORD).reason == "rate-limited"            # same /64
+    assert isinstance(auth.login("192.168.36.20", PASSWORD), Session)           # IPv4 is not
+
+
+def test_many_attacking_sources_never_lock_the_operator_out(tmp_path: Path) -> None:
+    # Review finding: a global "wait after any failure" let an attacker failing once a second
+    # from rotating addresses refuse every operator login. Now nothing global refuses.
+    write_cred(tmp_path / "c")
+    clock = Clock()
+    auth = AdminAuth(str(tmp_path / "c"), clock=clock)
+    for i in range(300):
+        auth.login(f"10.{i // 250}.{i % 250}.1", "wrong")
+        auth.login(f"2001:db8:{i:x}::1", "wrong")
+        clock.now += 0.01
+        if i % 30 == 0:
+            assert isinstance(auth.login("192.168.36.20", PASSWORD), Session)
+
+
+def test_concurrent_logins_take_turns_and_all_finish(tmp_path: Path) -> None:
+    import threading
+    write_cred(tmp_path / "c")
+    auth = AdminAuth(str(tmp_path / "c"), clock=Clock())
+    results: list = []
+    threads = [threading.Thread(target=lambda i=i: results.append(
+        auth.login(f"10.0.0.{i}", PASSWORD if i % 2 else "wrong"))) for i in range(1, 21)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert len(results) == 20
+    assert sum(isinstance(r, Session) for r in results) == 10
+
+
+def test_unusable_credential_detail_stays_out_of_the_reply(tmp_path: Path) -> None:
+    (tmp_path / "c").write_text('{"format": 1, "kdf": "scrypt", "n": "SECRET-DETAIL"}')
+    out = AdminAuth(str(tmp_path / "c"), clock=Clock()).login("10.0.0.1", PASSWORD)
+    assert out.reason == "disabled" and "SECRET-DETAIL" not in out.message
 
 
 def test_sessions_expire_idle_and_absolute(tmp_path: Path) -> None:
@@ -283,7 +331,7 @@ def test_rebinding_host_is_refused_even_on_loopback(local_node) -> None:
     _, port, _ = local_node
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     status, _, body = call(conn, "GET", "/api/state", headers={"Host": f"evil.example:{port}"})
-    assert status == 421 and "Host" in body
+    assert status == 421 and "IP address" in body
 
 
 def test_hardening_headers_and_body_limits(local_node) -> None:
@@ -375,8 +423,6 @@ def test_fallback_login_session_csrf_logout(fallback_node) -> None:
     assert call(conn, "POST", "/login", {"password": PASSWORD})[0] == 403          # no Origin
     status, _, page = call(conn, "POST", "/login", {"password": "wrong"}, origin)
     assert status == 401 and "wrong password" in page
-
-    time.sleep(1.05)                                                              # global gap
     status, headers, _ = call(conn, "POST", "/login", {"password": PASSWORD}, origin)
     assert status == 303
     cookie = headers["set-cookie"]

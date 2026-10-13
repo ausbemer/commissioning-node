@@ -42,8 +42,8 @@ Every feature implements `feature.py`'s protocol:
 | `View` (protocol, `views.py`) | 0.1.0 | A feature-supplied page: `path`, `content_type`, pure `render(snapshot)`. Since 0.3.0 the snapshot passed to an HTML view may carry `viewer` (`label`, `door`, `csrf`) |
 | `parse_address` (`identity.py`) | 0.3.0 | Socket address → IP (zone stripped, IPv4-mapped unwrapped); the one parser every door check uses |
 | `Action`, `ActionResult` (protocol, `actions.py`) | 0.3.0 | A feature-supplied write: `name`, POST `path`, `may_disturb` (rung-4 warning or None), `run(form, caller)`. Core calls `run` only after `authorize()` |
-| `classify`, `host_allowed`, `same_origin`, `authorize`, `Caller`, `Refusal`, `Decision`, door names (`doors.py`) | 0.3.0 | The three doors and the one ownership check (ADR-0003 §1, §4). Pure functions |
-| `AdminAuth`, `Session` (`admin.py`) | 0.3.0 | Fallback login: scrypt credential (re-read on change; rotation ends sessions), in-memory sessions with idle/absolute expiry and a CSRF token, per-source and global login limits. Fails closed |
+| `classify`, `host_allowed`, `same_origin`, `authorize`, `Caller`, `Refusal`, `Decision`, door names (`doors.py`) | 0.3.0 | The three doors and the one ownership check (ADR-0003 §1, §4). Pure functions. `host_allowed` accepts the arrival address, `localhost` on loopback, and only exact `node_names` (rebinding) |
+| `AdminAuth`, `Session` (`admin.py`) | 0.3.0 | Fallback login: scrypt credential (re-read on change; rotation ends sessions), in-memory sessions with idle/absolute expiry and a CSRF token; failures limited per IPv4 address or IPv6 /64; verifications run one at a time, first come first served (no global refusal, so an attacker cannot lock the operator out). Fails closed |
 
 All models tolerate unknown fields (`extra="ignore"`). Nested shapes are models too, never
 bare `dict`s, so their inner keys stay under the additive rules (spec §3).

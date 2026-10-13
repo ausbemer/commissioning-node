@@ -10,6 +10,10 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       its order. Steps 2–4 done: peer table and resolver; ops (admin password, TLS key, 8080
       firewall, operator, doctor); the dashboard's three doors, fallback login, sessions,
       CSRF, login limits and `authorize()`. Next: step 5, the config registry ADR.
+- [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
+      `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
+      in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
+      a client not using MagicDNS resolves `*.ts.net` through a resolver the site may control.
 - [ ] **Config registry** (§6 sanctioned exception). Features declare fields, the
       dashboard reads and edits them, and secrets are flagged at declaration. Document the
       graduation cost.
@@ -56,7 +60,7 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] `relay_planner.MAX_CAMERAS = 512`
 - [ ] Admin fallback (`dashboard/interface/admin.py`): `SESSION_IDLE_S = 900`,
       `SESSION_MAX_S = 28800`, `LOGIN_FAILS_PER_SRC = 5` per `LOGIN_WINDOW_S = 900`,
-      `LOGIN_GLOBAL_GAP_S = 1.0`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
+      `SOURCE_V6_PREFIX = 64`, `MAX_PENDING_LOGINS = 64`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
       `MAX_BODY = 16 KiB`. Ledger: `tools/ledgers/admin-auth/` (scrypt N is already there).
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture

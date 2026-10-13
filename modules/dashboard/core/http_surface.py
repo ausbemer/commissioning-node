@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable, Mapping
+from typing import Mapping
 from urllib.parse import parse_qsl
 
 from ..interface import (FALLBACK, MODULE, Action, ActionResult, AdminAuth, Caller,
@@ -131,7 +131,7 @@ class HttpSurface:
                  peers: PeerDirectory, actions: list[Action] | None = None,
                  admin: AdminAuth | None = None, fallback: FallbackConfig | None = None,
                  login_view: View | None = None,
-                 node_names: Callable[[], set[str]] | None = None) -> None:
+                 ) -> None:
         self._state = state
         self._peers = peers
         self._views = {v.path: v for v in views}
@@ -143,7 +143,6 @@ class HttpSurface:
             raise ValueError(f"dashboard paths claimed twice: {sorted(clash)}")
         self._host, self._port = host, port
         self._admin, self._fallback = admin, fallback
-        self._node_names = node_names or (lambda: {socket.gethostname()})
         self._server: _Server | None = None
         self._tls_server: _Server | None = None
         self.fallback_address: tuple[str, int] | None = None
@@ -213,9 +212,9 @@ class HttpSurface:
                 who = classify(local, self.client_address[0], surface._peers)
                 if isinstance(who, Refusal):
                     return who
-                if not host_allowed(self.headers.get("Host"), local, surface._names()):
-                    return Refusal(421, "bad-host", "refused: the Host header does not name this "
-                                                    "node; use its address or tailnet name")
+                if not host_allowed(self.headers.get("Host"), local):
+                    return Refusal(421, "bad-host", "refused: open the dashboard by the node's "
+                                                    "tailnet IP address (or localhost on the node)")
                 return who
 
             def _cookie(self) -> str | None:
@@ -351,9 +350,3 @@ class HttpSurface:
                 log.debug("http: " + fmt, *args)
 
         return Handler
-
-    def _names(self) -> set[str]:
-        """Names a Host header may use for this node: OS host name + tailnet host names."""
-        names = set(self._node_names())
-        names.update(self._state.snapshot().get("tailnet", {}).keys())
-        return names
