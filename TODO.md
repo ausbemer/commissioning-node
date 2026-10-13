@@ -5,39 +5,27 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 ## Up next (start here next session)
 
-- [ ] **ADR-0003 step 5: build the config registry** (`docs/adr/0004-config-registry.md`,
-      Accepted 2026-10-13). Values in `/var/lib/commissioning-node` (`StateDirectory=`),
-      `site/` vs `node/` scopes so teardown deletes `site/`, graduation cost accepted.
-      Order (ADR-0004): ~~`ConfigField` contract 0.3.0 → `config_registry/` (bus-coupled
-      tier) with tests~~ → ~~ops (`StateDirectory=`, `paths.sh`, doctor)~~ (done 2026-10-13,
-      `feature/config-registry`; installed on the node, doctor clean) → ~~wiring (tailnet-gateway's
-      hostname/tags/auth_key fields, dashboard `/config` page and set/clear actions via
-      `authorize()`)~~ → **code review + security review**, then merge to `dev`.
+- [ ] **Dashboard design** — the next piece of work (operator, 2026-10-13).
+- [ ] **Finish the tailnet writer rehearsal** (ADR-0005), on the node:
+      1. `sudo ops/install.sh`: the firewall unit now owns IPv4 forwarding (review ruling 4)
+         and the old `/etc/sysctl.d/90-commissioning-node.conf` is removed; then the doctor.
+      2. Leave and Join once on `/config`: the current join record predates the key
+         fingerprint, so auto-rejoin deliberately ignores it (ruling 1).
+      3. Rehearse a power cycle (should come back `Running`, no rejoin) and an ephemeral
+         removal (should auto-rejoin; verifies the `NeedsLogin` assumption in quirks.md).
+      4. Then make the writer enabled by default (drop `CN_TAILNET_WRITER`), and remove the
+         drop-in at `/etc/systemd/system/commissioning-node.service.d/tailnet-writer.conf`.
+- [x] **ADR-0003 steps 5 and 6: config registry + tailnet-gateway writer** (ADR-0004,
+      ADR-0005 with amendments A1–A3). Merged to `dev` 2026-10-13 after four review rounds
+      (rulings in ADR-0005); routes rehearsed and approved on the node.
 - [x] **Step 4 confirmed on the node** (2026-10-13): doctor clean, fallback login from a
-      LAN laptop. Certificate regenerated since step 3; its fingerprint is now
-      `4D:E0:3A:96:…:86:BA:C4:F0` (printed in full by the doctor). Browser login needed one
-      fix: `Referrer-Policy: no-referrer` made browsers send `Origin: null`, which the
-      same-origin check refused.
-
-- [ ] **ADR-0003 step 6: tailnet-gateway writer** (`docs/adr/0005-tailnet-gateway-writer.md`,
-      Accepted 2026-10-13). Join / Rename / Leave through an explicit confirmed Apply; one
-      worker, result on `tailnet/apply-result`; the key is deleted after a join; the node is
-      an **ephemeral** device on every site (D4). Steps 2–5 built; first rehearsal join
-      passed (2026-10-13). Amended the same day: the key is kept and the node auto-rejoins a
-      recorded join (A1, A2); routes default to the detected site networks (A3), with IPv4
-      forwarding fenced by the firewall. **Next:** re-run `sudo ops/install.sh` (forwarding +
-      forward chain), rehearse Routes (approve in the admin console), a power cycle, and an
-      ephemeral removal (auto-rejoin); then enable the writer by default. Then the combined code + security review of ADR-0004 and ADR-0005,
-      and merge `feature/config-registry` to `dev`.
+      LAN laptop. Certificate fingerprint `4D:E0:3A:96:…:86:BA:C4:F0` (printed in full by
+      the doctor).
 
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
 
-- [ ] **Identity + admin fallback** (`docs/adr/0003-operator-doors-identity-and-admin-fallback.md`,
-      Accepted). Steps 1–4 done (2026-10-12/13): peer table and resolver; ops (admin
-      password, TLS key, 8080 firewall, operator, doctor); the dashboard's three doors,
-      fallback login, sessions, CSRF, login limits and `authorize()`, security-reviewed.
-      Remaining: step 5 (Up next) and step 6, the `tailnet-gateway` writer (hostname, tags,
-      auth-key join) with its own Safety ADR and action-manifest entries.
+- [x] **Identity + admin fallback** (`docs/adr/0003-operator-doors-identity-and-admin-fallback.md`,
+      Accepted). Steps 1–6 done (2026-10-12/13); step 6's rehearsal finishes under Up next.
 - [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
@@ -49,9 +37,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       renewal (a renewed level, §5), where the key lives, and what the door does if the
       certificate is missing or expired. `tailscale cert` is a vendor call, so it lives in
       tailnet-gateway's `core/`.
-- [ ] **tailnet-gateway: auto-configuration.** Detect the site subnet, then *propose*
-      advertised routes and hostname for operator confirmation (§11 rung 2). Then a writer
-      feature (`tailscale set` / `up`) with a Safety ADR. Auth keys are secrets.
+- [x] **tailnet-gateway: auto-configuration.** Site networks are detected and proposed as the
+      default routes (`auto`), applied on a confirmed Join or Routes (ADR-0005 A3).
 - [ ] **camera-config: VAPIX probe** (read-only). Fill `model` / `firmware` from the camera.
       Then discovery, which proposes cameras for an operator to adopt (rung 2).
 - [ ] **camera-config: VAPIX writer.** Safety ADR. The first write to a camera is
