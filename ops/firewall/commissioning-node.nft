@@ -2,10 +2,13 @@
 # commissioning-node firewall — installed to /etc/commissioning-node/firewall.nft and
 # loaded by commissioning-node-firewall.service (ADR-0002).
 #
-# Scope: ONLY MediaMTX's ports. They are reachable from loopback and the tailnet
-# (tailscale0) and dropped on every other interface, i.e. the site LAN. Nothing else on
-# the host is touched: this is our own table, never `flush ruleset` (that would also wipe
-# Tailscale's rules).
+# Scope: ONLY our own ports: MediaMTX's and the dashboard's tailnet door (8080, ADR-0003).
+# They are reachable from loopback and the tailnet (tailscale0) and dropped on every other
+# interface, i.e. the site LAN. Nothing else on the host is touched: this is our own table,
+# never `flush ruleset` (that would also wipe Tailscale's rules).
+#
+# The admin fallback (8443, TLS + admin password, ADR-0003) is deliberately NOT listed: it
+# is the door for when the tailnet is down, so it must stay reachable from the site LAN.
 #
 # MediaMTX listens on all interfaces; this table is what makes the tailnet the boundary
 # for streams (ADR-0001). Ports listed are every port MediaMTX v1.21 opens by default,
@@ -24,6 +27,9 @@ table inet commissioning_node {
 		# RTSP 8554, RTSPS 8322, API 9997, metrics 9998, pprof 9999, playback 9996,
 		# RTMP 1935/1936, HLS 8888, WebRTC 8889, SRT 8890, MoQ 8892.
 		tcp dport { 1935, 1936, 8322, 8554, 8888, 8889, 8892, 9996, 9997, 9998, 9999 } drop comment "MediaMTX: tailnet + loopback only (ADR-0002)"
+		# Dashboard: local + tailnet doors. The app also refuses any caller that does not
+		# resolve to a tailnet peer; this is the second, independent check (§11 rung 13).
+		tcp dport 8080 drop comment "dashboard: tailnet + loopback only (ADR-0003)"
 		# RTP/RTCP 8000-8007, WebRTC 8189, SRT 8890, MoQ 8892/8893.
 		udp dport { 8000-8007, 8189, 8890, 8892, 8893 } drop comment "MediaMTX: tailnet + loopback only (ADR-0002)"
 	}

@@ -28,4 +28,4 @@ produces a new interesting case. The corpus is versioned with the code it gates.
 
 | Area | Ledger | Episodes | Gating test |
 |------|--------|----------|-------------|
-| — | | | |
+| Admin fallback auth | `tools/ledgers/admin-auth/` (scrypt cost) | — | — |

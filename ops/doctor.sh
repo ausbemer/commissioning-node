@@ -7,8 +7,11 @@
 set -uo pipefail
 
 OPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$OPS_DIR")"
 # shellcheck source=ops/pins.sh
 . "$OPS_DIR/pins.sh"
+# shellcheck source=ops/paths.sh
+. "$OPS_DIR/paths.sh"
 
 fails=0
 pass() { printf '  OK    %s\n' "$*"; }
@@ -24,6 +27,10 @@ check_warn() { local ok="$1" bad="$2"; shift 2; if "$@"; then pass "$ok"; else w
 held() { apt-mark showhold 2>/dev/null | grep -qx tailscale; }
 stock_nftables_disabled() { ! systemctl is-enabled --quiet nftables.service 2>/dev/null; }
 quiet() { "$@" > /dev/null 2>&1; }
+owner_mode() { stat -c '%U %a' "$1" 2>/dev/null; }
+listening() { [[ -n "$(ss -Htln "sport = :$1" 2>/dev/null)" ]]; }
+not_listening() { ! listening "$1"; }
+pref() { tailscale debug prefs 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))" 2>/dev/null; }
 
 section "Host"
 # shellcheck source=/dev/null
@@ -46,10 +53,13 @@ if [[ -n "$have" ]]; then
   state="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null || true)"
   case "$state" in
     Running) pass "logged in: $(tailscale ip -4 2>/dev/null | head -1)" ;;
-    NeedsLogin) warn "not logged in to a tailnet — run: sudo tailscale up" ;;
+    NeedsLogin) warn "not logged in to a tailnet — run: tailscale up --operator=$RUN_USER" ;;
     "") warn "could not read tailscale status" ;;
     *) warn "tailscale state: $state" ;;
   esac
+  op="$(pref OperatorUser)"
+  check_warn "operator is $RUN_USER (the daemon can run tailscale without root)" \
+    "operator is '${op:-none}', not $RUN_USER — re-run sudo ops/install.sh" test "$op" == "$RUN_USER"
 fi
 
 section "Firewall"
@@ -59,9 +69,15 @@ check "commissioning-node-firewall active" \
 check_warn "Debian nftables.service disabled (cannot flush our table)" \
   "Debian nftables.service is enabled: its 'flush ruleset' wipes our table if restarted" \
   stock_nftables_disabled
+check "$FW_FILE matches the repo" "$FW_FILE differs from the repo — re-run the installer" \
+  cmp -s "$OPS_DIR/firewall/commissioning-node.nft" "$FW_FILE"
 if ((EUID == 0)); then
+  table="$(nft list table inet commissioning_node 2>/dev/null || true)"
   check "nftables table inet commissioning_node loaded" "table inet commissioning_node not loaded" \
-    quiet nft list table inet commissioning_node
+    test -n "$table"
+  check "dashboard 8080 dropped off the tailnet (live rule)" \
+    "no live 8080 drop rule — the dashboard's tailnet door is open to the site LAN" \
+    grep -q 'tcp dport 8080 drop' <<< "$table"
 else
   skip "nftables table check needs root (sudo ops/doctor.sh)"
 fi
@@ -89,6 +105,45 @@ if ((EUID == 0)); then
   else pass "listeners: RTSP :8554, API 127.0.0.1:9997 only"; fi
 else
   skip "listener ownership check needs root (sudo ops/doctor.sh)"
+fi
+
+section "Admin fallback (ADR-0003)"
+if [[ -f "$TLS_CERT" && -f "$TLS_KEY" ]]; then
+  pass "TLS certificate $TLS_CERT"
+  # Compare this with what the browser shows on the first visit to :8443 (trust on first use).
+  echo "        SHA-256 $(openssl x509 -in "$TLS_CERT" -noout -fingerprint -sha256 | cut -d= -f2)"
+  check_warn "certificate valid for 30+ days" "certificate expires within 30 days: $(openssl x509 -in "$TLS_CERT" -noout -enddate)" \
+    quiet openssl x509 -in "$TLS_CERT" -noout -checkend $((30 * 86400))
+  check "TLS key owned by $RUN_USER, mode 600" "TLS key is '$(owner_mode "$TLS_KEY")', want '$RUN_USER 600' — re-run sudo ops/install.sh" \
+    test "$(owner_mode "$TLS_KEY")" == "$RUN_USER 600"
+  if [[ -r "$TLS_KEY" ]]; then
+    check "TLS key matches the certificate" "TLS key does not match the certificate" \
+      test "$(openssl x509 -in "$TLS_CERT" -noout -pubkey)" == "$(openssl pkey -in "$TLS_KEY" -pubout 2>/dev/null)"
+  else
+    skip "key/certificate match needs read access to the key (sudo ops/doctor.sh)"
+  fi
+else
+  fail "TLS key pair missing in $TLS_DIR — run sudo ops/install.sh"
+fi
+valid_cred() { python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(not (d.get("format")==1 and d.get("kdf")=="scrypt" and d.get("hash") and d.get("salt")))' "$ADMIN_CRED" 2>/dev/null; }
+if [[ -f "$ADMIN_CRED" ]]; then
+  check "admin credential owned by $RUN_USER, mode 600" \
+    "admin credential is '$(owner_mode "$ADMIN_CRED")', want '$RUN_USER 600' — re-run sudo ops/set-admin-password.sh" \
+    test "$(owner_mode "$ADMIN_CRED")" == "$RUN_USER 600"
+  if [[ -r "$ADMIN_CRED" ]]; then
+    check "admin credential is a well-formed scrypt record" \
+      "admin credential is malformed — re-run sudo ops/set-admin-password.sh" valid_cred
+  else
+    skip "admin credential format check needs read access (sudo ops/doctor.sh)"
+  fi
+  # The listener itself arrives with ADR-0003 step 4.
+  check_warn "fallback listening on :8443" "fallback not listening on :8443 (the listener arrives with ADR-0003 step 4)" \
+    listening 8443
+else
+  warn "no admin password, so the LAN fallback is off (fail closed) — sudo ops/set-admin-password.sh"
+  # Fail closed: without a credential nothing may answer on the fallback port.
+  check "nothing listening on :8443 without a credential" ":8443 is listening but no admin credential exists" \
+    not_listening 8443
 fi
 
 section "commissioning-node daemon"

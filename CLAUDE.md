@@ -42,7 +42,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `ci.sh` | The whole gate, the same locally and in CI. |
 | `tools/ledgers/`, `tests/replay/` | Evidence for behaviour/safety constants and the replay corpus (§8.11/§8.12) — this node acts on the world. |
 | `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX and Axis VAPIX (§7). |
-| `ops/` | Ops tier (ADR-0002): `install.sh` (idempotent, `--dry-run`), `doctor.sh` (read-only), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), MediaMTX config + its check, the scoped nftables firewall, and the systemd units. Never imported. |
+| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (idempotent, `--dry-run`; also the fallback TLS key pair and the Tailscale operator), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), `paths.sh` (host paths + daemon user), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080), and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
 neutral packages `freshness/` · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
@@ -101,7 +101,7 @@ directory and import path.
     accepts writes, until the identity/admin-auth ADR exists.
 14. **Domain-specific:** Axis cameras belong to the site — the first write to any camera is
     operator-confirmed (§11 rung 3), and its warning appears in the action manifest (§5).
-15. **Domain-specific:** MediaMTX's ports are reachable only from the tailnet and loopback.
+15. **Domain-specific:** MediaMTX's ports and the dashboard's 8080 are reachable only from the tailnet and loopback.
     The `inet commissioning_node` nftables table enforces this, and `mediamtx.service`
     refuses to run without it. Never `flush ruleset` and never enable Debian's
     `nftables.service` (ADR-0002). A new MediaMTX server or port also means a firewall entry.
