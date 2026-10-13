@@ -75,7 +75,7 @@ if ((EUID == 0)); then
   table="$(nft list table inet commissioning_node 2>/dev/null || true)"
   check "nftables table inet commissioning_node loaded" "table inet commissioning_node not loaded" \
     test -n "$table"
-  check "dashboard 8080 dropped off the tailnet (live rule)" \
+  check "dashboard 8080 dropped on the site LAN (live rule)" \
     "no live 8080 drop rule — the dashboard's tailnet door is open to the site LAN" \
     grep -q 'tcp dport 8080 drop' <<< "$table"
 else

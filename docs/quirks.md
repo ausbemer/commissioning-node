@@ -58,8 +58,8 @@ Pinned dependencies covered here:
 - Once `install.sh` has run `tailscale set --operator=<daemon user>`, a later `tailscale up`
   that does not repeat `--operator=<user>` is expected to refuse ("requires mentioning all
   non-default flags") rather than silently reset it. This is why the installer and doctor
-  print `tailscale up --operator=<user>`. Also expected, not verified: `tailscale set
-  --operator` works while logged out (`NeedsLogin`). `OperatorUser` is omitted from
-  `tailscale debug prefs` when unset (verified on 1.102.5, logged out, 2026-10-13).
+  print `tailscale up --operator=<user>`. Verified on 1.102.5 (2026-10-13): `tailscale set
+  --operator` works while logged out (`NeedsLogin`), and `OperatorUser` is omitted from
+  `tailscale debug prefs` when unset.
 - MediaMTX's RTSP port 8554 (`relay_planner.MEDIAMTX_RTSP_PORT`) must match `rtspAddress`
   in `ops/mediamtx/mediamtx.conf.yml`. They match today, but nothing checks it yet.
