@@ -9,7 +9,8 @@
 #      loopback)
 #   4. MediaMTX from the sha256-pinned release tarball, its system user, config and unit
 #   5. the admin fallback's TLS key pair, generated on the node once (ADR-0003)
-#   6. the commissioning-node daemon unit (runs main.py)
+#   6. the commissioning-node daemon unit (runs main.py); systemd creates its state
+#      directory for the config registry (ADR-0004)
 #
 # It does NOT log Tailscale in and does NOT set the admin password (both are secrets, spec
 # §8.9: use `tailscale up` and ops/set-admin-password.sh), and touches no firewall rules but
@@ -255,6 +256,8 @@ sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@RUN_USER@|$RUN_USER|g" \
   "$OPS_DIR/systemd/commissioning-node.service" > "$work/commissioning-node.service"
 sync_file "$work/commissioning-node.service" "$UNIT_DIR/commissioning-node.service" 0644
 ensure_service commissioning-node.service "$CHANGED"
+if [[ -d "$CN_STATE" ]]; then ok "$CN_STATE (config registry, created by systemd)"
+else echo "    note: systemd creates $CN_STATE when commissioning-node starts (StateDirectory=)"; fi
 
 # ---------------------------------------------------------------------------------------
 step "Done$( ((DRY_RUN)) && echo ' (dry run — nothing was changed)')"

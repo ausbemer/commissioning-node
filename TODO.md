@@ -9,8 +9,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       Accepted 2026-10-13). Values in `/var/lib/commissioning-node` (`StateDirectory=`),
       `site/` vs `node/` scopes so teardown deletes `site/`, graduation cost accepted.
       Order (ADR-0004): ~~`ConfigField` contract 0.3.0 → `config_registry/` (bus-coupled
-      tier) with tests~~ (done 2026-10-13, `feature/config-registry`) → ops (`StateDirectory=`, `paths.sh`, doctor; re-run install on the
-      node) → wiring (tailnet-gateway's hostname/tags/auth_key fields, dashboard Config
+      tier) with tests~~ → ~~ops (`StateDirectory=`, `paths.sh`, doctor)~~ (done 2026-10-13,
+      `feature/config-registry`; **re-run `sudo ops/install.sh` on the node**, then the doctor) → wiring (tailnet-gateway's hostname/tags/auth_key fields, dashboard Config
       section and `config.*` actions via `authorize()`) → security review.
 - [x] **Step 4 confirmed on the node** (2026-10-13): doctor clean, fallback login from a
       LAN laptop. Certificate regenerated since step 3; its fingerprint is now

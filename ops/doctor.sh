@@ -148,6 +148,42 @@ else
     not_listening 8443
 fi
 
+section "Config registry (ADR-0004)"
+check "unit declares StateDirectory=commissioning-node" \
+  "unit has no StateDirectory= — config cannot be saved; re-run sudo ops/install.sh" \
+  test "$(systemctl show commissioning-node -p StateDirectory --value 2>/dev/null)" == "commissioning-node"
+if [[ ! -d "$CN_STATE" ]]; then
+  if active commissioning-node.service; then fail "$CN_STATE missing although the daemon is running"
+  else warn "$CN_STATE missing — systemd creates it when commissioning-node starts"; fi
+else
+  check "$CN_STATE owned by $RUN_USER, mode 700" \
+    "$CN_STATE is '$(owner_mode "$CN_STATE")', want '$RUN_USER 700'" \
+    test "$(owner_mode "$CN_STATE")" == "$RUN_USER 700"
+  if [[ -r "$CN_STATE" && -x "$CN_STATE" ]]; then
+    # The registry treats an unsafe secret file as unset; say which one and why.
+    bad_secrets=0
+    for scope in site node; do
+      dir="$CN_STATE/$scope/secrets"
+      [[ -d "$dir" ]] || continue
+      while IFS= read -r -d '' f; do
+        if [[ -L "$f" || ! -f "$f" ]]; then fail "secret $f is not a regular file (ignored by the daemon)"
+        elif [[ "$(owner_mode "$f")" != "$RUN_USER 600" ]]; then
+          fail "secret $f is '$(owner_mode "$f")', want '$RUN_USER 600' (ignored by the daemon)"
+        else continue; fi
+        bad_secrets=$((bad_secrets + 1))
+      done < <(find "$dir" -mindepth 1 -maxdepth 1 -print0)
+    done
+    ((bad_secrets)) || pass "secret files are regular, owned by $RUN_USER, mode 600"
+    site_secrets="$(find "$CN_STATE/site/secrets" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)"
+    ((site_secrets == 0)) || warn "$site_secrets site secret(s) stored — wiped at teardown; an auth key is deleted after its join"
+    malformed="$(find "$CN_STATE" -maxdepth 2 -name 'config.json.malformed-*' 2>/dev/null)"
+    if [[ -n "$malformed" ]]; then warn "malformed config set aside (defaults in use): $(tr '\n' ' ' <<< "$malformed")"
+    else pass "no malformed config set aside"; fi
+  else
+    skip "secret file checks need read access to $CN_STATE (sudo ops/doctor.sh)"
+  fi
+fi
+
 section "commissioning-node daemon"
 check "commissioning-node active" "commissioning-node not active" active commissioning-node.service
 check "dashboard answers on 127.0.0.1:8080 (local door)" "dashboard not answering on 127.0.0.1:8080" \

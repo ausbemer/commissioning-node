@@ -246,7 +246,8 @@ the writer exists (§8.4 "merge early, register disabled").
 2. ~~Contract: `ConfigField` (0.3.0). Then `config_registry/` with its tier declaration and
    tests: atomic writes, malformed-file fallback, secret modes, CR/LF stripping, masking,
    unknown keys kept.~~ Done 2026-10-13.
-3. Ops: `StateDirectory=`, `paths.sh`, doctor checks. Re-run `install.sh` on the node.
+3. ~~Ops: `StateDirectory=`, `paths.sh`, doctor checks.~~ Done 2026-10-13. Re-run `install.sh` on
+   the node.
 4. Wiring: `tailnet-gateway` declares the three fields and gets `ConfigView`; the dashboard
    gets `ConfigSurface`, the Config section and the `config.*` actions through `authorize()`.
    Security review (§8.10: approval surface and the first stored network secret).

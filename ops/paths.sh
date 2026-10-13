@@ -13,5 +13,9 @@ TLS_DIR="$CN_ETC/tls"
 TLS_KEY="$TLS_DIR/fallback.key"
 TLS_CERT="$TLS_DIR/fallback.crt"
 
+# The config registry (ADR-0004): systemd creates it (StateDirectory=, 0700, owned by the
+# daemon user). site/ is wiped when the node leaves a site; node/ survives the move.
+CN_STATE=/var/lib/commissioning-node
+
 # The daemon runs as the checkout's owner, and owns its secrets (0600).
 RUN_USER="$(stat -c %U "$REPO_ROOT")"
