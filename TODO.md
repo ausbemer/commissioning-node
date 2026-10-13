@@ -11,10 +11,14 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
          IPv4 forwarding, the old sysctl file is gone, doctor clean.
       2. ~~Leave and Join once on `/config`~~ — done 2026-10-13 16:21: the join record now
          carries `key_sha256` (ruling 1). Join timed in `tools/ledgers/tailnet-writer/`.
-      3. Rehearse a power cycle (should come back `Running`, no rejoin) and an ephemeral
-         removal (should auto-rejoin; verifies the `NeedsLogin` assumption in quirks.md).
+      3. ~~Ephemeral removal~~ — done 2026-10-13 by an unplanned power cut (~2 h): booted
+         `NeedsLogin`, auto-rejoined in 5 s (quirks Q-005, ADR-0005 amendment). Still to
+         do: a short power cycle (should come back `Running`, no rejoin).
       4. Then make the writer enabled by default (drop `CN_TAILNET_WRITER`), and remove the
          drop-in at `/etc/systemd/system/commissioning-node.service.d/tailnet-writer.conf`.
+      5. The key is an OAuth client secret (ADR-0005 amendment). Verify that a rejoin with it
+         needs no device approval (`?preauthorized=true`; the `auth_key` pattern refuses
+         that suffix today) and that it joins ephemeral; record both in quirks.md.
 - [x] **ADR-0003 steps 5 and 6: config registry + tailnet-gateway writer** (ADR-0004,
       ADR-0005 with amendments A1–A3). Merged to `dev` 2026-10-13 after four review rounds
       (rulings in ADR-0005); routes rehearsed and approved on the node.

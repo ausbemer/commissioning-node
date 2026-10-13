@@ -397,3 +397,34 @@ Round 3: a re-check that failed with anything but "not found" cleared the malfor
 so the next write replaced a hand-fixed but unreadable file. The flag now clears only on a
 definite outcome; any other read error marks the scope unreadable (writes refused), as at
 load.
+
+### 2026-10-13 — rehearsal step 3: a power cut; the key is an OAuth client secret
+
+**Measured (Q-005).** The node lost power for up to ~2 h. The control plane had removed
+the ephemeral node, so tailscaled booted into `NeedsLogin`. Auto-rejoin rejoined it with the
+recorded values: `tailscale up` took 4.999 s, and the node was `Running` 6 s after
+tailscaled's first state change (request `32d632b22031`). This answers A2's "not measured
+yet". It also means a long outage always ends in a rejoin, so auto-rejoin is the normal
+path after a power cut, not a corner case. The short-outage case (back `Running`, no
+rejoin) is still to rehearse.
+
+The node has no battery-backed clock: it booted 2h12m slow and stepped at its first NTP
+sync, 37 s after boot, during the rejoin. Nothing in the writer depends on the wall clock
+(backoff and freshness are monotonic), but journal times before the sync are wrong. Ledger
+rows are timed from monotonic stamps.
+
+**The operator's key is a Tailscale OAuth client secret** (`tskey-client-…`) with the
+`auth_keys` scope, locked to the node's tags. The operator keeps one and reuses it from site
+to site instead of minting an auth key per visit. Consequences for A1:
+
+- The secret doesn't expire. A1's bound "for the life of the key (Tailscale caps auth keys
+  at 90 days)" no longer applies. The bound is now the site teardown wipe, the operator's
+  delete on `/config`, and revoking the client in the admin console.
+- It is a stronger secret than an auth key: anyone holding it can mint keys for its tags
+  until it is revoked. Locking it to tags and the ADR-0004 file rules (0600, never on the bus
+  or in logs) are what limit it. If a node is lost with a secret on it, revoke the client.
+- Not measured, from Tailscale's documentation (verify, then record in quirks.md): an OAuth
+  secret used as an auth key needs `--advertise-tags`, joins ephemeral by default, and is
+  *not* pre-authorised by default. On a tailnet with device approval, a rejoin would wait
+  for approval unless the key carries `?preauthorized=true`. The `auth_key` field's pattern
+  (`tskey-[A-Za-z0-9-]+`, matched whole) refuses such a suffix today.
