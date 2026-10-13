@@ -30,6 +30,13 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
       a client not using MagicDNS resolves `*.ts.net` through a resolver the site may control.
+- [ ] **Trusted certificate on the tailnet door** (after "Dashboard by MagicDNS name"). Serve
+      the tailnet door over HTTPS with a `tailscale cert` (Let's Encrypt, `*.ts.net`), so the
+      everyday door has no browser warning. The fallback door keeps its self-signed
+      certificate and fingerprint check (ADR-0003 accepts the warning there). Decide in an ADR:
+      renewal (a renewed level, §5), where the key lives, and what the door does if the
+      certificate is missing or expired. `tailscale cert` is a vendor call, so it lives in
+      tailnet-gateway's `core/`.
 - [ ] **tailnet-gateway: auto-configuration.** Detect the site subnet, then *propose*
       advertised routes and hostname for operator confirmation (§11 rung 2). Then a writer
       feature (`tailscale set` / `up`) with a Safety ADR. Auth keys are secrets.
