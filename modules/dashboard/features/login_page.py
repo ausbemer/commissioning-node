@@ -4,6 +4,20 @@ from __future__ import annotations
 
 from html import escape
 
+from ..interface import banner, page
+
+STYLE = """
+.login { max-width:24rem; margin:3rem auto; background:var(--surface); border:1px solid var(--line);
+  border-radius:10px; padding:20px; display:grid; gap:10px; }
+.login h1 { font-size:22px; }
+.login .sub { color:var(--muted); margin:0; }
+.login .msg { color:var(--crit); margin:0; }
+.login form { display:grid; gap:8px; }
+.login label { font-size:13px; color:var(--muted); }
+.login input[type=password] { font-size:15px; padding:8px 10px; }
+.login .btn { justify-self:start; font-size:14px; padding:6px 14px; }
+"""
+
 
 class LoginPage:
     path = "/login"
@@ -12,31 +26,15 @@ class LoginPage:
     def render(self, snapshot: dict) -> str:
         message = snapshot.get("message") or ""
         note = f'<p class="msg" role="alert">{escape(message)}</p>' if message else ""
-        return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>commissioning-node · admin login</title>
-<style>
-:root {{ --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --line:#d9d9d4; --warn:#a33a00; color-scheme: light; }}
-@media (prefers-color-scheme: dark) {{
-  :root {{ --bg:#18181a; --fg:#ececea; --muted:#9a9a95; --line:#34343a; --warn:#ff9a5c; color-scheme: dark; }}
-}}
-body {{ background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; margin:0; padding:1.5rem 1rem; }}
-main {{ max-width:24rem; margin:3rem auto; }}
-h1 {{ font-size:1.2rem; margin:0 0 .25rem; }}
-.sub {{ color:var(--muted); margin:0 0 1.5rem; }} .msg {{ color:var(--warn); }}
-label {{ display:block; margin-bottom:.35rem; }}
-input[type=password] {{ width:100%; box-sizing:border-box; padding:.5rem; font:inherit;
-  background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:4px; }}
-button {{ margin-top:1rem; padding:.5rem 1rem; font:inherit; }}
-</style></head><body><main>
-<h1>commissioning-node</h1>
-<p class="sub">Admin fallback, for when the tailnet is unavailable.</p>
+        body = f"""<section class="login">
+<h1>Admin login</h1>
+<p class="sub">The admin fallback, for when the tailnet is unavailable.</p>
 {note}
 <form method="post" action="/login">
 <label for="password">Admin password</label>
 <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-<button type="submit">Log in</button>
+<button class="btn primary" type="submit">Log in</button>
 </form>
-</main></body></html>
-"""
+</section>"""
+        return page(title="Admin login · commissioning-node", body=body, style=STYLE,
+                    banner_html=banner(name="commissioning-node"))

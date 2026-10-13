@@ -17,7 +17,7 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"dashboard"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.6.0`).
+- `VERSION` — the module release version (`0.7.0`).
 - `__version__` — the inward interface semver (`0.7.0`).
 - The public models below and the `Feature` protocol.
 

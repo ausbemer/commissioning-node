@@ -405,7 +405,7 @@ def served(tmp_path):
 def test_panel_offers_join_only_with_a_key(served) -> None:
     node, _, conn, origin = served
     page = call(conn, "GET", "/config")[2]
-    assert "On a tailnet: <strong>no</strong>" in page and 'action="/actions/tailnet/join"' not in page
+    assert '<td>On a tailnet</td><td><span class="chip warn">no</span>' in page and 'action="/actions/tailnet/join"' not in page
     assert "save a reusable ephemeral auth key" in page and "not enabled yet" not in page
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     page = call(conn, "GET", "/config")[2]
@@ -425,7 +425,7 @@ def test_join_from_the_page_needs_confirmation_and_reports_back(served, caplog) 
         main.tick(node)
         page = call(conn, "GET", "/config")[2]
     assert writer.calls and writer.calls[0][0] == "join"
-    assert "Last: join done" in page and "requested by local via the local door" in page
+    assert '<span class="chip ok">Done</span> Join at' in page and "requested by local via the local door" in page
     assert "192.168.137.0/24" in page
     assert KEY not in caplog.text and KEY not in page
 
@@ -611,7 +611,7 @@ def test_panel_offers_routes_and_flags_unapproved(served) -> None:
     call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
     main.tick(node)
     page = call(conn, "GET", "/config")[2]
-    assert "Routes advertised: <strong>192.168.137.0/24</strong>" in page
+    assert 'advertised <span class="mono">192.168.137.0/24</span>' in page
     assert "Not yet approved by the tailnet: 192.168.137.0/24" in page
     assert 'action="/actions/tailnet/routes"' not in page      # nothing to change
     call(conn, "POST", "/actions/config/tailnet-gateway/advertise_routes", {"value": "10.20.0.0/16"}, origin)

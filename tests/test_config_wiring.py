@@ -96,7 +96,7 @@ def test_set_from_a_browser_form_returns_to_the_page(local, caplog) -> None:
         status, headers, _ = call(conn, "POST", HOST, {"value": "site-a-gw", "then": "/config"}, origin)
     assert status == 303 and headers["location"] == "/config"
     assert node.config.owner_view("tailnet-gateway").get("hostname") == "site-a-gw"
-    assert "Current: <strong>site-a-gw</strong>" in call(conn, "GET", "/config")[2]
+    assert '<strong class="set">site-a-gw</strong>' in call(conn, "GET", "/config")[2]
     assert "by 'local via the local door'" in caplog.text
 
 
@@ -134,7 +134,7 @@ def test_secret_goes_in_and_never_comes_out(local, caplog) -> None:
         state = call(conn, "GET", "/api/state")[2]
         status, _, refusal = call(conn, "POST", AUTH, {"value": "tskey-bad key!"}, origin)
     assert status == 400 and "bad key" not in refusal
-    assert "Current: <strong>set</strong>" in page and "Delete" in page
+    assert '<strong class="set">set</strong>' in page and "Delete" in page
     for text in (page, state, caplog.text):
         assert KEY not in text
     path = node.config.owner_view("tailnet-gateway").secret_path("auth_key")

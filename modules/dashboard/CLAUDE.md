@@ -19,7 +19,7 @@ topics/types are local to this module and defined by its own `interface/`.
   contract (`interfaces/` v0.5.0)
 - **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`, `login-page` on the fallback, `config-page` at `/config`); `Action`s (`config-editor`: set + clear per config field; `tailnet-apply`: join, rename, leave)
 - **Consumes — inward (core):** `ConfigSurface` (the config registry's operator surface, injected by `main.py`; ADR-0004); `AdminAuth` (fallback credential, sessions, login limits) and the pure door functions in `interface/doors.py`
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.6.0; inward
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.7.0; inward
   contract `__version__` 0.7.0 (`chrome.py`, the shared page frame). Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
@@ -30,11 +30,11 @@ topics/types are local to this module and defined by its own `interface/`.
 |---------|--------|--------------------|-------|
 | `state-collector` | enabled | 0.1.0 | Latest-value-per-key store of card/tailnet/camera/stream + wire versions. Terminal consumer. |
 | `peer-directory` | enabled | 0.2.0 | Latest `TailnetPeers` → `PeerDirectory`. Resolves a tailnet address to an identity only while fresh (`freshness`); every failure resolves to nobody, with a reason. Terminal consumer. |
-| `overview-page` | served | 0.3.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. Shows who is signed in and via which door; on the fallback, a log-out form. |
-| `login-page` | served (fallback only) | 0.3.0 | The admin fallback's login form. No JavaScript; the message is escaped. |
+| `overview-page` | served | 0.7.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. In the shared frame (`chrome.py`): a summary line, then cameras / this gateway / streams, states as chips; modules and wire versions folded under System (opens itself on a skew). Who is signed in, and on the fallback a log-out form, are in the banner. |
+| `login-page` | served (fallback only) | 0.7.0 | The admin fallback's login form, in the shared frame. No JavaScript; the message is escaped. |
 | `config-editor` | served | 0.4.0 | A set and a clear `Action` per declared config field (`/actions/config/<module>/<name>[/clear]`). Records who and which door; the registry validates. A secret's text goes straight to the registry. |
 | `tailnet-apply` | served | 0.6.0 | Join, Rename, Routes, Leave `Action`s, each may-disturb with its warning (`TAILNET_OPERATIONS`). Sends `tailnet/apply` through `invoke()` with `requires=tailnet-gateway:tailnet-writer`; carries no values. |
-| `config-page` | served | 0.4.0 | `/config`: one form per field, no auto-refresh, no JavaScript, values escaped. Secrets are write-only password inputs that read as set/unset. Success returns here via `then` (only a served page is honoured). 0.5.0: the Tailnet panel (node vs saved, the operations that make sense now, the last result). 0.6.0: routes (to advertise, advertised, approved), auto-rejoin state, the kept-key note. |
+| `config-page` | served | 0.7.0 | `/config`: one form per field, no auto-refresh, no JavaScript, values escaped. Secrets are write-only password inputs that read as set/unset. Success returns here via `then` (only a served page is honoured). 0.5.0: the Tailnet panel (node vs saved, the operations that make sense now, the last result). 0.6.0: routes (to advertise, advertised, approved), auto-rejoin state, the kept-key note. 0.7.0: shared frame; dense layout (module index, one block per module, one grid row per field). |
 
 ## Rules for agents working here
 
