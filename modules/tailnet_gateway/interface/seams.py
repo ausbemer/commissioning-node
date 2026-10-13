@@ -40,8 +40,8 @@ class OverlayWriter(Protocol):
     call re-checks its own inputs before acting (rung 13).
     """
 
-    def join(self, hostname: str | None, tags: list[str], routes: list[str],
-             key_path: str) -> WriterReply: ...
+    def join(self, hostname: str | None, tags: list[str], key_path: str,
+             routes: list[str] = ()) -> WriterReply: ...
 
     def rename(self, hostname: str) -> WriterReply: ...
 

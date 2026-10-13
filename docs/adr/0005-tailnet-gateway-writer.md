@@ -354,3 +354,37 @@ every automatic attempt is a visible result. Rung 12: removes "the key is delete
 join"; replaced by the reusable-ephemeral-key requirement, the teardown wipe and the visible
 key note. Rung 13: CIDRs are re-checked at the adapter, and forwarding is fenced by the
 firewall, not only by Tailscale's own rules.
+
+### 2026-10-13 — pre-merge review: rulings
+
+A three-way review of the branch (HTTP surface and secrets; the writer; store, ops and
+contract) found these. Each was reproduced or read from the code before it was fixed, and
+each fix has a regression test.
+
+1. **Auto-rejoin acts only on what was confirmed** (was: the currently saved values). The
+   join record now holds the confirmed hostname, tags, routes and the key file's SHA-256.
+   Auto-rejoin applies exactly those. The worker refuses a rejoin whose key no longer hashes
+   to the recorded one, without calling tailscale. Staged edits, a swapped key, or a newly
+   detected interface never reach the tailnet without a confirmed Join or Routes. A record
+   without a fingerprint, from before this ruling, never auto-rejoins: Leave and Join once.
+2. **A Leave always drops the intent.** The record is deleted *before* `logout` runs. The
+   feature also holds an "operator left" level from the moment a Leave is accepted until the
+   operator's next successful Join. A Leave whose record delete fails, or whose `logout`
+   times out after tailscaled already logged out, can no longer rejoin. Neither can a reading
+   taken mid-Leave.
+3. **A failed operator Join is not retried by auto-rejoin.** Any join outcome pushes the next
+   automatic attempt out by one backoff.
+4. **The firewall unit owns IPv4 forwarding** (was: `/etc/sysctl.d`, which applied at boot
+   before the forward chain loaded, and stayed on when the unit stopped). `ExecStartPost`
+   turns it on after `nft` loads the table. `ExecStop` turns it off before deleting the
+   table, and `ExecStopPost` turns it off on failure. The installer removes the old drop-in;
+   the doctor fails if it is present.
+5. **`scrub()` redacts before it caps**, so a key cut at the cap is still caught.
+6. **`OverlayWriter.join(hostname, tags, key_path, routes=())`**: `routes` moved last with a
+   default, so the change is additive for callers.
+7. Minor: the CLI adapter decodes output with `errors="replace"` and never raises on bad
+   bytes. An unset bool field preselects its default on `/config`.
+
+The forward chain's final `drop` applies to *all* forwarding not from the tailnet. A
+container runtime or a Wi-Fi hotspot added to this host later would need its own rule in
+that chain; this is recorded here so the drop is not mistaken for a bug.

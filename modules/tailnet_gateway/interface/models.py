@@ -46,13 +46,21 @@ class OverlaySnapshot(Shape):
 
 
 class JoinRecord(Shape):
-    """The writer's record that the operator joined this node to the site tailnet (ADR-0005
-    A2). Written by core's worker after a successful join, updated by Routes, deleted by
-    Leave. Its presence is the intent auto-rejoin acts on. Site-scoped: teardown wipes it."""
+    """What the operator confirmed when they joined this node to the site tailnet (ADR-0005
+    A2). Written by core's worker after a successful join, updated by Rename and Routes,
+    deleted BEFORE a Leave runs. Its presence is the intent auto-rejoin acts on, and
+    auto-rejoin applies exactly these values, never what is merely saved since. Site-scoped:
+    teardown wipes it."""
 
     joined_at: float
     #: The routes the writer last advertised.
     routes: list[str] = []
+    #: The hostname and tags the confirmed join applied.
+    hostname: str | None = None
+    tags: list[str] = []
+    #: SHA-256 of the auth key file the confirmed join used. Auto-rejoin refuses a key that
+    #: no longer matches; None (a record from before this field) never auto-rejoins.
+    key_sha256: str | None = None
 
 
 OverlaySnapshot.model_rebuild()

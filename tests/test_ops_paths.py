@@ -30,8 +30,9 @@ def test_config_state_directory_matches_paths_sh() -> None:
 
 
 def test_forwarding_is_fenced_before_it_is_enabled() -> None:
-    """ADR-0005 A3: the forward chain lets only the tailnet open forwarded connections, and
-    the installer turns forwarding on only once that chain is loaded."""
+    """ADR-0005 A3, review 2026-10-13: the forward chain lets only the tailnet open forwarded
+    connections, and the firewall unit owns forwarding: on only after that chain loads, off
+    before it is deleted and when the unit fails. No sysctl drop-in turns it on at boot."""
     nft = (OPS / "firewall" / "commissioning-node.nft").read_text()
     chain = nft[nft.index("chain forward"):]
     rules = [line.strip() for line in chain.splitlines()[1:] if line.strip() and not line.strip().startswith("#")]
@@ -39,10 +40,14 @@ def test_forwarding_is_fenced_before_it_is_enabled() -> None:
                          "ct state established,related accept",
                          'iifname "tailscale0" accept',
                          'drop comment "forwarding: only the tailnet opens connections (ADR-0005)"']
-    sysctl = (OPS / "sysctl" / "90-commissioning-node.conf").read_text()
-    assert "net.ipv4.ip_forward = 1" in sysctl and "ipv6" not in sysctl.split("#")[-1]
+    unit = [line for line in (OPS / "systemd" / "commissioning-node-firewall.service").read_text().splitlines()
+            if line.startswith("Exec")]
+    assert unit == ["ExecStart=/usr/sbin/nft -f /etc/commissioning-node/firewall.nft",
+                    "ExecStartPost=/usr/sbin/sysctl -q -w net.ipv4.ip_forward=1",
+                    "ExecStop=/usr/sbin/sysctl -q -w net.ipv4.ip_forward=0",
+                    "ExecStop=/usr/sbin/nft delete table inet commissioning_node",
+                    "ExecStopPost=/usr/sbin/sysctl -q -w net.ipv4.ip_forward=0"]
+    assert not (OPS / "sysctl").exists()
     install = (OPS / "install.sh").read_text()
-    assert install.index("ensure_service commissioning-node-firewall.service") \
-        < install.index('sysctl -q -p "$SYSCTL_FILE"')
-    assert "elif forward_fenced; then" in install
-    assert shell_var("SYSCTL_FILE") == "/etc/sysctl.d/90-commissioning-node.conf"
+    assert 'rm -f "$LEGACY_SYSCTL_FILE"' in install and "sysctl -q -p" not in install
+    assert shell_var("LEGACY_SYSCTL_FILE") == "/etc/sysctl.d/90-commissioning-node.conf"

@@ -53,8 +53,8 @@ def adapter(run: Runner) -> TailscaleCliWriter:
 
 def test_join_argv_golden(keyfile) -> None:
     run = Runner()
-    reply = adapter(run).join("site-a-gw", ["tag:commissioning", "tag:site-a"],
-                              ["192.168.137.0/24", "10.20.0.0/16"], keyfile)
+    reply = adapter(run).join("site-a-gw", ["tag:commissioning", "tag:site-a"], keyfile,
+                              ["192.168.137.0/24", "10.20.0.0/16"])
     argv, kw = run.calls[0]
     assert argv == ["tailscale", "up", "--operator=admin", f"--auth-key=file:{keyfile}",
                     f"--timeout={tw.UP_TIMEOUT_S}s",
@@ -67,7 +67,7 @@ def test_join_argv_golden(keyfile) -> None:
 
 def test_join_without_hostname_or_tags_leaves_them_out_but_always_states_routes(keyfile) -> None:
     run = Runner()
-    adapter(run).join(None, [], [], keyfile)
+    adapter(run).join(None, [], keyfile)
     assert run.calls[0][0] == ["tailscale", "up", "--operator=admin", f"--auth-key=file:{keyfile}",
                                f"--timeout={tw.UP_TIMEOUT_S}s", "--advertise-routes="]
 
@@ -94,7 +94,7 @@ def test_rename_routes_and_leave_argv_golden() -> None:
 def test_routes_are_rechecked_and_never_run(keyfile, routes, why) -> None:
     run = Runner()
     assert why in adapter(run).set_routes(routes).message
-    assert why in adapter(run).join("gw", [], routes, keyfile).message
+    assert why in adapter(run).join("gw", [], keyfile, routes).message
     assert run.calls == []
 
 
@@ -116,20 +116,23 @@ def test_join_rechecks_its_inputs_and_never_runs(tmp_path, keyfile, hostname, ta
         os.rename(keyfile, tmp_path / "real")
         os.symlink(tmp_path / "real", keyfile)
     run = Runner()
-    reply = adapter(run).join(hostname, tags, [], keyfile)
+    reply = adapter(run).join(hostname, tags, keyfile)
     assert not reply.ok and why in reply.message and run.calls == []
 
 
 def test_failure_output_is_scrubbed_and_capped(keyfile) -> None:
     run = Runner(returncode=1, stderr=f"backend error: invalid key: {KEY}\n" + "x" * 10_000)
-    reply = adapter(run).join("gw", [], [], keyfile)
+    reply = adapter(run).join("gw", [], keyfile)
     assert not reply.ok and "exit 1" in reply.message
     assert KEY not in reply.message and len(reply.message) < tw.OUTPUT_CAP + 100
     assert scrub(f"a {KEY} b") == "a tskey-… b"
+    # A key straddling the cap is still redacted: redact first, then cap.
+    long_key = "tskey-auth-" + "k" * (tw.OUTPUT_CAP + 50)
+    assert "kkkk" not in scrub("x" + long_key + " tail")
 
 
 def test_timeout_and_missing_cli_are_in_band(keyfile) -> None:
-    reply = adapter(Runner(raises=subprocess.TimeoutExpired("tailscale", 70))).join("gw", [], [], keyfile)
+    reply = adapter(Runner(raises=subprocess.TimeoutExpired("tailscale", 70))).join("gw", [], keyfile)
     assert not reply.ok and "timed out" in reply.message and "unknown" in reply.message
     gone = TailscaleCliWriter(run=Runner(), which=lambda b: None, operator=lambda: "admin")
     assert "not installed" in gone.leave().message
@@ -169,7 +172,7 @@ class FakeWriter:
                 self.overlay.snapshot = snap.model_copy(update={"hostname": call[1]})
         return WriterReply(ok=self.ok, message=f"{call[0]} {'ok' if self.ok else 'failed: denied'}")
 
-    def join(self, hostname, tags, routes, key_path):
+    def join(self, hostname, tags, key_path, routes=()):
         return self._reply(("join", hostname, tuple(tags), tuple(routes), key_path))
 
     def rename(self, hostname):
@@ -615,3 +618,101 @@ def test_panel_offers_routes_and_flags_unapproved(served) -> None:
     main.tick(node)
     page = call(conn, "GET", "/config")[2]
     assert 'action="/actions/tailnet/routes"' in page and "Advertise 10.20.0.0/16" in page
+
+
+# -- review 2026-10-13: auto-rejoin acts only on what was confirmed, never after a Leave ----
+
+def test_rejoin_uses_the_confirmed_values_not_what_was_saved_since(tmp_path) -> None:
+    clock = Clock()
+    node, results, writer, _ = joined_then_dropped(tmp_path, clock, hostname="site-a",
+                                                   tags="tag:a")
+    save(node, hostname="site-b", tags="tag:b", advertise_routes="10.99.0.0/16")  # staged only
+    clock.now += 61
+    main.tick(node)
+    assert writer.calls[0][:4] == ("join", "site-a", ("tag:a",), ("192.168.137.0/24",))
+
+
+def test_rejoin_refuses_a_key_that_was_swapped_since(tmp_path) -> None:
+    clock = Clock()
+    node, results, writer, _ = joined_then_dropped(tmp_path, clock)
+    save(node, auth_key="tskey-auth-OTHERTAILNET-xyz")
+    clock.now += 61
+    main.tick(node)
+    main.tick(node)
+    assert writer.calls == []                                  # tailscale never called
+    assert not results[-1]["ok"] and "not the one the operator joined with" in results[-1]["message"]
+
+
+def test_a_new_interface_is_not_advertised_by_a_rejoin(tmp_path) -> None:
+    clock = Clock()
+    networks = FakeNetworks()
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, _ = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock, networks=networks)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    writer.calls.clear()
+    networks.networks = ["192.168.137.0/24", "10.64.0.0/16"]  # an LTE uplink came up
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+    clock.now += 61
+    main.tick(node)
+    assert writer.calls[0][3] == ("192.168.137.0/24",)
+
+
+@pytest.mark.parametrize("failure", ["record delete fails", "logout times out"])
+def test_a_leave_never_rejoins_whatever_goes_wrong(tmp_path, monkeypatch, failure) -> None:
+    from modules.tailnet_gateway.core import join_record
+    clock = Clock()
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, results = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    if failure == "record delete fails":
+        def refuse(self):
+            raise PermissionError(13, "Permission denied")
+        monkeypatch.setattr(join_record.JoinRecordStore, "delete", refuse)
+    else:
+        def timed_out():                                       # tailscaled logged out anyway
+            writer.calls.append(("leave",))
+            overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+            return WriterReply(ok=False, message="leave timed out")
+        writer.leave = timed_out
+    apply(node, "leave")
+    for _ in range(40):
+        clock.now += 61
+        main.tick(node)
+    assert [c[0] for c in writer.calls] == ["join", "leave"]
+
+
+def test_a_failed_operator_join_is_not_retried_by_auto_rejoin(tmp_path) -> None:
+    clock = Clock()
+    node, results, writer, _ = joined_then_dropped(tmp_path, clock)
+    clock.now += 30                                            # inside the hold-off
+    main.tick(node)                                            # the node is seen dropped
+    assert writer.calls == []
+    writer.ok = False
+    apply(node, "join")                                        # the operator tries; it fails
+    main.tick(node)
+    assert len(writer.calls) == 1 and results[-1]["requested_by"] == "alice@example.com"
+    clock.now += 31                                            # past the original hold-off
+    main.tick(node)
+    assert len(writer.calls) == 1                              # pushed out by a full backoff
+
+
+def test_a_record_without_a_key_fingerprint_never_rejoins(tmp_path, caplog) -> None:
+    clock = Clock()
+    node, _, writer, _ = joined_then_dropped(tmp_path, clock)
+    path = tmp_path / "site" / "tailnet-gateway.join.json"
+    record = json.loads(path.read_text())
+    del record["key_sha256"]                                   # a record from before the fix
+    path.write_text(json.dumps(record))
+    with caplog.at_level(logging.WARNING):
+        for _ in range(5):
+            clock.now += 61
+            main.tick(node)
+    assert writer.calls == [] and caplog.text.count("predates confirmed-key fingerprints") == 1

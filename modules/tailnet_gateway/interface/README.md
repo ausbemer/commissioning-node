@@ -64,7 +64,7 @@ interface objects").
 
 ## Changelog
 
-- v0.5.0 — routes and auto-rejoin (ADR-0005 amendment): `ADVERTISE_ROUTES`, `AUTO_REJOIN`, `resolve_routes`, `route_problem`, `JoinRecord`, `SiteNetworkSource`, `ROUTES`, `WritePlan.routes`; `OverlaySnapshot.state`, `.site_networks`, `.join_record`. **Not additive for implementers:** `OverlayWriter.join` gained a `routes` parameter and the protocol gained `set_routes`; the only implementations are in this module.
+- v0.5.0 — routes and auto-rejoin (ADR-0005 amendment): `ADVERTISE_ROUTES`, `AUTO_REJOIN`, `resolve_routes`, `route_problem`, `JoinRecord`, `SiteNetworkSource`, `ROUTES`, `WritePlan.routes`; `OverlaySnapshot.state`, `.site_networks`, `.join_record`. `OverlayWriter.join(hostname, tags, key_path, routes=())` (routes last, optional) and `set_routes`; `JoinRecord` holds the confirmed hostname, tags, routes and key fingerprint; `WritePlan.expected_key_sha256`. New implementers of `OverlayWriter` must add `set_routes`; the only implementations are in this module.
 - v0.4.0 — `OverlayWriter`, `WriterReply`, `WriterSlot`, `WritePlan`, `WriteOutcome`, `WRITE_OUTCOME`; `OverlaySnapshot.tags` (additive).
 - v0.3.0 — `CONFIG_FIELDS` and `ConfigView` (`config.py`) (additive).
 - v0.2.0 — `OverlayPeer`; `OverlaySnapshot.peers`, `.observed_at`, `.period_s` (additive).

@@ -33,6 +33,10 @@ def _shown(value: object, kind: str) -> str:
 def _input(field: dict, row: dict) -> str:
     kind = field.get("kind")
     current = "" if not row.get("is_set") or field.get("secret") else _shown(row.get("value"), kind)
+    if kind == "bool" and not row.get("is_set"):
+        # An unset bool preselects its default, never the first option: saving the form
+        # unchanged must not flip it (review 2026-10-13).
+        current = _shown(field.get("default"), kind)
     if field.get("secret"):
         return ('<input type="password" name="value" autocomplete="off" spellcheck="false" '
                 'placeholder="paste to replace" required>')

@@ -12,7 +12,13 @@ After=nftables.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/nft -f /etc/commissioning-node/firewall.nft
+# This unit owns IPv4 forwarding (the subnet router, ADR-0005 A3): on only after the forward
+# chain above is loaded, off before it is deleted, and off if the unit fails. A failed load
+# never turns it on. Nothing in /etc/sysctl.d sets it, so a boot never forwards unfenced.
+ExecStartPost=/usr/sbin/sysctl -q -w net.ipv4.ip_forward=1
+ExecStop=/usr/sbin/sysctl -q -w net.ipv4.ip_forward=0
 ExecStop=/usr/sbin/nft delete table inet commissioning_node
+ExecStopPost=/usr/sbin/sysctl -q -w net.ipv4.ip_forward=0
 
 [Install]
 WantedBy=multi-user.target

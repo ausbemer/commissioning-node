@@ -42,8 +42,9 @@ _KEY_RE = re.compile(r"tskey-[A-Za-z0-9-]+")
 
 
 def scrub(text: str) -> str:
-    """Cap the text and blank anything shaped like an auth key (§8.9)."""
-    return _KEY_RE.sub("tskey-…", text[-OUTPUT_CAP:]).strip()
+    """Blank anything shaped like an auth key, THEN cap (§8.9): capping first could cut a key's
+    "tskey-" prefix off and leave the rest unrecognised."""
+    return _KEY_RE.sub("tskey-…", text)[-OUTPUT_CAP:].strip()
 
 
 def _daemon_user() -> str:
@@ -62,8 +63,9 @@ class TailscaleCliWriter:
 
     # -- the seam ------------------------------------------------------------------------
 
-    def join(self, hostname: str | None, tags: list[str], routes: list[str],
-             key_path: str) -> WriterReply:
+    def join(self, hostname: str | None, tags: list[str], key_path: str,
+             routes: list[str] = ()) -> WriterReply:
+        routes = list(routes)
         problem = (self._check_hostname(hostname) if hostname is not None else None) \
             or self._check_tags(tags) or self._check_routes(routes) or self._check_key(key_path)
         if problem:
@@ -105,13 +107,16 @@ class TailscaleCliWriter:
             return WriterReply(ok=False, message=f"{op} failed: the tailscale CLI is not installed")
         log.info("tailscale %s: running %s", op, " ".join(argv[1:2]))   # never the arguments
         try:
-            proc = self._run(argv, capture_output=True, text=True, timeout=timeout_s + KILL_MARGIN_S)
+            proc = self._run(argv, capture_output=True, text=True, errors="replace",
+                             timeout=timeout_s + KILL_MARGIN_S)
         except subprocess.TimeoutExpired:
             return WriterReply(ok=False, message=f"{op} timed out after {timeout_s + KILL_MARGIN_S}s; "
                                                  "the node's tailnet state is unknown until the next "
                                                  "status read")
         except OSError as exc:
             return WriterReply(ok=False, message=f"{op} failed: {exc.strerror}")
+        except ValueError as exc:                  # the seam must not raise
+            return WriterReply(ok=False, message=f"{op} failed: {type(exc).__name__}")
         if proc.returncode != 0:
             detail = scrub((proc.stderr or "") + (proc.stdout or "")) or "no output"
             return WriterReply(ok=False, message=f"{op} failed (exit {proc.returncode}): {detail}")

@@ -11,8 +11,10 @@ from this module's own `ConfigView`; routes are resolved by `resolve_routes`, th
 authority for what "auto" means (A3).
 
 Automatic rejoin (A2) is the one thing it starts on its own, and only to rejoin a tailnet the
-operator already joined: the writer's join record exists, `auto_rejoin` is on, a key is
-saved, and the fresh reading says the overlay needs a login. Attempts back off from
+operator already joined: the writer's join record exists, the operator hasn't asked to
+leave since, `auto_rejoin` is on, a key is saved, and the fresh reading says the overlay
+needs a login. It applies the record's confirmed hostname, tags and routes, and the worker
+refuses it unless the saved key is the one confirmed. Attempts back off from
 REJOIN_BACKOFF_MIN_S, doubling, to REJOIN_BACKOFF_MAX_S. Operator requests are never retried.
 """
 from __future__ import annotations
@@ -56,6 +58,10 @@ class TailnetWriter:
         self._snapshot_at: float | None = None
         self._next_rejoin = 0.0
         self._backoff = REJOIN_BACKOFF_MIN_S
+        #: The operator asked to leave: a level held until their next successful Join, so
+        #: no reading taken around a Leave can start a rejoin (review 2026-10-13).
+        self._left = False
+        self._warned_old_record = False
 
     def handle(self, topic: str, payload: dict) -> list[tuple[str, dict]]:
         if topic == OVERLAY_SNAPSHOT:
@@ -65,11 +71,15 @@ class TailnetWriter:
             return []
         if topic == WRITE_OUTCOME:
             outcome = WriteOutcome.model_validate(payload)
-            if outcome.plan.operation == JOIN and outcome.ok:
-                # Joined: reset the backoff, and give tailscaled one backoff period to report
-                # Running before a "needs login" reading could start a rejoin.
-                self._next_rejoin = self._clock() + REJOIN_BACKOFF_MIN_S
-                self._backoff = REJOIN_BACKOFF_MIN_S
+            if outcome.plan.operation == JOIN:
+                # Any join outcome pushes the next automatic attempt out by one backoff: after
+                # a success, tailscaled gets time to report Running; after a failed operator
+                # Join, auto-rejoin must not act as its retry.
+                if outcome.ok:
+                    self._backoff = REJOIN_BACKOFF_MIN_S
+                    if outcome.plan.requested_by != AUTO_REJOIN_BY:
+                        self._left = False
+                self._next_rejoin = max(self._next_rejoin, self._clock() + self._backoff)
             return [self._finished(outcome)]
         try:
             command = TailnetApply.model_validate(payload)
@@ -79,6 +89,8 @@ class TailnetWriter:
         plan, refusal = self._plan(command)
         if plan is not None:
             running = self._slot.submit(plan)
+            if running is None and plan.operation == LEAVE:
+                self._left = True
             if running is None:
                 log.info("tailnet %s accepted (request %s, by %s via the %s door)",
                          plan.operation, plan.request_id, plan.requested_by, plan.door)
@@ -142,10 +154,18 @@ class TailnetWriter:
                          routes=self._wanted_routes(snap), key_path=key_path)
 
     def _maybe_rejoin(self, snap: OverlaySnapshot) -> None:
-        """A2: rejoin a tailnet the operator joined, when the overlay needs a login again."""
-        if snap.join_record is None or self._config is None or snap.state != NEEDS_LOGIN:
+        """A2: rejoin a tailnet the operator joined, when the overlay needs a login again,
+        with exactly what they confirmed (the join record), never what is merely saved."""
+        record = snap.join_record
+        if record is None or self._left or self._config is None or snap.state != NEEDS_LOGIN:
             return
         if not self._config.get("auto_rejoin"):
+            return
+        if record.key_sha256 is None:
+            if not self._warned_old_record:
+                log.warning("tailnet: the join record predates confirmed-key fingerprints; not "
+                            "rejoining on its own. Leave and Join once to record it.")
+                self._warned_old_record = True
             return
         now = self._clock()
         if now < self._next_rejoin:
@@ -153,9 +173,13 @@ class TailnetWriter:
         key_path = self._config.secret_path("auth_key")
         if key_path is None:
             return
-        base = dict(request_id=uuid.uuid4().hex[:12], operation=JOIN,
-                    requested_by=AUTO_REJOIN_BY, door=AUTO_REJOIN_DOOR)
-        if self._slot.submit(self._join_plan(base, snap, key_path)) is not None:
+        plan = WritePlan(request_id=uuid.uuid4().hex[:12], operation=JOIN,
+                         requested_by=AUTO_REJOIN_BY, door=AUTO_REJOIN_DOOR,
+                         hostname=record.hostname, tags=list(record.tags),
+                         routes=list(record.routes), key_path=key_path,
+                         expected_key_sha256=record.key_sha256)
+        base = {"request_id": plan.request_id}
+        if self._slot.submit(plan) is not None:
             return                                   # an operator request is running
         self._next_rejoin = now + self._backoff
         log.warning("tailnet: the node needs a login again; rejoining with the saved key "

@@ -28,6 +28,8 @@ held() { apt-mark showhold 2>/dev/null | grep -qx tailscale; }
 stock_nftables_disabled() { ! systemctl is-enabled --quiet nftables.service 2>/dev/null; }
 quiet() { "$@" > /dev/null 2>&1; }
 owner_mode() { stat -c '%U %a' "$1" 2>/dev/null; }
+# The registry's rule for a secret: owned by the daemon user, no group/other bits (0600, 0400).
+private_to_daemon() { local u m; read -r u m <<< "$(owner_mode "$1")"; [[ "$u" == "$RUN_USER" && "${m: -2}" == "00" ]]; }
 listening() { [[ -n "$(ss -Htln "sport = :$1" 2>/dev/null)" ]]; }
 not_listening() { ! listening "$1"; }
 pref() { tailscale debug prefs 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))" 2>/dev/null; }
@@ -88,10 +90,11 @@ else
 fi
 fwd="$(sysctl -n net.ipv4.ip_forward 2>/dev/null)"
 check_warn "IPv4 forwarding on (subnet routes can be served, ADR-0005)" \
-  "IPv4 forwarding is off — advertised routes will not carry traffic; re-run sudo ops/install.sh" \
+  "IPv4 forwarding is off — advertised routes will not carry traffic; check commissioning-node-firewall" \
   test "$fwd" == 1
-check "$SYSCTL_FILE matches the repo" "$SYSCTL_FILE differs from the repo — re-run the installer" \
-  cmp -s "$OPS_DIR/sysctl/90-commissioning-node.conf" "$SYSCTL_FILE"
+check "no sysctl drop-in forwards at boot before the fence" \
+  "$LEGACY_SYSCTL_FILE exists: it enables forwarding at boot before the firewall loads — re-run sudo ops/install.sh" \
+  test ! -e "$LEGACY_SYSCTL_FILE"
 
 section "MediaMTX (pinned $MEDIAMTX_VERSION)"
 bin=/opt/mediamtx/current/mediamtx
@@ -178,13 +181,13 @@ else
       [[ -d "$dir" ]] || continue
       while IFS= read -r -d '' f; do
         if [[ -L "$f" || ! -f "$f" ]]; then fail "secret $f is not a regular file (ignored by the daemon)"
-        elif [[ "$(owner_mode "$f")" != "$RUN_USER 600" ]]; then
-          fail "secret $f is '$(owner_mode "$f")', want '$RUN_USER 600' (ignored by the daemon)"
+        elif ! private_to_daemon "$f"; then
+          fail "secret $f is '$(owner_mode "$f")', want owner $RUN_USER and no group/other access (ignored by the daemon)"
         else continue; fi
         bad_secrets=$((bad_secrets + 1))
       done < <(find "$dir" -mindepth 1 -maxdepth 1 -print0)
     done
-    ((bad_secrets)) || pass "secret files are regular, owned by $RUN_USER, mode 600"
+    ((bad_secrets)) || pass "secret files are regular, owned by $RUN_USER, private"
     site_secrets="$(find "$CN_STATE/site/secrets" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)"
     ((site_secrets == 0)) || warn "$site_secrets site secret(s) stored — wiped at teardown; an auth key is deleted after its join"
     malformed="$(find "$CN_STATE" -maxdepth 2 -name 'config.json.malformed-*' 2>/dev/null)"

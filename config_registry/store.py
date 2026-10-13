@@ -32,7 +32,8 @@ from typing import Iterable
 
 from interfaces import ConfigField
 
-from .values import SCOPES, Invalid, Value, check_declaration, key_of, parse, validate
+from .values import (MAX_SECRET_LEN, SCOPES, Invalid, Value, check_declaration, key_of, parse,
+                     validate)
 
 log = logging.getLogger("config_registry")
 
@@ -78,13 +79,17 @@ class ConfigRegistry:
         self._lock = threading.RLock()
         #: What is on disk, per scope, including keys this build doesn't declare.
         self._stored: dict[str, dict[str, object]] = {scope: {} for scope in SCOPES}
-        #: The raw bytes of a malformed config.json, set aside before the first write.
-        self._malformed: dict[str, bytes | None] = {scope: None for scope in SCOPES}
+        #: A malformed config.json is renamed aside (whole, untouched) before the first write.
+        self._malformed: dict[str, bool] = {scope: False for scope in SCOPES}
+        #: Why a scope's config.json can't be read; writes to that scope are refused, so a
+        #: file we can't see is never replaced by one holding only the new value.
+        self._unreadable: dict[str, str | None] = {scope: None for scope in SCOPES}
         #: Validated, stored, non-secret values.
         self._values: dict[str, Value] = {}
         #: Last reported problem per secret, so a bad file warns once, not every tick.
         self._secret_problem: dict[str, str | None] = {}
         for scope in SCOPES:
+            self._sweep(scope)
             self._load(scope)
 
     # -- handles ---------------------------------------------------------------------------
@@ -111,9 +116,8 @@ class ConfigRegistry:
     def _state(self, field: ConfigField) -> FieldState:
         if field.secret:
             return FieldState(field, None, self._secret_ok(field))
-        with self._lock:
-            is_set = key_of(field) in self._values
-        return FieldState(field, self._value(field), is_set)
+        with self._lock:                         # one acquisition: value and is_set agree
+            return FieldState(field, self._value(field), key_of(field) in self._values)
 
     def _secret_file(self, field: ConfigField) -> Path:
         return self._root / field.scope / SECRETS_DIR / key_of(field)
@@ -135,6 +139,8 @@ class ConfigRegistry:
             problem = f"has mode {stat.S_IMODE(st.st_mode):04o}, wants 0600"
         elif st.st_uid != self._uid:
             problem = f"is owned by uid {st.st_uid}, wants {self._uid}"
+        elif st.st_size > 4 * MAX_SECRET_LEN:    # UTF-8: at most 4 bytes per character
+            problem = f"is {st.st_size} bytes, more than a secret may be"
         else:
             problem = None
         self._report_secret(field, problem)
@@ -214,13 +220,16 @@ class ConfigRegistry:
             stored.pop(key, None)
         else:
             stored[key] = value
+        if self._unreadable[scope]:
+            raise OSError(13, f"{scope}/{CONFIG_FILE} is unreadable ({self._unreadable[scope]}); "
+                              "fix its owner or mode, then restart")
         directory = self._root / scope
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if self._malformed[scope] is not None:
+        _mkdir_private(directory)
+        if self._malformed[scope]:
             aside = directory / f"{CONFIG_FILE}.malformed-{int(time.time())}"
-            _write_atomic(aside, self._malformed[scope])
+            os.replace(directory / CONFIG_FILE, aside)       # whole, as it is on disk
             log.warning("config %s/%s: malformed file kept as %s", scope, CONFIG_FILE, aside.name)
-            self._malformed[scope] = None
+            self._malformed[scope] = False
         body = json.dumps({"schema_version": FORMAT_VERSION, "values": stored},
                           indent=2, sort_keys=True) + "\n"
         _write_atomic(directory / CONFIG_FILE, body.encode())
@@ -232,10 +241,25 @@ class ConfigRegistry:
 
     def _write_secret(self, field: ConfigField, value: str) -> None:
         directory = self._secret_file(field).parent
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _mkdir_private(directory)
         _write_atomic(self._secret_file(field), value.encode())
 
     # -- load ------------------------------------------------------------------------------
+
+    def _sweep(self, scope: str) -> None:
+        """Remove temp files a power cut left mid-write (`.<name>.*`, ours by construction):
+        a leftover could hold a secret that clearing it would then miss."""
+        for directory in (self._root / scope, self._root / scope / SECRETS_DIR):
+            try:
+                leftovers = [p for p in directory.iterdir() if p.name.startswith(".") and p.is_file()]
+            except OSError:
+                continue
+            for path in leftovers:
+                try:
+                    path.unlink()
+                    log.warning("config: removed a leftover temp file %s", path)
+                except OSError:
+                    pass
 
     def _load(self, scope: str) -> None:
         path = self._root / scope / CONFIG_FILE
@@ -245,14 +269,15 @@ class ConfigRegistry:
         except FileNotFoundError:
             return
         except OSError as exc:
-            log.warning("config %s/%s unreadable (%s); using defaults", scope, CONFIG_FILE,
-                        exc.strerror)
+            log.warning("config %s/%s unreadable (%s); using defaults, and refusing writes to "
+                        "this scope until it is fixed", scope, CONFIG_FILE, exc.strerror)
+            self._unreadable[scope] = exc.strerror or "error"
             return
         values = _decode(raw)
         if values is None:
             log.warning("config %s/%s is malformed; using defaults (the file is kept)",
                         scope, CONFIG_FILE)
-            self._malformed[scope] = raw
+            self._malformed[scope] = True
             return
         self._stored[scope] = values
         for key, value in values.items():
@@ -365,3 +390,18 @@ def _fsync_dir(directory: Path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _mkdir_private(directory: Path) -> None:
+    """Create `directory` and any missing parents at 0700, whatever the umask."""
+    missing = []
+    for path in [directory, *directory.parents]:
+        if path.exists():
+            break
+        missing.append(path)
+    for path in reversed(missing):
+        try:
+            path.mkdir(mode=0o700)
+        except FileExistsError:
+            continue
+        os.chmod(path, 0o700)

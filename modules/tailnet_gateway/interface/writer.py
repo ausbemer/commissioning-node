@@ -38,6 +38,8 @@ class WritePlan(Shape):
     #: Routes to advertise (join, routes), already resolved and checked.
     routes: list[str] = []
     key_path: str | None = None
+    #: Auto-rejoin only: the key file must still hash to this, or the join is refused.
+    expected_key_sha256: str | None = None
     #: After a successful join, delete the stored auth key. Always False since ADR-0005 A1
     #: (the key is kept for rejoining); kept so the field never changes meaning (§8.6).
     clear_key_on_success: bool = False

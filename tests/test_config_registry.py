@@ -279,3 +279,56 @@ def test_teardown_is_deleting_site(tmp_path) -> None:
     assert reg.owner_view(GW).get("hostname") is None
     assert reg.owner_view(GW).secret_path("auth_key") is None
     assert reg.owner_view("camera-config").get("retries") == 6
+
+
+# -- review 2026-10-13 ---------------------------------------------------------------------
+
+def test_an_unreadable_file_refuses_writes_instead_of_wiping_it(tmp_path) -> None:
+    write_site(tmp_path, json.dumps({"schema_version": 1, "values": {f"{GW}.tags": ["tag:a"],
+                                                                      "future.x": 1}}))
+    path = tmp_path / "site" / "config.json"
+    original = path.read_bytes()
+    path.chmod(0o000)
+    try:
+        result = make(tmp_path).operator_surface().set(f"{GW}.hostname", "gw", "alice")
+        assert not result.ok and "unreadable" in result.message
+    finally:
+        path.chmod(0o600)
+    assert path.read_bytes() == original
+
+
+def test_a_large_malformed_file_is_set_aside_whole(tmp_path) -> None:
+    write_site(tmp_path, "{" + "x" * 70_000)
+    original = (tmp_path / "site" / "config.json").read_bytes()
+    make(tmp_path).operator_surface().set(f"{GW}.hostname", "gw", "alice")
+    aside = list((tmp_path / "site").glob("config.json.malformed-*"))
+    assert len(aside) == 1 and aside[0].read_bytes() == original
+
+
+def test_directories_are_private_whatever_the_umask(tmp_path) -> None:
+    old = os.umask(0o022)
+    try:
+        root = tmp_path / "fresh" / "state"
+        make(root).operator_surface().set(f"{GW}.auth_key", KEY, "alice")
+    finally:
+        os.umask(old)
+    for d in (root, root / "site", root / "site" / "secrets"):
+        assert mode(d) == 0o700, d
+
+
+def test_an_oversized_secret_file_is_unset(tmp_path) -> None:
+    reg = make(tmp_path)
+    reg.operator_surface().set(f"{GW}.auth_key", KEY, "alice")
+    path = tmp_path / "site" / "secrets" / f"{GW}.auth_key"
+    path.write_bytes(b"x" * 10_000_000)
+    assert reg.owner_view(GW).secret_path("auth_key") is None
+
+
+def test_leftover_temp_files_are_swept_at_load(tmp_path, caplog) -> None:
+    make(tmp_path).operator_surface().set(f"{GW}.auth_key", KEY, "alice")
+    leftover = tmp_path / "site" / "secrets" / f".{GW}.auth_key.abc123"
+    leftover.write_text(KEY)
+    with caplog.at_level(logging.WARNING, logger="config_registry"):
+        make(tmp_path)
+    assert not leftover.exists() and "leftover temp file" in caplog.text
+    assert (tmp_path / "site" / "secrets" / f"{GW}.auth_key").exists()

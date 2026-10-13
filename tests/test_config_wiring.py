@@ -186,6 +186,14 @@ def test_page_escapes_and_handles_no_registry() -> None:
     assert 'name="confirm"' in html
 
 
+def test_unset_bool_preselects_its_default() -> None:
+    row = {"key": "m.flag", "value": False, "is_set": False,
+           "set_path": "/actions/config/m/flag", "clear_path": "/actions/config/m/flag/clear",
+           "field": {"module": "m", "name": "flag", "kind": "bool", "default": False, "scope": "site"}}
+    html = ConfigPage().render({"config": [row]})
+    assert '<option value="false" selected>' in html and '<option value="true" selected>' not in html
+
+
 def test_without_a_registry_there_are_no_config_actions(tmp_path) -> None:
     node = main.compose(Bus(), dashboard_port=0, dashboard_host="127.0.0.1")
     _, port = node.dashboard.start()
