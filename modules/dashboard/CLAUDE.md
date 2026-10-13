@@ -5,7 +5,7 @@
 
 ## Role in the ecosystem
 
-Operator config and ops surface. Today it is a read-only, loopback-only HTTP view (`/` and `/api/state`) of the node card (module versions, capabilities), tailnet status, cameras, planned streams, and the `schema_version` seen on the wire per topic against the pinned contract (§8.5). The surface enforces the ADR-0001 posture itself: it refuses non-loopback binds and returns 405 for non-GET. Config editing arrives with the config registry. Writes and non-loopback serving arrive with ADR-0003 step 4, all together; the caller resolver they rely on is already live. The collector is a terminal consumer (§8.2) and never re-publishes.
+Operator config and ops surface: an HTTP view (`/` and `/api/state`) of the node card (module versions, capabilities), tailnet status, cameras, planned streams, and the `schema_version` seen on the wire per topic against the pinned contract (§8.5). It serves three doors (ADR-0003): **local** (8080 on loopback), **tailnet** (8080 on any other address; the caller must resolve through `PeerDirectory`, and the firewall drops 8080 off `lo`/`tailscale0`), and the **admin fallback** (8443, TLS, admin password; starts only when `admin.cred` and the TLS pair are usable). Every write is an `Action` behind the one `authorize()`; none ship yet, and config editing arrives with the config registry. The collector is a terminal consumer (§8.2) and never re-publishes.
 
 ## Interfaces
 
@@ -17,7 +17,8 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Consumes — inward (core → features):** `DashboardState` (shared live-state object, written by `state-collector`, read by `core/http_surface.py`); `PeerDirectory` (tailnet caller resolver, written by `peer-directory`, held by `core/http_surface.py` for the tailnet door, ADR-0003)
 - **Produces — outward (to the bus):** none — conforms to the ecosystem
   contract (`interfaces/` v0.2.0)
-- **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`)
+- **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`, `login-page` on the fallback); `Action`s (none yet)
+- **Consumes — inward (core):** `AdminAuth` (fallback credential, sessions, login limits) and the pure door functions in `interface/doors.py`
 - **Versions (spec §4 dual versioning):** release `VERSION` 0.3.0; inward
   contract `__version__` 0.3.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
@@ -29,7 +30,8 @@ topics/types are local to this module and defined by its own `interface/`.
 |---------|--------|--------------------|-------|
 | `state-collector` | enabled | 0.1.0 | Latest-value-per-key store of card/tailnet/camera/stream + wire versions. Terminal consumer. |
 | `peer-directory` | enabled | 0.2.0 | Latest `TailnetPeers` → `PeerDirectory`. Resolves a tailnet address to an identity only while fresh (`freshness`); every failure resolves to nobody, with a reason. Terminal consumer. |
-| `overview-page` | served | 0.1.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. |
+| `overview-page` | served | 0.3.0 | Server-rendered HTML `View` at `/`, no JavaScript, all values escaped. Shows who is signed in and via which door; on the fallback, a log-out form. |
+| `login-page` | served (fallback only) | 0.3.0 | The admin fallback's login form. No JavaScript; the message is escaped. |
 
 ## Rules for agents working here
 

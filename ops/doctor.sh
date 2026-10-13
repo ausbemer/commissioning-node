@@ -136,9 +136,11 @@ if [[ -f "$ADMIN_CRED" ]]; then
   else
     skip "admin credential format check needs read access (sudo ops/doctor.sh)"
   fi
-  # The listener itself arrives with ADR-0003 step 4.
-  check_warn "fallback listening on :8443" "fallback not listening on :8443 (the listener arrives with ADR-0003 step 4)" \
+  check "fallback listening on :8443" \
+    "fallback not listening on :8443 — restart commissioning-node, then see its journal" \
     listening 8443
+  check "fallback answers TLS on 127.0.0.1:8443" "fallback not answering TLS on 127.0.0.1:8443" \
+    quiet curl -sk -o /dev/null https://127.0.0.1:8443/login
 else
   warn "no admin password, so the LAN fallback is off (fail closed) — sudo ops/set-admin-password.sh"
   # Fail closed: without a credential nothing may answer on the fallback port.
@@ -148,8 +150,13 @@ fi
 
 section "commissioning-node daemon"
 check "commissioning-node active" "commissioning-node not active" active commissioning-node.service
-check "dashboard answers on 127.0.0.1:8080" "dashboard not answering on 127.0.0.1:8080" \
+check "dashboard answers on 127.0.0.1:8080 (local door)" "dashboard not answering on 127.0.0.1:8080" \
   quiet curl -sf http://127.0.0.1:8080/api/state
+# The tailnet door listens on every address; the firewall's 8080 rule (above) is what keeps
+# the site LAN off it, and the app refuses any caller that is not a resolved tailnet peer.
+check_warn "dashboard listening on all addresses (local + tailnet doors)" \
+  "dashboard not listening on all addresses — still on the pre-ADR-0003 code? restart commissioning-node" \
+  quiet grep -Eq '(\*|\[::\]|0\.0\.0\.0):8080$' <<< "$(ss -Htln 'sport = :8080' | awk '{print $4}')"
 
 echo
 if ((fails)); then echo "doctor: $fails FAIL(s)"; exit 1; fi

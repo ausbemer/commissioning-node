@@ -105,3 +105,7 @@ new version here as an amendment).
   identity is resolved from the peer table that `tailnet-gateway` publishes, and any tailnet
   user may edit config. "Every surface is loopback-only and read-only" still holds until
   ADR-0003's replacements ship together (its rung-12 note); then it is lifted, not before.
+- **2026-10-13 — the posture is lifted (ADR-0003 step 4).** The replacements shipped in one
+  change: door classification, peer resolution, admin sessions, the 8080 firewall entry and
+  the single `authorize()`. "Loopback-only and read-only" no longer holds; ADR-0003 §1 is
+  the posture now.

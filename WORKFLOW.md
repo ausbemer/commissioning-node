@@ -71,9 +71,12 @@ per-merge reviews can't see: cross-feature interactions and semantic drift (§8.
 ## Run it
 
 ```bash
-python3 main.py                       # daemon: ticks every 5 s, dashboard on http://127.0.0.1:8080/
+python3 main.py                       # daemon: ticks every 5 s; dashboard doors (ADR-0003):
+                                      #   http://127.0.0.1:8080/       local
+                                      #   http://<tailnet name>:8080/  tailnet peers
+                                      #   https://<node LAN IP>:8443/  admin fallback (needs a password)
 CN_DASHBOARD_PORT=8099 python3 main.py
-ssh -L 8080:127.0.0.1:8080 pi@<node>  # view the loopback-only dashboard from elsewhere
+ssh -L 8080:127.0.0.1:8080 pi@<node>  # the local door from elsewhere
 ```
 
 ## Host install (ops tier, ADR-0002)
@@ -82,7 +85,8 @@ ssh -L 8080:127.0.0.1:8080 pi@<node>  # view the loopback-only dashboard from el
 ops/install.sh --dry-run      # what would change; needs no root and no network
 sudo ops/install.sh           # apply: Tailscale + MediaMTX at the ops/pins.sh versions,
                               # the firewall, and the systemd units. Safe to re-run.
-sudo tailscale up             # join the tailnet (manual: the auth key is a secret)
+sudo ops/set-admin-password.sh  # enable the LAN admin fallback (interactive; no default)
+tailscale up --operator=<user>  # join the tailnet (manual: the auth key is a secret)
 sudo ops/doctor.sh            # read-only health check (without sudo, root checks SKIP)
 ```
 

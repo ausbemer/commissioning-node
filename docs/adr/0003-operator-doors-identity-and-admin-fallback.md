@@ -263,8 +263,9 @@ them is this ADR's mechanism for those decisions.
 3. ~~Ops: the admin-password script, TLS key generation, the 8080 firewall entry, the doctor
    checks.~~ Done 2026-10-13 (`ops/set-admin-password.sh`, `ops/paths.sh`; scrypt N ledgered in
    `tools/ledgers/admin-auth/`).
-4. Dashboard: door classification, the fallback listener + sessions + CSRF + rate limit, and
-   `authorize()`. Lift the `http_surface.py` guard in this step and no earlier (rung 12).
+4. ~~Dashboard: door classification, the fallback listener + sessions + CSRF + rate limit, and
+   `authorize()`. Lift the `http_surface.py` guard in this step and no earlier (rung 12).~~
+   Done 2026-10-13 (see Amendments).
 5. Config registry: its own ADR (§6 graduation cost), with secret fields.
 6. `tailnet-gateway` writer (hostname, tags, auth-key join): its own Safety ADR, with the
    action-manifest entries.
@@ -280,4 +281,22 @@ them is this ADR's mechanism for those decisions.
 
 ## Amendments
 
-None yet.
+- **2026-10-13 — step 4 implementation choices.** Filled in while building, inside the
+  decisions above:
+  - **DNS rebinding.** On 8080 the Host header must name the node (the address the request
+    arrived on, `localhost` on loopback, its host names, or `<name>.<tailnet>.ts.net`), or
+    the request gets 421. Without this, a page in a tailnet user's browser could rebind its
+    own name to the node and act as that user.
+  - **CSRF on the 8080 doors.** They have no cookies, so writes there are gated by the
+    browser's `Origin` matching the listener, which `authorize()` checks on every door. The
+    fallback adds the per-session token on top. Clients that are not browsers send `Origin`
+    too.
+  - **Global backoff** is `LOGIN_GLOBAL_GAP_S = 1.0`: after any failed login, every login
+    waits a second. It slows a many-source attack without ever locking the operator out.
+    Logins are serialized, which bounds scrypt to one core.
+  - **Rotation** ends every session: the credential is re-read when the file changes, and
+    each session is tied to the credential it was issued under.
+  - **No actions ship yet.** `authorize()` gates logout and any `Action` a feature offers;
+    the first real ones arrive with the config registry (step 5).
+  - **Idle timeout and auto-refresh.** The overview page refreshes itself every 5 s, so an
+    open tab keeps its session alive until the 8-hour absolute limit. Accepted for now.
