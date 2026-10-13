@@ -132,7 +132,12 @@ def invoke(node: Node, topic: str, payload: dict, requires: str) -> tuple[bool, 
     module = requires.split(":", 1)[0]
     registry = next((r for r in node.registries if r.module == module), None)
     if requires not in node.capabilities():
-        where = f"at v{registry.version} predates support" if registry else "is not running"
+        if registry is None:
+            where = "is not running"
+        elif requires in registry.registered():
+            where = f"at v{registry.version} has it installed but disabled"
+        else:
+            where = f"at v{registry.version} predates support"
         msg = f"{requires} not available — service {module} {where}."
         log.warning(msg)
         return False, msg

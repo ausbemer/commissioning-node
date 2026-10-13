@@ -36,6 +36,11 @@ class Registry:
     def enabled(self) -> list[Feature]:
         return [f for name, f in self._features.items() if name in self._enabled]
 
+    def registered(self) -> list[str]:
+        """Capability flags of every feature, enabled or not: a registered-disabled one ships
+        its code but advertises nothing (§8.4)."""
+        return sorted(f"{MODULE}:{name}" for name in self._features)
+
     def capabilities(self) -> list[str]:
         """Capability flags of enabled features, "module:feature" (§5)."""
         return sorted(f"{MODULE}:{f.name}" for f in self.enabled())

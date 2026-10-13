@@ -192,7 +192,8 @@ def test_disabled_by_default_and_refused_in_band(tmp_path) -> None:
     node, results = node_with(tmp_path, writer=writer, enabled=False)
     main.tick(node)
     ok, msg = apply(node, "leave")
-    assert not ok and msg.startswith("tailnet-gateway:tailnet-writer not available")
+    assert not ok and msg == ("tailnet-gateway:tailnet-writer not available — service "
+                              "tailnet-gateway at v0.4.0 has it installed but disabled.")
     assert writer.calls == [] and results == []
     assert "tailnet-gateway:tailnet-writer" not in node.capabilities()
     assert main.compose(Bus(), dashboard_port=0).capabilities() == node.capabilities()
