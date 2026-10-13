@@ -8,14 +8,24 @@ half-typed value.
 Layout (mockup 3, without its map): a one-line summary, then three columns — the site's
 cameras, this gateway, the tailnet streams — and the modules and wire versions folded
 under "System".
+
+The gateway column also applies the saved tailnet values (ADR-0005 §3): it offers only the
+operations that make sense now (join, rename, routes, leave), each a may-disturb `Action`
+with its warning as a required confirm. Leave is a slide-to-confirm where script runs
+(ADR-0006); the confirm checkbox and button remain without it.
 """
 from __future__ import annotations
 
+import time
 from html import escape
 
 from interfaces import __version__ as CONTRACT_VERSION
 
-from ..interface import banner, page
+from ..interface import TAILNET_OPERATIONS, TAILNET_WRITER, banner, page
+
+GATEWAY = "tailnet-gateway"
+#: Operations that ask for a slide rather than a tap (ADR-0006).
+SLIDE_TO_CONFIRM = {"leave"}
 
 #: Browser auto-refresh, seconds. A display preference, not a behaviour constant.
 REFRESH_S = 5
@@ -43,6 +53,12 @@ STYLE = """
 .facts dt, .facts dd { padding:11px 0; border-bottom:1px solid var(--line); margin:0; }
 .facts dt { color:var(--muted); font-size:13px; }
 .facts dd { overflow-wrap:anywhere; }
+.apply { margin-top:18px; display:grid; gap:12px; }
+.apply h3.sec { font-size:16px; }
+.notes { margin:0; font-size:13px; color:var(--muted); display:grid; gap:6px; }
+.notes p { margin:0; padding-left:12px; border-left:2px solid var(--line-strong); }
+.notes p.off { border-left-color:var(--warn); color:var(--ink); }
+.last { font-size:13px; margin:0; }
 .note { margin:14px 0 0; padding:10px 12px; border-left:3px solid var(--line-strong);
   background:var(--surface-2); font-size:13px; color:var(--muted); }
 .system { margin-top:36px; border-top:1px solid var(--line); }
@@ -133,6 +149,78 @@ def _gateway(status: dict, machine: str) -> str:
     return ('<dl class="facts">' + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts) + "</dl>")
 
 
+def _hidden(csrf: str | None) -> str:
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    return f'{token}<input type="hidden" name="then" value="/">'
+
+
+def _operation(operation: str, label: str, csrf: str | None) -> str:
+    path, warning = TAILNET_OPERATIONS[operation]
+    danger = operation == "leave"
+    slide = " data-slide" if operation in SLIDE_TO_CONFIRM else ""
+    return (f'<form class="op{" danger" if danger else ""}" method="post" action="{escape(path)}"{slide}>'
+            f'{_hidden(csrf)}<h3>{escape(label)}</h3>'
+            f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '
+            f'<span>{escape(warning)}</span></label>'
+            f'<button class="btn {"danger" if danger else "primary"}" type="submit">{escape(label)}</button></form>')
+
+
+def _apply(snapshot: dict, status: dict) -> str:
+    """The operations that make sense now, the notes that explain them, the last result."""
+    saved = {r.get("field", {}).get("name"): r for r in snapshot.get("config") or []
+             if r.get("field", {}).get("module") == GATEWAY}
+    if not saved:
+        return ""
+    csrf = (snapshot.get("viewer") or {}).get("csrf")
+    joined = bool(status.get("connected"))
+    node_tags = list(status.get("tags") or [])
+    want_name = (saved.get("hostname") or {}).get("value")
+    want_tags = list((saved.get("tags") or {}).get("value") or [])
+    key_saved = bool((saved.get("auth_key") or {}).get("is_set"))
+    # Routes come resolved from tailnet-gateway (the one authority for what "auto" means).
+    wanted = list(status.get("wanted_routes") or [])
+    advertised = list(status.get("advertised_routes") or [])
+    approved = list(status.get("served_routes") or [])
+    capabilities = {c for n in (snapshot.get("nodes") or {}).values()
+                    for m in n.get("modules", []) for c in m.get("capabilities", [])}
+    notes, ops = [], []
+    if TAILNET_WRITER not in capabilities:
+        notes.append(("off", "The tailnet writer is installed but not enabled yet (ADR-0005: it is "
+                             "enabled after a rehearsal join). Join manually for now; these buttons will refuse."))
+    if not joined:
+        if key_saved:
+            ops.append(_operation("join", "Join the tailnet", csrf))
+        else:
+            notes.append(("", "To join: save a reusable ephemeral auth key on the Config page, then Join here."))
+    else:
+        if want_name and want_name != status.get("hostname"):
+            ops.append(_operation("rename", f"Rename to {want_name}", csrf))
+        if sorted(wanted) != sorted(advertised):
+            ops.append(_operation("routes", f"Advertise {', '.join(wanted) or 'no routes'}", csrf))
+        unapproved = [r for r in advertised if r not in approved]
+        if unapproved:
+            notes.append(("off", f"Not yet approved by the tailnet: {', '.join(unapproved)}. Approve them in "
+                                 "the tailnet's admin console (or with an autoApprovers rule)."))
+        if sorted(want_tags) != sorted(node_tags):
+            notes.append(("off", "The saved tags differ from the node's. Tags change only on a join: "
+                                 "Leave, then Join (the saved key is reused)."))
+        ops.append(_operation("leave", "Leave the tailnet", csrf))
+    if key_saved:
+        notes.append(("", "An auth key is stored and kept, so the node can rejoin after a power cycle. "
+                          "It must be reusable and ephemeral; the site teardown wipes it."))
+    last = (snapshot.get("tailnet_apply") or {}).get("self")
+    result = ""
+    if last:
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last.get("finished_at") or 0))
+        chip = '<span class="chip ok">Done</span>' if last.get("ok") else '<span class="chip crit">Failed</span>'
+        result = (f'<p class="last">{chip} {escape(last.get("operation", "").capitalize())} at {escape(when)}, '
+                  f'requested by {escape(last.get("requested_by", ""))} via the '
+                  f'{escape(last.get("door", ""))} door: {escape(last.get("message", ""))}</p>')
+    notes_html = ('<div class="notes">' + "".join(f'<p class="{c}">{escape(t)}</p>' for c, t in notes)
+                  + "</div>") if notes else ""
+    return f'<div class="apply"><h3 class="sec">Tailnet actions</h3>{notes_html}{"".join(ops)}{result}</div>'
+
+
 def _streams(streams: list[dict]) -> str:
     if not streams:
         return '<p class="empty">No streams planned.</p>'
@@ -220,7 +308,7 @@ class OverviewPage:
 </div>
 <div class="zones">
 <section class="zone lan"><h2>Cameras <small>on the site network</small></h2>{_cameras(cameras)}</section>
-<section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine)}</section>
+<section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine)}{_apply(snapshot, status)}</section>
 <section class="zone tail"><h2>Streams <small>tailnet endpoints</small></h2>{_streams(streams)}</section>
 </div>
 {_system(nodes, snapshot.get("wire", {}), system_open)}"""

@@ -8,6 +8,8 @@ from modules.dashboard.features.login_page import LoginPage
 from modules.dashboard.features.overview_page import OverviewPage
 import http.client
 
+from modules.dashboard.core.http_surface import SECURITY_HEADERS, STATIC_DIR
+
 import main
 from bus import Bus
 from modules.dashboard.interface import banner, page
@@ -31,8 +33,13 @@ def _pages() -> list[str]:
 
 
 def test_every_page_escapes_and_stays_inside_the_csp() -> None:
+    shipped = {f.name for f in STATIC_DIR.iterdir()}
     for html in _pages():
-        assert "<script" not in html
+        scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
+        assert all(body == "" for body in scripts)                  # no inline script (ADR-0006),
+                                                                    # so an unescaped value fails here
+        for src in re.findall(r'<script src="([^"]+)"', html):
+            assert src.startswith("/static/") and src[len("/static/"):] in shipped
         assert not re.search(r"\son[a-z]+=", html)                  # no event handlers
         assert not re.search(r"(src|href)=\"(https?:)?//", html)     # nothing loaded from outside
         assert "@import" not in html and "url(" not in html
@@ -104,5 +111,45 @@ def test_theme_choice_is_a_cookie_and_returns_only_to_a_served_page(tmp_path) ->
         assert '<html lang="en" data-theme="dark">' in page_html
         assert 'title="Night" aria-current="true"' in page_html
         assert '<html lang="en">' in get("/", 'cn-theme="><x').body       # junk is ignored
+    finally:
+        node.dashboard.stop()
+
+
+def test_csp_allows_only_this_nodes_own_script() -> None:
+    csp = SECURITY_HEADERS["Content-Security-Policy"]
+    assert "script-src 'self';" in csp and "unsafe-eval" not in csp
+    assert "unsafe-inline" not in csp.split("script-src", 1)[1].split(";", 1)[0]
+
+
+def test_leave_is_a_slide_and_lives_on_the_overview() -> None:
+    rows = [{"key": "tailnet-gateway.hostname", "value": None, "is_set": False,
+             "set_path": "/s", "clear_path": "/c",
+             "field": {"module": "tailnet-gateway", "name": "hostname", "kind": "str", "scope": "site"}}]
+    html = OverviewPage().render({**SNAPSHOT, "config": rows})
+    leave = html.split('action="/actions/tailnet/leave"', 1)[1].split("</form>", 1)[0]
+    assert leave.startswith(" data-slide>") and 'name="confirm" value="yes" required' in leave
+    assert '<input type="hidden" name="then" value="/">' in leave
+    assert '<noscript><meta http-equiv="refresh" content="5"></noscript>' in html
+    assert '<body data-refresh="5">' in html
+    config = ConfigPage().render({**SNAPSHOT, "config": rows})
+    assert "/actions/tailnet/" not in config and "data-refresh" not in config
+
+
+def test_static_files_are_an_allowlist_behind_the_doors(tmp_path) -> None:
+    node = main.compose(Bus(), dashboard_port=0, dashboard_host="127.0.0.1", config_root=str(tmp_path))
+    _, port = node.dashboard.start()
+    try:
+        def get(path: str):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            return resp, resp.read().decode()
+
+        resp, body = get("/static/dashboard.js")
+        assert resp.status == 200 and resp.getheader("Content-Type").startswith("text/javascript")
+        assert "data-slide" in body
+        for path in ("/static/../core/http_surface.py", "/static/%2e%2e/interface/admin.py",
+                     "/static/", "/static/nope.js"):
+            assert get(path)[0].status == 404
     finally:
         node.dashboard.stop()

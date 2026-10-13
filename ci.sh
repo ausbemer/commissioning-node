@@ -43,6 +43,14 @@ fi
 ops/install.sh --dry-run > /dev/null
 echo "    ok: install.sh --dry-run"
 
+echo "==> Dashboard scripts parse (§8.1, ADR-0006: shipped JS is checked, never trusted)"
+if command -v node >/dev/null 2>&1; then
+  for f in modules/dashboard/static/*.js; do node --check "$f"; done
+  echo "    ok: dashboard scripts"
+else
+  echo "    SKIP: node not installed — dashboard scripts were NOT parsed (apt install nodejs)"
+fi
+
 echo "==> Firewall rules validate (nft -c)"
 NFT="$(command -v nft || echo /usr/sbin/nft)"
 if [[ -x "$NFT" ]] && sudo -n true 2>/dev/null; then

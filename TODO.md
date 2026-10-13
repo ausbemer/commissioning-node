@@ -65,6 +65,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [x] ADR-0003 step 3 applied on the node (2026-10-13): TLS key, admin password, operator,
       8080 rule; doctor clean. `tailscale up --operator=<user>` waits for the dashboard's
       join flow (ADR-0003 step 6) or a manual join.
+- [ ] Install `nodejs` on the dev node (dev/CI only) so `ci.sh` parses the dashboard's scripts
+      (ADR-0006); until then that gate prints SKIPPED.
 - [ ] Provenance (§2, ADR-0002): run a tagged checkout on shipped nodes, and have the
       doctor and node card report the running commit.
 - [ ] A check that `relay_planner.MEDIAMTX_RTSP_PORT` matches `rtspAddress` in the MediaMTX

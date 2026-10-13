@@ -5,8 +5,9 @@ banner (node identity, page navigation, who is signed in and via which door, the
 slider) and the components both pages use. Features build their page body and hand it to
 `page()`; they never import each other, so the shared frame lives here.
 
-Everything stays inside the dashboard's CSP: no script, no outside font or image, inline
-CSS only, every value escaped. The day/night slider is two links to `THEME_PATH`; core
+Everything stays inside the dashboard's CSP: no inline script, no outside font or image,
+inline CSS, every value escaped. Pages load the one first-party script (`SCRIPT`, ADR-0006)
+and work without it. The day/night slider is two links to `THEME_PATH`; core
 remembers the choice in a cookie (ADR-0003 amendment, 2026-10-13) and the page renders it
 as `data-theme` on the root. With no choice made the page follows the device's
 `prefers-color-scheme`.
@@ -18,6 +19,11 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 #: Pages the banner links to, in order: (path, label).
 NAV = (("/", "Overview"), ("/config", "Config"))
+
+#: Static files core serves from the module's `static/` directory (ADR-0006).
+STATIC_PATH = "/static/"
+#: The one script every page loads; progressive enhancement only.
+SCRIPT = STATIC_PATH + "dashboard.js"
 
 #: The slider's links are `THEME_PATH/<theme>?then=<page>`; the choice lives in THEME_COOKIE.
 THEME_PATH = "/theme"
@@ -131,6 +137,28 @@ input:focus-visible, select:focus-visible {{ outline:2px solid var(--accent); ou
 .chip.crit {{ color:var(--crit); background:var(--crit-soft); }}
 .chip.none {{ color:var(--muted); border-color:var(--line-strong); }}
 
+.op {{ border:1px solid var(--line-strong); border-radius:8px; padding:10px 12px; background:var(--surface); margin:0; }}
+.op.danger {{ border-color:var(--crit); }}
+.op h3 {{ font-size:15px; margin-bottom:6px; }}
+.confirm {{ display:flex; gap:8px; align-items:flex-start; font-size:13px; margin-bottom:10px; }}
+.confirm input {{ margin-top:3px; accent-color:var(--accent); flex:none; }}
+.op.danger .confirm input {{ accent-color:var(--crit); }}
+.js-slide .confirm input, .js-slide button[type="submit"] {{ display:none; }}
+.slide {{ position:relative; height:44px; border-radius:22px; background:var(--surface-2);
+  border:1px solid var(--line-strong); overflow:hidden; touch-action:none; user-select:none; }}
+.op.danger .slide {{ border-color:var(--crit); }}
+.slide-fill {{ position:absolute; inset:0 auto 0 0; width:22px; background:var(--crit-soft); }}
+.slide-text {{ position:absolute; inset:0; display:grid; place-items:center; font-size:13px;
+  font-weight:600; color:var(--muted); padding-left:40px; pointer-events:none; }}
+.slide-knob {{ position:absolute; top:2px; left:2px; width:38px; height:38px; border-radius:19px;
+  display:grid; place-items:center; background:var(--crit); color:var(--surface); font-weight:700;
+  cursor:grab; touch-action:none; }}
+.slide-knob:active {{ cursor:grabbing; }}
+.slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:transform .2s ease, width .2s ease; }}
+.slide.done .slide-text {{ color:var(--crit); }}
+.slide:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px; }}
+@media (prefers-reduced-motion: reduce) {{ .slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:none; }} }}
+
 .scroll {{ overflow-x:auto; }}
 table {{ border-collapse:collapse; width:100%; font-size:13.5px; }}
 th {{ text-align:left; font-weight:600; color:var(--muted); font-size:12.5px; padding:6px 10px 6px 0;
@@ -199,16 +227,20 @@ def banner(*, name: str, status: dict | None = None, current: str | None = None,
 
 
 def page(*, title: str, body: str, banner_html: str, style: str = "",
-         refresh_s: int | None = None, theme: str | None = None) -> str:
+         refresh_s: int | None = None, theme: str | None = None, script: bool = True) -> str:
     """A whole HTML document. `body` and `banner_html` are already-escaped markup; `style`
-    is the page's own CSS, added after the shared sheet."""
+    is the page's own CSS, added after the shared sheet. `refresh_s` reloads the page: by
+    the script (which waits out a slide in progress), or by a <noscript> meta refresh."""
     root = f' data-theme="{theme}"' if theme_choice(theme) else ""
-    refresh = f'<meta http-equiv="refresh" content="{int(refresh_s)}">\n' if refresh_s else ""
+    refresh = (f'<noscript><meta http-equiv="refresh" content="{int(refresh_s)}"></noscript>\n'
+               if refresh_s else "")
+    data = f' data-refresh="{int(refresh_s)}"' if refresh_s else ""
+    js = f'<script src="{SCRIPT}" defer></script>\n' if script else ""
     return f"""<!doctype html>
 <html lang="en"{root}><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 {refresh}<title>{escape(title)}</title>
-<style>{STYLE}{style}</style></head><body>
+{js}<style>{STYLE}{style}</style></head><body{data}>
 {banner_html}
 <main class="wrap">
 {body}
