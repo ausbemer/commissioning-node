@@ -329,6 +329,7 @@ class ConfigPage:
         status = (snapshot.get("tailnet") or {}).get("self") or {}
         nodes = list((snapshot.get("nodes") or {}).values())
         name = status.get("hostname") or (nodes[0].get("hostname", "") if nodes else "") or "commissioning-node"
-        return page(title=f"Config · {name}", body=body, style=STYLE,
+        theme = snapshot.get("theme")
+        return page(title=f"Config · {name}", body=body, style=STYLE, theme=theme,
                     banner_html=banner(name=name, status=status or None, current=PATH,
-                                       viewer=snapshot.get("viewer")))
+                                       viewer=snapshot.get("viewer"), theme=theme))

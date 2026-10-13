@@ -6,16 +6,35 @@ slider) and the components both pages use. Features build their page body and ha
 `page()`; they never import each other, so the shared frame lives here.
 
 Everything stays inside the dashboard's CSP: no script, no outside font or image, inline
-CSS only, every value escaped. The slider is two radio inputs; with neither checked the page
-follows the device's `prefers-color-scheme`. `theme` ("light"/"dark") sets `data-theme` on
-the root for a server-remembered choice.
+CSS only, every value escaped. The day/night slider is two links to `THEME_PATH`; core
+remembers the choice in a cookie (ADR-0003 amendment, 2026-10-13) and the page renders it
+as `data-theme` on the root. With no choice made the page follows the device's
+`prefers-color-scheme`.
 """
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import quote
 
 #: Pages the banner links to, in order: (path, label).
 NAV = (("/", "Overview"), ("/config", "Config"))
+
+#: The slider's links are `THEME_PATH/<theme>?then=<page>`; the choice lives in THEME_COOKIE.
+THEME_PATH = "/theme"
+THEME_COOKIE = "cn-theme"
+#: Valid choices, as `data-theme` values: (theme, label).
+THEMES = (("light", "Day"), ("dark", "Night"))
+
+
+def theme_choice(value: str | None) -> str | None:
+    """A cookie or path value → a known theme, or None (follow the device)."""
+    return value if value in dict(THEMES) else None
+
+
+def theme_return(then: str | None, pages: set[str]) -> str:
+    """Where the slider sends the browser back to: only a page this surface serves, never
+    an open redirect; anything else goes to the overview."""
+    return then if then in pages else "/"
 
 _COND = 'Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif'
 _MONO = 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace'
@@ -35,8 +54,6 @@ STYLE = f"""
 :root {{ {_LIGHT} }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ {_DARK} }} }}
 :root[data-theme="dark"] {{ {_DARK} }}
-:root:has(#theme-night:checked) {{ {_DARK} }}
-:root:has(#theme-day:checked) {{ {_LIGHT} }}
 
 * {{ box-sizing:border-box; }}
 html {{ -webkit-text-size-adjust:100%; }}
@@ -72,16 +89,14 @@ main.wrap {{ padding-block:28px 40px; }}
 
 .theme {{ position:relative; display:inline-grid; grid-template-columns:1fr 1fr; width:64px; height:30px;
   border:1px solid var(--line-strong); border-radius:15px; background:var(--surface-2); flex:none; }}
-.theme input {{ position:absolute; opacity:0; width:1px; height:1px; margin:0; }}
-.theme label {{ position:relative; z-index:2; display:grid; place-items:center; cursor:pointer; color:var(--muted); }}
-.theme label svg {{ width:14px; height:14px; }}
+.theme a {{ position:relative; z-index:2; display:grid; place-items:center; color:var(--muted); border-radius:12px; }}
+.theme a:hover, .theme a[aria-current="true"] {{ color:var(--ink); }}
+.theme a:focus-visible {{ outline-offset:-2px; }}
+.theme svg {{ width:14px; height:14px; }}
 .theme .thumb {{ position:absolute; z-index:1; top:2px; left:2px; width:26px; height:24px; border-radius:12px;
   background:var(--surface); border:1px solid var(--line-strong); transition:transform .18s ease; }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) .theme .thumb {{ transform:translateX(32px); }} }}
-:root[data-theme="dark"] .theme .thumb, :root:has(#theme-night:checked) .theme .thumb {{ transform:translateX(32px); }}
-:root:has(#theme-day:checked) .theme .thumb {{ transform:translateX(0); }}
-.theme input:focus-visible + label {{ outline:2px solid var(--accent); outline-offset:-2px; border-radius:12px; }}
-.theme input:checked + label {{ color:var(--ink); }}
+:root[data-theme="dark"] .theme .thumb {{ transform:translateX(32px); }}
 @media (prefers-reduced-motion: reduce) {{ .theme .thumb {{ transition:none; }} }}
 @media (max-width: 560px) {{
   .who .via {{ display:none; }}
@@ -127,11 +142,17 @@ _MARK = ('<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">'
          '<rect x="15" y="7" width="6" height="8" rx="1.5" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.6"/>'
          '<path d="M7 11h8" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>')
 
-_SLIDER = f"""<div class="theme" role="radiogroup" aria-label="Day or night">
-<input type="radio" name="theme" id="theme-day"><label for="theme-day" title="Day">{_SUN}<span class="sr">Day</span></label>
-<input type="radio" name="theme" id="theme-night"><label for="theme-night" title="Night">{_MOON}<span class="sr">Night</span></label>
-<span class="thumb" aria-hidden="true"></span>
-</div>"""
+_ICONS = {"light": _SUN, "dark": _MOON}
+
+
+def slider(back: str, theme: str | None = None) -> str:
+    """The day/night slider: one link per theme, each returning to `back`."""
+    then, chosen = quote(back, safe="/"), ' aria-current="true"'
+    links = "".join(
+        f'<a href="{THEME_PATH}/{t}?then={then}" title="{label}"{chosen if t == theme else ""}>'
+        f'{_ICONS[t]}<span class="sr">{label}</span></a>'
+        for t, label in THEMES)
+    return f'<nav class="theme" aria-label="Day or night">{links}<span class="thumb" aria-hidden="true"></span></nav>'
 
 
 def tailnet_badge(status: dict | None) -> tuple[str, str]:
@@ -144,9 +165,10 @@ def tailnet_badge(status: dict | None) -> tuple[str, str]:
 
 
 def banner(*, name: str, status: dict | None = None, current: str | None = None,
-           viewer: dict | None = None) -> str:
+           viewer: dict | None = None, theme: str | None = None, back: str | None = None) -> str:
     """Node identity, page links (`current` is the path being shown; None hides the
-    links), who is signed in, and the day/night slider."""
+    links), who is signed in, and the day/night slider (returning to `back`, default
+    `current`, and marking `theme` as chosen)."""
     cls, text = tailnet_badge(status)
     ident = (f'<div class="ident">{_MARK}<strong>{escape(name)}</strong>'
              + (f'<span class="state {cls}">{escape(text)}</span>' if current is not None else "")
@@ -165,14 +187,14 @@ def banner(*, name: str, status: dict | None = None, current: str | None = None,
             who += ('<form method="post" action="/logout"><input type="hidden" name="csrf" '
                     f'value="{escape(viewer["csrf"])}"><button class="btn" type="submit">Log out</button></form>')
         who += "</div>"
-    return f'<header class="banner"><div class="wrap">{ident}{nav}{who}{_SLIDER}</div></header>'
+    return f'<header class="banner"><div class="wrap">{ident}{nav}{who}{slider(back or current or "/", theme)}</div></header>'
 
 
 def page(*, title: str, body: str, banner_html: str, style: str = "",
          refresh_s: int | None = None, theme: str | None = None) -> str:
     """A whole HTML document. `body` and `banner_html` are already-escaped markup; `style`
     is the page's own CSS, added after the shared sheet."""
-    root = f' data-theme="{theme}"' if theme in ("light", "dark") else ""
+    root = f' data-theme="{theme}"' if theme_choice(theme) else ""
     refresh = f'<meta http-equiv="refresh" content="{int(refresh_s)}">\n' if refresh_s else ""
     return f"""<!doctype html>
 <html lang="en"{root}><head><meta charset="utf-8">

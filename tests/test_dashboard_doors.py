@@ -372,6 +372,7 @@ def test_tailnet_door_end_to_end() -> None:
                 addresses=["100.64.0.99"], node_name="bob.ts.net", login="bob@example.com")]
         ).model_dump())
         assert call(conn, "GET", "/api/state")[0] == 403                # not a known peer
+        assert call(conn, "GET", "/theme/dark")[0] == 403               # sorted into a door too
         node.bus.publish(interfaces.TAILNET_PEERS, interfaces.TailnetPeers.stamped(
             V, observed_at=0.0, period_s=5.0, peers=[interfaces.TailnetPeer(
                 addresses=[ip], node_name="alice.ts.net", login="alice@example.com")]
@@ -421,6 +422,8 @@ def test_fallback_login_session_csrf_logout(fallback_node) -> None:
     assert call(conn, "GET", "/api/state")[0] == 401
     assert call(conn, "POST", "/actions/noop", {})[0] == 401
     assert call(conn, "POST", "/login", {"password": PASSWORD})[0] == 403          # no Origin
+    status, headers, _ = call(conn, "GET", "/theme/dark?then=/login")          # the login page's slider
+    assert status == 303 and headers["location"] == "/login" and "Secure" in headers["set-cookie"]
     status, _, page = call(conn, "POST", "/login", {"password": "wrong"}, origin)
     assert status == 401 and "wrong password" in page
     status, headers, _ = call(conn, "POST", "/login", {"password": PASSWORD}, origin)

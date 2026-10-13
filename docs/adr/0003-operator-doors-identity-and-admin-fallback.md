@@ -317,3 +317,18 @@ them is this ADR's mechanism for those decisions.
     the first real ones arrive with the config registry (step 5).
   - **Idle timeout and auto-refresh.** The overview page refreshes itself every 5 s, so an
     open tab keeps its session alive until the 8-hour absolute limit. Accepted for now.
+
+- **2026-10-13 — the day/night choice is a cookie, not a write.** The redesigned dashboard
+  (dashboard 0.7.0) has a day/night slider. Without JavaScript the choice can only persist
+  through the server, so `GET /theme/light|dark?then=<page>` sets a `cn-theme` cookie
+  (`HttpOnly`, `SameSite=Strict`, `Secure` on the fallback) and answers 303:
+  - It is not an `Action` and does not pass `authorize()`: it changes nothing on the node,
+    only a display preference in the caller's own browser. A forged link can at worst flip
+    someone's colours.
+  - It is still sorted into a door like any page: on 8080 an unknown or stale tailnet caller
+    and a wrong `Host` are refused as usual. On the fallback it is allowed before login,
+    because the login page has the slider too.
+  - It returns only to a page this surface serves (`/login` too, on the fallback), never an
+    open redirect; anything else goes to `/`.
+  - The cookie is read back only as one of the two known values; anything else means
+    "follow the device" (`prefers-color-scheme`).

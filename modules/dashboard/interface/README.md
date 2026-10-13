@@ -46,7 +46,7 @@ Every feature implements `feature.py`'s protocol:
 | `ConfigSurface`, `ConfigFieldState`, `ConfigWriteResult` (protocols, `config.py`) | 0.4.0 | Seam to the config registry's operator surface (ADR-0004): list fields, read state (a secret has no value), set from operator text, clear. Injected by `main.py`; the dashboard never imports the registry |
 | `config_key`, `set_path`, `clear_path`, `config_rows`, `CONFIG_ACTIONS` (`config.py`) | 0.4.0 | Pure helpers: a field's key and action paths, and its rows for a View's snapshot (`snapshot["config"]`, present only when a registry is wired) |
 | `Invoker` (protocol), `TAILNET_WRITER`, `TAILNET_OPERATIONS` (`config.py`) | 0.5.0 | The §5 invoke seam (`main.invoke`, injected), and the tailnet operations' paths and may-disturb warnings (ADR-0005), shared by `tailnet-apply` and `config-page` |
-| `page`, `banner`, `STYLE`, `NAV`, `tailnet_badge` (`chrome.py`) | 0.7.0 | The frame every HTML view shares: day/night colour tokens, base type, the banner (node, page links, signed-in caller and door, day/night slider) and common components. Pure; no script, no outside resource (CSP); values escaped |
+| `page`, `banner`, `slider`, `STYLE`, `NAV`, `tailnet_badge`, `THEME_PATH`, `THEME_COOKIE`, `THEMES`, `theme_choice`, `theme_return` (`chrome.py`) | 0.7.0 | The frame every HTML view shares: day/night colour tokens, base type, the banner (node, page links, signed-in caller and door, day/night slider) and common components. Pure; no script, no outside resource (CSP); values escaped. The slider links to `THEME_PATH`; core keeps the choice in `THEME_COOKIE` (ADR-0003 amendment) and HTML views receive it as `snapshot["theme"]` |
 | `AdminAuth`, `Session` (`admin.py`) | 0.3.0 | Fallback login: scrypt credential (re-read on change; rotation ends sessions), in-memory sessions with idle/absolute expiry and a CSRF token; failures limited per IPv4 address or IPv6 /64; verifications run one at a time, first come first served (no global refusal, so an attacker cannot lock the operator out). Fails closed |
 
 All models tolerate unknown fields (`extra="ignore"`). Nested shapes are models too, never
@@ -65,7 +65,7 @@ interface objects").
 
 ## Changelog
 
-- v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign (additive).
+- v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme` (additive).
 - v0.6.0 — `TAILNET_OPERATIONS` gains `routes`; the Join warning now says the key is kept (additive).
 - v0.5.0 — `Invoker`, `TAILNET_WRITER`, `TAILNET_OPERATIONS`; state kind `tailnet_apply` (additive). The `tailnet` kind is keyed `self`, not by hostname (a rename no longer leaves a stale row).
 - v0.4.0 — `ConfigSurface` and its helpers (`config.py`); HTML views may receive `config` (additive).

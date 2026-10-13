@@ -6,6 +6,10 @@ import re
 from modules.dashboard.features.config_page import ConfigPage
 from modules.dashboard.features.login_page import LoginPage
 from modules.dashboard.features.overview_page import OverviewPage
+import http.client
+
+import main
+from bus import Bus
 from modules.dashboard.interface import banner, page
 
 HOSTILE = '"><script>alert(1)</script>'
@@ -38,7 +42,8 @@ def test_banner_marks_the_current_page_and_the_door() -> None:
     html = OverviewPage().render(dict(SNAPSHOT))
     assert '<a href="/" aria-current="page">Overview</a>' in html
     assert '<a href="/config">Config</a>' in html and "via the local door" in html
-    assert 'id="theme-day"' in html and 'id="theme-night"' in html
+    assert '<a href="/theme/light?then=/" title="Day">' in html          # nothing chosen yet
+    assert 'href="/theme/dark?then=/config"' in ConfigPage().render(dict(SNAPSHOT))
     config = ConfigPage().render(dict(SNAPSHOT))
     assert '<a href="/config" aria-current="page">Config</a>' in config
     assert "refresh" not in config.lower()                          # never wipes a half-typed value
@@ -56,3 +61,30 @@ def test_logout_only_with_a_session_and_theme_only_when_known() -> None:
     assert 'action="/logout"' in banner(name="n", viewer={"label": "a", "door": "fallback", "csrf": "t"})
     assert '<html lang="en" data-theme="dark">' in page(title="t", body="", banner_html="", theme="dark")
     assert '<html lang="en">' in page(title="t", body="", banner_html="", theme='x" onload="y')
+
+
+def test_theme_choice_is_a_cookie_and_returns_only_to_a_served_page(tmp_path) -> None:
+    node = main.compose(Bus(), dashboard_port=0, dashboard_host="127.0.0.1", config_root=str(tmp_path))
+    _, port = node.dashboard.start()
+    try:
+        def get(path: str, cookie: str = "") -> http.client.HTTPResponse:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", path, headers={"Cookie": cookie} if cookie else {})
+            resp = conn.getresponse()
+            resp.body = resp.read().decode()
+            return resp
+
+        r = get("/theme/dark?then=/config")
+        assert r.status == 303 and r.getheader("Location") == "/config"
+        cookie = r.getheader("Set-Cookie")
+        assert cookie.startswith("cn-theme=dark;") and "HttpOnly" in cookie and "SameSite=Strict" in cookie
+        assert "Secure" not in cookie                                   # plain http on 8080
+        for then in ("https://evil.example/", "//evil.example", "/nowhere", ""):
+            assert get(f"/theme/light?then={then}").getheader("Location") == "/"
+        assert get("/theme/purple").status == 404
+        page_html = get("/config", "cn-theme=dark").body
+        assert '<html lang="en" data-theme="dark">' in page_html
+        assert 'title="Night" aria-current="true"' in page_html
+        assert '<html lang="en">' in get("/", 'cn-theme="><x').body       # junk is ignored
+    finally:
+        node.dashboard.stop()

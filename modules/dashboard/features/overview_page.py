@@ -209,6 +209,7 @@ class OverviewPage:
 <section class="zone tail"><h2>Streams <small>tailnet endpoints</small></h2>{_streams(streams)}</section>
 </div>
 {_system(nodes, snapshot.get("wire", {}))}"""
+        theme = snapshot.get("theme")
         return page(title=f"{name} · commissioning-node", body=body, style=STYLE, refresh_s=REFRESH_S,
-                    banner_html=banner(name=name, status=status or None, current=self.path,
-                                       viewer=snapshot.get("viewer")))
+                    theme=theme, banner_html=banner(name=name, status=status or None, current=self.path,
+                                                    viewer=snapshot.get("viewer"), theme=theme))

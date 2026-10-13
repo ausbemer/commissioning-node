@@ -3,7 +3,7 @@
 The ONLY package features may import from this module (spec §4).
 """
 from .actions import Action, ActionResult
-from .chrome import banner, page
+from .chrome import THEME_COOKIE, THEME_PATH, banner, page, theme_choice, theme_return
 from .admin import AdminAuth, Session
 from .config import (CONFIG_ACTIONS, ConfigFieldState, ConfigSurface, ConfigWriteResult,
                      TAILNET_OPERATIONS, TAILNET_WRITER, Invoker, clear_path, config_key,
@@ -24,7 +24,7 @@ __version__ = "0.7.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
            "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",
-           "Action", "ActionResult", "AdminAuth", "Session", "banner", "page",
+           "Action", "ActionResult", "AdminAuth", "Session", "banner", "page", "THEME_PATH", "THEME_COOKIE", "theme_choice", "theme_return",
            "DOORS", "LOCAL", "TAILNET", "FALLBACK", "Caller", "Refusal", "Decision",
            "authorize", "classify", "host_allowed", "same_origin",
            "ConfigSurface", "ConfigFieldState", "ConfigWriteResult", "CONFIG_ACTIONS",

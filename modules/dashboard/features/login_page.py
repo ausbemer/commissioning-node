@@ -36,5 +36,6 @@ class LoginPage:
 <button class="btn primary" type="submit">Log in</button>
 </form>
 </section>"""
-        return page(title="Admin login · commissioning-node", body=body, style=STYLE,
-                    banner_html=banner(name="commissioning-node"))
+        theme = snapshot.get("theme")
+        return page(title="Admin login · commissioning-node", body=body, style=STYLE, theme=theme,
+                    banner_html=banner(name="commissioning-node", theme=theme, back=self.path))

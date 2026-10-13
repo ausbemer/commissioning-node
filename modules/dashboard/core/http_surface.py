@@ -10,6 +10,10 @@
 Every decision is a pure function from `interface/` (`classify`, `host_allowed`,
 `same_origin`, `authorize`, `AdminAuth`); this file only moves bytes and calls them, and
 every write passes `authorize()` first. Every refusal is in-band with its reason (rung 7).
+
+The day/night choice (`THEME_PATH`) is not a write: it changes nothing on the node, only a
+cookie in the caller's own browser. It is still sorted into a door like any page, and it
+returns only to a page this surface serves (ADR-0003 amendment, 2026-10-13).
 """
 from __future__ import annotations
 
@@ -23,11 +27,12 @@ from dataclasses import dataclass
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Mapping
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qs, parse_qsl
 
-from ..interface import (FALLBACK, MODULE, Action, ActionResult, AdminAuth, Caller,
-                         ConfigSurface, DashboardState, PeerDirectory, Refusal, View, authorize,
-                         classify, config_rows, host_allowed, same_origin)
+from ..interface import (FALLBACK, MODULE, THEME_COOKIE, THEME_PATH, Action, ActionResult,
+                         AdminAuth, Caller, ConfigSurface, DashboardState, PeerDirectory, Refusal,
+                         View, authorize, classify, config_rows, host_allowed, same_origin,
+                         theme_choice, theme_return)
 from ..interface.admin import COOKIE, LABEL
 
 log = logging.getLogger(MODULE)
@@ -39,6 +44,8 @@ LOGOUT_PATH = "/logout"
 MAX_BODY = 16 * 1024
 #: Seconds a connection may sit idle mid-request (a slow client holds one thread only).
 CONN_TIMEOUT_S = 15
+#: How long a browser keeps the day/night choice. A display preference, not a behaviour constant.
+THEME_MAX_AGE_S = 365 * 24 * 3600
 
 #: On every response. No framing (clickjacking a form), no sniffing, no referrer leaks;
 #: the pages have inline CSS only and no scripts. Referrer-Policy is `same-origin`, never
@@ -142,7 +149,9 @@ class HttpSurface:
         self._login_view = login_view
         self._config = config
         reserved = {LOGIN_PATH, LOGOUT_PATH, STATE_PATH}
-        clash = (set(self._views) & set(self._actions)) | (reserved & (set(self._views) | set(self._actions)))
+        paths = set(self._views) | set(self._actions)
+        clash = ((set(self._views) & set(self._actions)) | (reserved & paths)
+                 | {p for p in paths if p == THEME_PATH or p.startswith(THEME_PATH + "/")})
         if clash:
             raise ValueError(f"dashboard paths claimed twice: {sorted(clash)}")
         self._host, self._port = host, port
@@ -221,22 +230,28 @@ class HttpSurface:
                                                     "tailnet IP address (or localhost on the node)")
                 return who
 
-            def _cookie(self) -> str | None:
+            def _cookie(self, name: str = COOKIE) -> str | None:
                 try:
                     jar = SimpleCookie(self.headers.get("Cookie", ""))
                 except CookieError:
                     return None
-                return jar[COOKIE].value if COOKIE in jar else None
+                return jar[name].value if name in jar else None
+
+            def _theme(self) -> str | None:
+                return theme_choice(self._cookie(THEME_COOKIE))
 
             # -- GET ---------------------------------------------------------------------
 
             def do_GET(self) -> None:  # noqa: N802 — http.server naming
-                path = self.path.split("?", 1)[0]
+                path, _, query = self.path.partition("?")
                 if tls and path == LOGIN_PATH:
                     return self._login_page("", 200)
                 caller = self._caller()
                 if isinstance(caller, Refusal):
                     return self._refuse(caller.status, caller.message)
+                if path.startswith(THEME_PATH + "/"):
+                    # Allowed before a fallback login too: the login page has the slider.
+                    return self._set_theme(path[len(THEME_PATH) + 1:], query)
                 if caller is None:
                     if path == STATE_PATH:
                         return self._refuse(401, "log in first")
@@ -249,6 +264,7 @@ class HttpSurface:
                     return self._refuse(404, "not found")
                 snap = surface._state.snapshot()
                 snap["viewer"] = {"label": caller.label, "door": caller.door, "csrf": caller.csrf}
+                snap["theme"] = self._theme()
                 if surface._config is not None:
                     snap["config"] = config_rows(surface._config)   # secrets carry no value
                 self._send(200, view.content_type, view.render(snap))
@@ -326,14 +342,28 @@ class HttpSurface:
 
             # -- responses ---------------------------------------------------------------
 
+            def _set_theme(self, name: str, query: str) -> None:
+                theme = theme_choice(name)
+                if theme is None:
+                    return self._refuse(404, "not found")
+                pages = set(surface._views) | ({LOGIN_PATH} if tls else set())
+                then = (parse_qs(query).get("then") or [None])[0]
+                secure = "; Secure" if tls else ""
+                self._redirect(theme_return(then, pages),
+                               set_cookie=f"{THEME_COOKIE}={theme}; Path=/; Max-Age={THEME_MAX_AGE_S}; "
+                                          f"HttpOnly; SameSite=Strict{secure}")
+
             def _login_page(self, message: str, code: int) -> None:
                 view = surface._login_view
-                body = view.render({"message": message}) if view else message
+                body = view.render({"message": message, "theme": self._theme()}) if view else message
                 self._send(code, view.content_type if view else "text/plain; charset=utf-8", body)
 
-            def _redirect(self, to: str, cookie: str | None = None, clear_cookie: bool = False) -> None:
+            def _redirect(self, to: str, cookie: str | None = None, clear_cookie: bool = False,
+                          set_cookie: str | None = None) -> None:
                 self.send_response(303)
                 self.send_header("Location", to)
+                if set_cookie is not None:
+                    self.send_header("Set-Cookie", set_cookie)
                 if cookie is not None:
                     self.send_header("Set-Cookie", f"{COOKIE}={cookie}; Path=/; Secure; HttpOnly; SameSite=Strict")
                 elif clear_cookie:
