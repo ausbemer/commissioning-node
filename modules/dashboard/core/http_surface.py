@@ -265,6 +265,9 @@ class HttpSurface:
                 snap = surface._state.snapshot()
                 snap["viewer"] = {"label": caller.label, "door": caller.door, "csrf": caller.csrf}
                 snap["theme"] = self._theme()
+                # Display state a page keeps across its own auto-refresh (e.g. a section left
+                # open); the view reads only the keys it knows and escapes what it shows.
+                snap["query"] = {k: v[0] for k, v in parse_qs(query).items()}
                 if surface._config is not None:
                     snap["config"] = config_rows(surface._config)   # secrets carry no value
                 self._send(200, view.content_type, view.render(snap))

@@ -45,10 +45,11 @@ STYLE = """
 .facts dd { overflow-wrap:anywhere; }
 .note { margin:14px 0 0; padding:10px 12px; border-left:3px solid var(--line-strong);
   background:var(--surface-2); font-size:13px; color:var(--muted); }
-details.system { margin-top:36px; border-top:1px solid var(--line); }
-details.system > summary { cursor:pointer; padding:14px 0; color:var(--muted); font-size:14px; }
-details.system > summary strong { font-family:Bahnschrift, "DIN Alternate", "Roboto Condensed",
-  "Arial Narrow", sans-serif; color:var(--ink); font-size:17px; margin-right:8px; }
+.system { margin-top:36px; border-top:1px solid var(--line); }
+.system > header { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; padding:14px 0;
+  color:var(--muted); font-size:14px; }
+.system > header h2 { font-size:17px; color:var(--ink); }
+.system > header a { margin-left:auto; font-size:13px; }
 .sys-grid { display:grid; grid-template-columns:1.4fr 1fr; gap:24px; }
 @media (max-width: 860px) { .sys-grid { grid-template-columns:1fr; } }
 .ver { font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; font-size:12px; }
@@ -154,7 +155,11 @@ def _streams(streams: list[dict]) -> str:
     return f'<ul class="rows">{"".join(items)}</ul>{note}'
 
 
-def _system(nodes: list[dict], wire: dict) -> str:
+#: The query that keeps System open across the auto-refresh (a reload resets <details>).
+SYSTEM_OPEN = "open"
+
+
+def _system(nodes: list[dict], wire: dict, want_open: bool) -> str:
     module_rows = [
         f'<tr><td>{escape(m.get("name", ""))}</td><td class="ver">{escape(m.get("release_version", ""))}</td>'
         f'<td class="ver">{escape(m.get("inward_version", ""))}</td>'
@@ -175,17 +180,26 @@ def _system(nodes: list[dict], wire: dict) -> str:
         wire_line = f"{skew} of {len(wire_rows)} wire topics at a different version"
     else:
         wire_line = f"all {len(wire_rows)} wire topics match"
-    summary = (f"<strong>System</strong>{n} module{'s' if n != 1 else ''}, contract "
-               f"v{escape(CONTRACT_VERSION)}, {escape(wire_line)}")
-    # Open by itself when something is off, so a skew is never hidden.
-    opened = " open" if skew else ""
-    return (f'<details class="system"{opened}><summary>{summary}</summary><div class="sys-grid">'
+    summary = (f"{n} module{'s' if n != 1 else ''}, contract v{escape(CONTRACT_VERSION)}, "
+               f"{escape(wire_line)}")
+    # A skew is never folded away. Otherwise open is a link, not a <details>: the page
+    # reloads itself every few seconds and a reload would close it.
+    if skew:
+        toggle = ""
+    elif want_open:
+        toggle = '<a href="/">Hide details</a>'
+    else:
+        toggle = f'<a href="/?system={SYSTEM_OPEN}">Show details</a>'
+    head = f'<header><h2>System</h2><span>{summary}</span>{toggle}</header>'
+    if not (skew or want_open):
+        return f'<section class="system">{head}</section>'
+    return (f'<section class="system" id="system">{head}<div class="sys-grid">'
             + _table("Modules", ["Module", "Release", "Inward contract", "Capabilities"],
                      module_rows, "no node card yet")
             + "<div>" + _table("Wire versions (§8.5)", ["Topic", "Seen", "Pinned", ""], wire_rows,
                                "nothing received yet")
             + '<p class="keyline">A topic seen at a different version than pinned is marked '
-              '<span class="ver skew">SKEW</span>.</p></div></div></details>')
+              '<span class="ver skew">SKEW</span>.</p></div></div></section>')
 
 
 class OverviewPage:
@@ -208,7 +222,7 @@ class OverviewPage:
 <section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine)}</section>
 <section class="zone tail"><h2>Streams <small>tailnet endpoints</small></h2>{_streams(streams)}</section>
 </div>
-{_system(nodes, snapshot.get("wire", {}))}"""
+{_system(nodes, snapshot.get("wire", {}), (snapshot.get("query") or {}).get("system") == SYSTEM_OPEN)}"""
         theme = snapshot.get("theme")
         return page(title=f"{name} · commissioning-node", body=body, style=STYLE, refresh_s=REFRESH_S,
                     theme=theme, banner_html=banner(name=name, status=status or None, current=self.path,

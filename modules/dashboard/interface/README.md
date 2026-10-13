@@ -65,7 +65,7 @@ interface objects").
 
 ## Changelog
 
-- v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme` (additive).
+- v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme`, and `query` (the page URL's query, first value per key: display state a page keeps across its own auto-refresh) (additive).
 - v0.6.0 — `TAILNET_OPERATIONS` gains `routes`; the Join warning now says the key is kept (additive).
 - v0.5.0 — `Invoker`, `TAILNET_WRITER`, `TAILNET_OPERATIONS`; state kind `tailnet_apply` (additive). The `tailnet` kind is keyed `self`, not by hostname (a rename no longer leaves a stale row).
 - v0.4.0 — `ConfigSurface` and its helpers (`config.py`); HTML views may receive `config` (additive).
