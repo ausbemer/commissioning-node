@@ -25,8 +25,8 @@ TAGS = ConfigField(
     max_items=16, max_len=64, pattern=r"tag:[a-z0-9-]+")
 AUTH_KEY = ConfigField(
     module=MODULE, name="auth_key", kind="str", secret=True, label="Tailscale auth key",
-    help="Pasted from the site tailnet's admin console. Prefer an ephemeral, single-use, "
-         "tagged key. Deleted once the node has joined.",
+    help="Pasted from the site tailnet's admin console. Use an ephemeral key (ADR-0005 D4), "
+         "ideally single-use and tagged. Deleted once the node has joined.",
     pattern=r"tskey-[A-Za-z0-9-]+")
 
 #: Every field this module declares (ADR-0004 §4).

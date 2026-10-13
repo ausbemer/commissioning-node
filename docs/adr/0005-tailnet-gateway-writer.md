@@ -1,0 +1,259 @@
+# ADR 0005: tailnet-gateway writer — join, rename and leave the site tailnet
+
+- **Status:** Accepted
+- **Date:** 2026-10-13
+- **Deciders:** Austin Emerson
+- **Shape:** standard, with a Safety section (spec §7, §11)
+
+## Context
+
+ADR-0003 step 6. The operator can now save the Tailscale hostname, tags and auth key on
+`/config` (ADR-0004), but nothing applies them. Today the node joins a tailnet only through
+a manual `tailscale up` over SSH or the local console. This ADR makes `tailnet-gateway` the
+writer of Tailscale state (CLAUDE.md: its sole writer, §11 rung 9). It is the project's
+first actuation: the node changes a system outside its own process.
+
+Measured on this node (RevPi, tailscale 1.102.5, logged out, 2026-10-13):
+
+- **`tailscale set` has `--hostname` but no `--advertise-tags`.** Renaming works on a joined
+  node; changing tags needs `tailscale up`.
+- **`tailscale up --timeout` defaults to `0s`, which blocks forever** waiting for the
+  `Running` state. Without an auth key, `up` on a logged-out node prints a login URL and
+  waits for someone to open it.
+- **`up --auth-key` accepts `file:<path>`** (`--help`). Whether the CLI or the daemon reads
+  the file is not yet known, so neither is which user must be able to read it.
+- **`up` refuses to drop a non-default setting it isn't told about**, unless given
+  `--reset`. The operator (`admin`) is non-default here, so every `up` must repeat
+  `--operator=admin` (installer note, `docs/quirks.md`).
+- **Prefs now:** `OperatorUser=admin`, `Hostname=""`, `AdvertiseTags=null`,
+  `WantRunning=false`, `LoggedOut=true`. The OS hostname is `Commissioning-node-pi5`.
+- **Bus delivery is synchronous** (§6). A handler that runs `tailscale up` would stall the
+  tick loop, or the HTTP request that triggered it, for as long as the join takes.
+
+## Decision
+
+**D1–D3 were decided by the operator on 2026-10-13, taking the recommended option in each. D4 is
+the operator's requirement (2026-10-13).** The alternatives stay listed as the record of what
+was weighed.
+
+### D1 — When a saved value reaches tailscaled
+
+| Option | Assessment |
+|--------|------------|
+| **A. An explicit, confirmed Apply** | Saving stores (ADR-0004). A separate action on `/config` applies the saved values once, after a may-disturb confirmation. A bad value or a dead key fails once, visibly, and is never retried on its own. |
+| B. Continuous reconcile | The writer converges tailscaled to the registry on every tick (rung 6, "declared state restored"). It fights any manual `tailscale set`, and a single-use key that fails would be retried every 5 s against the site's control plane. |
+| C. Apply on save | Every save is an actuation, so typing a hostname and then the tags would mean two disconnects. It also makes the save action may-disturb, so even a harmless edit needs confirmation. |
+
+### D2 — Which operations ship
+
+- **Three operations:**
+  - **Join** (`tailscale up`): on a node that is logged out. It uses the saved auth key,
+    hostname and tags. A join without a saved key is refused, never left waiting on a login
+    URL.
+  - **Rename** (`tailscale set --hostname`): on a joined node. It needs no key.
+  - **Leave** (`tailscale logout`): drops the node from the site's tailnet and expires its
+    node key. This is the tailnet half of site teardown.
+- **Tags are applied at join only.** `set` can't change them (measured), and changing them on
+  a joined node through `up` may need a re-authentication that is not yet measured. To retag:
+  Leave, save a new key, Join. The Apply panel says this when the saved tags differ from the
+  node's.
+- Alternative considered: retag in place with `up --advertise-tags`. Deferred until it has
+  been measured on a real tailnet, and recorded as a quirk.
+
+### D3 — The auth key's lifetime
+
+- **Decided:**
+  - The key is deleted as soon as tailscaled reports `Running` after a join (ADR-0003 §5).
+  - The key is **kept after a failed join**, so the operator can fix the hostname or tags and
+    retry, or delete it. It is never retried automatically (D1).
+  - `/config` shows a warning while a key is stored, and the doctor already warns (ADR-0004).
+- Alternative considered: delete the key on any outcome. Rejected. A typo in a tag would then
+  cost a fresh key from the site's admin console, and a reusable key would be no safer for
+  being deleted.
+
+### D4 — The node is an ephemeral device on every site tailnet
+
+- **Requirement (operator):** the node joins each site as an *ephemeral* Tailscale device.
+  The site's tailnet then removes it automatically after it has been offline for a while,
+  and immediately on `tailscale logout`. A node pulled off site without a teardown does not
+  linger in the site's admin console.
+- **Ephemeral is a property of the auth key**, chosen when the key is created in the site's
+  admin console. `tailscale up` has no flag for it, and the key string does not reliably say
+  whether it is ephemeral. So the node can't enforce it before a join. It enforces it in
+  three places:
+  - The auth-key field's help and the Join warning say "use an ephemeral key".
+  - **After a join, the writer checks whether tailscaled reports the node as ephemeral, if
+    the status exposes that** (not yet measured; step 6 rehearsal). If it does and the node
+    is not ephemeral, the result says so, and the panel shows a standing warning with the fix:
+    Leave, then Join with an ephemeral key.
+  - Leave (`tailscale logout`) removes an ephemeral node from the tailnet at once, which is
+    the clean teardown.
+- **The trade-off with D3, accepted for now:** an outage long enough for the tailnet to
+  remove the node (site power cut, LAN outage) leaves it unable to rejoin on its own, because
+  the key was deleted after the join. Recovery: the LAN fallback on :8443, a fresh key, Join.
+  The alternative is to keep a *reusable* ephemeral key on disk and rejoin automatically
+  when tailscaled reports the node gone. That is the continuous reconcile D1 rejected, plus
+  a long-lived network secret on the SD card. **Revisit if outages on site make this
+  painful.**
+
+### 1. Shape
+
+```
+dashboard                         main.py                    tailnet-gateway
+/config "Join" ──authorize()──▶ invoke(tailnet/apply, ──bus──▶ tailnet-writer (feature)
+  (Action, may_disturb)          requires=...:tailnet-writer)    │ queue one request
+                                                                 ▼
+                                                           core worker thread ── OverlayWriter
+                                                                 │                (tailscale CLI)
+dashboard ◀──bus── tailnet/apply-result ◀── drained on the next tick
+```
+
+- **The command carries no values.** `tailnet/apply` (`TailnetApply`, a new contract
+  command) names the operation, `join`, `rename` or `leave`, plus who asked, through which
+  door, and a request id.
+  - The writer reads the hostname, tags and key path from its own `ConfigView` (ADR-0004).
+  - So a command can't carry a value that bypassed the registry's validation, and the key
+    never travels on the bus (§8.9).
+- **The dashboard invokes through the §5 seam.** A new `Invoker` protocol in the dashboard's
+  `interface/` is satisfied by `main.invoke`. The Apply actions call it with
+  `requires="tailnet-gateway:tailnet-writer"`.
+  - If the writer is absent or disabled, or nothing is listening, the result is a refusal
+    that says so (§5), never a silent success.
+- **One request at a time** (rung 5).
+  - The feature hands the request to a single worker thread owned by core, which wraps the
+    `OverlayWriter` seam.
+  - A request that arrives while one is running is refused in-band ("busy: a join started
+    by alice is in progress").
+  - There is no queue and no force door. Each run is bounded by its own timeout, so a
+    stuck run ends on its own.
+- **The result is a message.** The worker queues its outcome, and core publishes it on the
+  next tick as `tailnet/apply-result` (`TailnetApplyResult`): request id, operation, ok,
+  message, finished at.
+  - The dashboard's collector keeps the latest result, and `/config` shows it.
+  - The Join action itself answers at once: "applying; this page shows the result".
+  - The synchronous bus never waits on tailscale (§6, as `main.py` anticipated).
+
+### 2. The adapter (`core/tailscale_writer.py`, behind `OverlayWriter`)
+
+- **Argument lists only, never a shell.** Every call repeats `--operator=<daemon user>`
+  (measured: `up` refuses otherwise).
+  - **Join:**
+    `tailscale up --operator=U --auth-key=file:<path> --hostname=H --advertise-tags=T --timeout=<UP_TIMEOUT_S>s`.
+    `--hostname` is left out when unset (the OS name is used), and `--advertise-tags` when
+    the list is empty.
+  - **Rename:** `tailscale set --hostname=H`.
+  - **Leave:** `tailscale logout`.
+- **Two timeouts:** tailscale's own `--timeout`, and a process timeout a few seconds longer.
+  A run that hits the process timeout is killed and reported as "timed out; state unknown;
+  see the Tailnet section".
+- **Output is scrubbed before it is used.** stdout and stderr are capped, and anything that
+  matches `tskey-[A-Za-z0-9-]+` is replaced with `tskey-…` before the text goes into a
+  message or a log (§8.9).
+- **Values are re-checked here** (rung 13): hostname, tags, and a key path that is still
+  usable. The registry already validated them, but this is the last consumer before the
+  world.
+- **Bounds (§8.11, provisional until measured on a real join):** `UP_TIMEOUT_S = 60`,
+  `SET_TIMEOUT_S = 15`, `LOGOUT_TIMEOUT_S = 15`, `OUTPUT_CAP = 4 KiB`.
+
+### 3. The dashboard
+
+- **An Apply panel at the top of `/config`.** It shows:
+  - the node's tailnet state and hostname, from `tailnet/status`;
+  - the saved values, and where they differ from the node;
+  - the last result;
+  - only the actions that make sense now: Join when logged out and a key is saved, Rename
+    when joined and the saved hostname differs, Leave when joined.
+- **Each action is `may_disturb` with its own warning**, so it needs `confirm=yes`
+  (ADR-0003 §4). On the tailnet door, `authorize()` already adds "recovery is the LAN
+  fallback on :8443".
+  - **Join:** "Joins the site tailnet with the saved key; the key is then deleted."
+  - **Rename:** "Changes this node's tailnet name; links using the old name stop working."
+  - **Leave:** "Disconnects this node from the tailnet. Tailnet sessions to it end; recovery
+    is the LAN fallback on :8443."
+- **The action manifest (§5) is still a TODO.** `name`, `may_disturb` and `requires` on these
+  actions are what it will publish, so an LLM caller sees the same warnings.
+
+### 4. Contract (0.4.0, additive)
+
+- `TailnetApply` (command) and `TailnetApplyResult`, on the topics `tailnet/apply` and
+  `tailnet/apply-result`.
+- `TailnetStatus.tags: list[str] = []`, so the panel can compare the saved tags with the
+  node's. Read from `Self.Tags`, which is not yet verified on a joined node.
+- No secret in any of them.
+
+## Safety (spec §11)
+
+- **Rung 1:** `tailnet-gateway` stops being read-only. Write ability is one capability flag,
+  `tailnet-gateway:tailnet-writer`. It is registered disabled (§8.4) until the first
+  measured join on a test tailnet passes, then enabled.
+- **Rungs 2–3:** the node's own tailscaled is owned (ADR-0003). The site's tailnet is
+  someone else's system, so every write is an operator act (D1). Nothing applies on its own,
+  and nothing is proposed automatically yet. Subnet-route proposals stay with the
+  auto-configuration TODO.
+- **Rung 4:** every operation is may-disturb, confirmed, and its warning lives on the action
+  for the manifest (§3).
+- **Rung 5:** one operation at a time, no force door; each run is bounded by its timeouts
+  (§1).
+- **Rung 6:**
+  - A failed rename or leave leaves tailscaled as it was; the CLI applies a pref or doesn't.
+  - A failed join leaves the node logged out, or in whatever state tailscaled reports, and
+    the panel shows that state.
+  - The safe state is "not on the site tailnet". The LAN fallback is always the way back in.
+  - There is nothing to restore in-process.
+- **Rung 7:** every refusal is in-band and has a reason: writer unavailable, busy, no key,
+  invalid value, unconfirmed, timeout, or tailscale's own (scrubbed) error.
+- **Rung 9:** the worker is the only code that runs a mutating tailscale command. The status
+  adapter stays read-only.
+- **Rung 10:** `authorize()` in the dashboard is the one door. The command records who and
+  which door, and the writer logs both with the outcome.
+- **Rung 11:** not applicable. A tailnet membership is held by tailscaled and the site's
+  control plane, not as a grant this process renews. Our renewed levels stay where they are:
+  the status and peer-table freshness.
+- **Rung 12:** this removes "tailnet-gateway is read-only" (CLAUDE.md, the module's
+  docstrings). Its replacements ship in the same change:
+  - the single worker,
+  - the confirmation,
+  - re-checking values at the adapter,
+  - output scrubbing,
+  - the capability flag, registered disabled.
+- **Rung 13:** values are validated by the registry and checked again at the adapter (§2).
+
+## Consequences
+
+- **Easier:** joining a new site needs only a browser: on the LAN fallback, save the key,
+  hostname and tags, then Join and confirm. The key deletes itself.
+- **Harder or accepted:**
+  - The node now acts on someone else's tailnet. Under ADR-0003 D2 any tailnet user can
+    rename the node or make it leave.
+  - The first worker thread in the codebase. Its queue-and-drain pattern becomes the
+    template for the MediaMTX and VAPIX writers.
+  - A join that hits the process timeout leaves the state unknown until the next status
+    read.
+- **Contract:** 0.4.0 (§4). Run `check_additivity`.
+- **Quirks to record:**
+  - `set` has no `--advertise-tags` (measured).
+  - `up --timeout` defaults to blocking forever (measured).
+  - These need a real join to verify: who reads the `file:` key, `up` without `--operator`
+    refusing, `Self.Tags`, and `Running` after `up` returns.
+- **Revisit:**
+  - Retagging in place, once measured (D2).
+  - Continuous reconcile (D1 B), if a site ever needs the node to re-assert its name.
+  - The login-URL flow, as an alternative to auth keys, if a site can't issue keys.
+  - Automatic rejoin with a stored reusable ephemeral key (D4), if site outages make manual
+    rejoin painful.
+
+## Implementation order
+
+1. ~~Accept this ADR with D1–D4.~~ Done 2026-10-13.
+2. Contract 0.4.0: `TailnetApply`, `TailnetApplyResult`, `TailnetStatus.tags`.
+3. `OverlayWriter` seam and the CLI adapter. Tests use a fake runner and check the argv golden
+   per operation, the key scrubbing, both timeouts, and the re-check refusals.
+4. The `tailnet-writer` feature and core's worker (one at a time, queue and drain), plus the
+   injected `ConfigView`. Registered **disabled**.
+5. Dashboard: the `Invoker` seam, the Apply panel, three may-disturb actions, and the last
+   result.
+6. Rehearse on a test tailnet from the node with an **ephemeral** key. Measure the timeouts,
+   find out whether status reports ephemeral (D4), check that Leave removes the node, record
+   the quirks,
+   then enable the capability. Run the security review over ADR-0004 and this ADR together,
+   then merge.

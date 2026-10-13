@@ -19,6 +19,13 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       fix: `Referrer-Policy: no-referrer` made browsers send `Origin: null`, which the
       same-origin check refused.
 
+- [ ] **ADR-0003 step 6: tailnet-gateway writer** (`docs/adr/0005-tailnet-gateway-writer.md`,
+      Accepted 2026-10-13). Join / Rename / Leave through an explicit confirmed Apply; one
+      worker, result on `tailnet/apply-result`; the key is deleted after a join; the node is
+      an **ephemeral** device on every site (D4). Registered disabled until a rehearsal join
+      on a test tailnet. Then the combined code + security review of ADR-0004 and ADR-0005,
+      and merge `feature/config-registry` to `dev`.
+
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
 
 - [ ] **Identity + admin fallback** (`docs/adr/0003-operator-doors-identity-and-admin-fallback.md`,
