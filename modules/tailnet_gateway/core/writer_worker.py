@@ -90,8 +90,12 @@ class WriterWorker:
                 try:
                     self._record.delete()
                 except OSError as exc:
-                    note = (f"; the join record could NOT be deleted ({exc.strerror}): it will not "
-                            "rejoin until the daemon restarts; switch off auto-rejoin")
+                    # The record outlives a restart, and the in-memory "left" level doesn't:
+                    # take away the key instead, so nothing can rejoin (fail toward not joining).
+                    cleared = self._config.clear_secret(AUTH_KEY.name) if self._config else None
+                    gone = "the saved auth key was deleted so it cannot rejoin" if cleared and cleared.ok \
+                        else "it will not rejoin until the daemon restarts; switch off auto-rejoin"
+                    note = f"; the join record could NOT be deleted ({exc.strerror}): {gone}"
             reply = self._writer.leave()
             return WriterReply(ok=reply.ok, message=reply.message + note)
         return WriterReply(ok=False, message=f"{plan.operation} failed: the plan is incomplete")

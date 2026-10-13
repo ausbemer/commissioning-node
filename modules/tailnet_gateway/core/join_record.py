@@ -27,6 +27,13 @@ MAX_BYTES = 4096
 class JoinRecordStore:
     def __init__(self, directory: str | os.PathLike) -> None:
         self._path = Path(directory) / FILE
+        # A power cut mid-write leaves `.tailnet-gateway.join.json.*`; only those are ours.
+        try:
+            for leftover in self._path.parent.glob(f".{FILE}.*"):
+                if leftover.is_file() and not leftover.is_symlink():
+                    leftover.unlink()
+        except OSError:
+            pass
 
     def read(self) -> JoinRecord | None:
         try:

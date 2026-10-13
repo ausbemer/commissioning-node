@@ -369,9 +369,10 @@ each fix has a regression test.
    without a fingerprint, from before this ruling, never auto-rejoins: Leave and Join once.
 2. **A Leave always drops the intent.** The record is deleted *before* `logout` runs. The
    feature also holds an "operator left" level from the moment a Leave is accepted until the
-   operator's next successful Join. A Leave whose record delete fails, or whose `logout`
-   times out after tailscaled already logged out, can no longer rejoin. Neither can a reading
-   taken mid-Leave.
+   operator's next successful Join. A Leave whose `logout` times out after tailscaled already
+   logged out can no longer rejoin, and neither can a reading taken mid-Leave. If the record
+   can't be deleted, the saved auth key is deleted instead (round 2): the in-memory level
+   doesn't survive a restart, so without the key nothing can rejoin after one.
 3. **A failed operator Join is not retried by auto-rejoin.** Any join outcome pushes the next
    automatic attempt out by one backoff.
 4. **The firewall unit owns IPv4 forwarding** (was: `/etc/sysctl.d`, which applied at boot
@@ -388,3 +389,7 @@ each fix has a regression test.
 The forward chain's final `drop` applies to *all* forwarding not from the tailnet. A
 container runtime or a Wi-Fi hotspot added to this host later would need its own rule in
 that chain; this is recorded here so the drop is not mistaken for a bug.
+
+Round 2, on the fixes: the key deletion above; a malformed `config.json` deleted or fixed
+by hand after load is honoured, not set aside or tripped over; and the temp-file sweeps
+match only their own names (the registry's and the join record's), leaving other dotfiles.

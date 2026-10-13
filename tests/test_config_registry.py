@@ -332,3 +332,38 @@ def test_leftover_temp_files_are_swept_at_load(tmp_path, caplog) -> None:
         make(tmp_path)
     assert not leftover.exists() and "leftover temp file" in caplog.text
     assert (tmp_path / "site" / "secrets" / f"{GW}.auth_key").exists()
+
+
+# -- review round 2, 2026-10-13 ------------------------------------------------------------
+
+def test_a_malformed_file_deleted_by_hand_unblocks_writes(tmp_path) -> None:
+    write_site(tmp_path, "{not json")
+    reg = make(tmp_path)
+    (tmp_path / "site" / "config.json").unlink()                  # the operator's fix
+    assert reg.operator_surface().set(f"{GW}.hostname", "gw", "alice").ok
+    assert reg.operator_surface().set(f"{GW}.tags", "tag:a", "alice").ok
+    assert not list((tmp_path / "site").glob("config.json.malformed-*"))
+
+
+def test_a_malformed_file_fixed_by_hand_is_built_on(tmp_path) -> None:
+    write_site(tmp_path, "{not json")
+    reg = make(tmp_path)
+    (tmp_path / "site" / "config.json").write_text(json.dumps(
+        {"schema_version": 1, "values": {f"{GW}.tags": ["tag:fixed"]}}))
+    assert reg.operator_surface().set(f"{GW}.hostname", "gw", "alice").ok
+    values = json.loads((tmp_path / "site" / "config.json").read_text())["values"]
+    assert values == {f"{GW}.tags": ["tag:fixed"], f"{GW}.hostname": "gw"}
+    assert reg.owner_view(GW).get("tags") == ["tag:fixed"]
+    assert not list((tmp_path / "site").glob("config.json.malformed-*"))
+
+
+def test_the_sweep_leaves_files_that_are_not_its_own(tmp_path) -> None:
+    make(tmp_path).operator_surface().set(f"{GW}.auth_key", KEY, "alice")
+    keep = [tmp_path / "site" / ".keep", tmp_path / "site" / "secrets" / ".notes",
+            tmp_path / "site" / ".tailnet-gateway.join.json.x1"]   # another owner's temp
+    for path in keep:
+        path.write_text("x")
+    ours = tmp_path / "site" / ".config.json.abc"
+    ours.write_text("{")
+    make(tmp_path)
+    assert all(p.exists() for p in keep) and not ours.exists()

@@ -226,10 +226,11 @@ class ConfigRegistry:
         directory = self._root / scope
         _mkdir_private(directory)
         if self._malformed[scope]:
-            aside = directory / f"{CONFIG_FILE}.malformed-{int(time.time())}"
-            os.replace(directory / CONFIG_FILE, aside)       # whole, as it is on disk
-            log.warning("config %s/%s: malformed file kept as %s", scope, CONFIG_FILE, aside.name)
-            self._malformed[scope] = False
+            stored = self._recheck_malformed(scope, directory)
+            if value is None:
+                stored.pop(key, None)
+            else:
+                stored[key] = value
         body = json.dumps({"schema_version": FORMAT_VERSION, "values": stored},
                           indent=2, sort_keys=True) + "\n"
         _write_atomic(directory / CONFIG_FILE, body.encode())
@@ -244,14 +245,45 @@ class ConfigRegistry:
         _mkdir_private(directory)
         _write_atomic(self._secret_file(field), value.encode())
 
+    def _recheck_malformed(self, scope: str, directory: Path) -> dict[str, object]:
+        """Before the first write over a file that was malformed at load, look again: the
+        operator may have deleted or fixed it since. Deleted: nothing to keep. Fixed: its
+        values are the base for this write. Still malformed: renamed aside, whole.
+        Caller holds the lock. Returns the values the write builds on."""
+        self._malformed[scope] = False
+        path = directory / CONFIG_FILE
+        try:
+            with open(path, "rb") as f:
+                raw = f.read(MAX_FILE_BYTES + 1)
+        except FileNotFoundError:
+            self._stored[scope] = {}
+            return {}
+        values = _decode(raw)
+        if values is not None:
+            log.info("config %s/%s was fixed since load; building on it", scope, CONFIG_FILE)
+            self._stored[scope] = values
+            self._apply_loaded(scope, values)
+            return dict(values)
+        aside = directory / f"{CONFIG_FILE}.malformed-{int(time.time())}"
+        os.replace(path, aside)                              # whole, as it is on disk
+        log.warning("config %s/%s: malformed file kept as %s", scope, CONFIG_FILE, aside.name)
+        return {}
+
     # -- load ------------------------------------------------------------------------------
 
     def _sweep(self, scope: str) -> None:
-        """Remove temp files a power cut left mid-write (`.<name>.*`, ours by construction):
-        a leftover could hold a secret that clearing it would then miss."""
-        for directory in (self._root / scope, self._root / scope / SECRETS_DIR):
+        """Remove temp files a power cut left mid-write: only the names `_write_atomic` gives
+        this registry's own files (`.config.json.*`, `.<secret key>.*`). A leftover could hold
+        a secret that clearing it would then miss. Anything else is left alone."""
+        secret_keys = [key_of(f) for f in self._fields.values() if f.secret and f.scope == scope]
+        own = {self._root / scope: [CONFIG_FILE],
+               self._root / scope / SECRETS_DIR: secret_keys}
+        for directory, names in own.items():
+            prefixes = tuple(f".{name}." for name in names)
             try:
-                leftovers = [p for p in directory.iterdir() if p.name.startswith(".") and p.is_file()]
+                leftovers = [p for p in directory.iterdir()
+                             if prefixes and p.name.startswith(prefixes) and p.is_file()
+                             and not p.is_symlink()]
             except OSError:
                 continue
             for path in leftovers:
@@ -280,6 +312,9 @@ class ConfigRegistry:
             self._malformed[scope] = True
             return
         self._stored[scope] = values
+        self._apply_loaded(scope, values)
+
+    def _apply_loaded(self, scope: str, values: dict[str, object]) -> None:
         for key, value in values.items():
             field = self._fields.get(key)
             if field is None:

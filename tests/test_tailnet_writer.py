@@ -687,6 +687,38 @@ def test_a_leave_never_rejoins_whatever_goes_wrong(tmp_path, monkeypatch, failur
         clock.now += 61
         main.tick(node)
     assert [c[0] for c in writer.calls] == ["join", "leave"]
+    if failure == "record delete fails":
+        # The record outlives a restart; the key must not (review round 2).
+        assert node.config.owner_view("tailnet-gateway").secret_path("auth_key") is None
+        assert "cannot rejoin" in results[-1]["message"]
+
+
+def test_a_restart_after_a_failed_record_delete_does_not_rejoin(tmp_path, monkeypatch) -> None:
+    from modules.tailnet_gateway.core import join_record
+    clock = Clock()
+    node, results, writer, overlay = joined_then_dropped(tmp_path, clock)
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": True, "state": "Running"})
+    main.tick(node)
+    monkeypatch.setattr(join_record.JoinRecordStore, "delete",
+                        lambda self: (_ for _ in ()).throw(PermissionError(13, "Permission denied")))
+    apply(node, "leave")
+    main.tick(node)
+    monkeypatch.undo()
+    writer2 = FakeWriter(overlay=overlay)                      # the daemon restarts
+    node2, _ = node_with(tmp_path, overlay=overlay, writer=writer2, clock=clock)
+    for _ in range(10):
+        clock.now += 61
+        main.tick(node2)
+    assert writer2.calls == []
+
+
+def test_join_record_store_sweeps_only_its_own_temps(tmp_path) -> None:
+    from modules.tailnet_gateway.core.join_record import JoinRecordStore
+    mine, other = tmp_path / ".tailnet-gateway.join.json.q9", tmp_path / ".config.json.q9"
+    mine.write_text("{")
+    other.write_text("{")
+    JoinRecordStore(tmp_path)
+    assert not mine.exists() and other.exists()
 
 
 def test_a_failed_operator_join_is_not_retried_by_auto_rejoin(tmp_path) -> None:
