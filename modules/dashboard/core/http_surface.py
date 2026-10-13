@@ -41,13 +41,16 @@ MAX_BODY = 16 * 1024
 CONN_TIMEOUT_S = 15
 
 #: On every response. No framing (clickjacking a form), no sniffing, no referrer leaks;
-#: the pages have inline CSS only and no scripts.
+#: the pages have inline CSS only and no scripts. Referrer-Policy is `same-origin`, never
+#: `no-referrer`: under `no-referrer` browsers send `Origin: null` on every POST, even
+#: same-origin (Fetch, "append a request Origin header"), and `same_origin()` refuses them
+#: all. `same-origin` still sends nothing to other sites.
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; "
                                "form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",
     "Cache-Control": "no-store",
 }
 
