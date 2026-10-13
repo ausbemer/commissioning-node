@@ -14,6 +14,10 @@ Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
 ProtectSystem=full
+# The config registry's values and secrets (ADR-0004). /etc stays read-only to the daemon,
+# so it can never rewrite the admin credential or the fallback TLS key (ADR-0003).
+StateDirectory=commissioning-node
+StateDirectoryMode=0700
 PrivateTmp=yes
 
 [Install]

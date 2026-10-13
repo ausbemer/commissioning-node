@@ -7,10 +7,13 @@ from .envelope import Envelope, Shape
 from .models import (
     CameraAnnouncement,
     CameraRegistration,
+    ConfigField,
     ModuleInfo,
     NodeCard,
     StreamAnnouncement,
     StreamEndpoint,
+    TailnetApply,
+    TailnetApplyResult,
     TailnetPeer,
     TailnetPeers,
     TailnetStatus,
@@ -22,11 +25,13 @@ from .topics import (
     STREAM_ANNOUNCED,
     SYSTEM_CARD,
     SYSTEM_TICK,
+    TAILNET_APPLY,
+    TAILNET_APPLY_RESULT,
     TAILNET_PEERS,
     TAILNET_STATUS,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "__version__",
@@ -42,6 +47,9 @@ __all__ = [
     "TailnetStatus",
     "TailnetPeer",
     "TailnetPeers",
+    "ConfigField",
+    "TailnetApply",
+    "TailnetApplyResult",
     "SYSTEM_TICK",
     "SYSTEM_CARD",
     "CAMERA_REGISTER",
@@ -49,4 +57,6 @@ __all__ = [
     "STREAM_ANNOUNCED",
     "TAILNET_STATUS",
     "TAILNET_PEERS",
+    "TAILNET_APPLY",
+    "TAILNET_APPLY_RESULT",
 ]

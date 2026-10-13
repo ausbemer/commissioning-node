@@ -113,6 +113,18 @@ class TailnetStatus(Envelope):
     addresses: list[str] = []
     #: Subnet routes (CIDR) this node is currently serving on the tailnet.
     served_routes: list[str] = []
+    #: ACL tags this node carries, e.g. "tag:commissioning". Empty when untagged or unknown.
+    tags: list[str] = []
+    #: The overlay's own state word, e.g. "Running", "NeedsLogin" (tailscaled's
+    #: BackendState). Open vocabulary; empty when unknown.
+    state: str = ""
+    #: IPv4 networks (CIDR) the node is on right now, detected locally (ADR-0005 A3).
+    site_networks: list[str] = []
+    #: Routes the saved config asks for now, with "auto" expanded to `site_networks`.
+    wanted_routes: list[str] = []
+    #: Routes this node last advertised through its writer (ADR-0005 A3). Advertised is not
+    #: served: the tailnet's admin approves a route; `served_routes` lists the approved ones.
+    advertised_routes: list[str] = []
 
 
 class TailnetPeer(Shape):
@@ -144,3 +156,75 @@ class TailnetPeers(Envelope):
     #: The cadence the producer intends to publish at, in seconds.
     period_s: float
     peers: list[TailnetPeer] = []
+
+
+
+class TailnetApply(Envelope):
+    """Command: apply the saved Tailscale config to this node (ADR-0005). Produced by the
+    operator surface through `invoke()`; consumed by tailnet-gateway's writer.
+
+    Carries no values: the writer reads the hostname, tags and auth key from its own config
+    (ADR-0004), so nothing here can bypass validation, and no secret is ever on the bus.
+    """
+
+    #: Correlates the result with this request.
+    request_id: str
+    #: "join", "rename" or "leave". Open vocabulary: a writer refuses one it doesn't know.
+    operation: str
+    #: Who asked, as the operator surface recorded them (e.g. "alice@example.com").
+    requested_by: str
+    #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
+    door: str
+
+
+class TailnetApplyResult(Envelope):
+    """The outcome of one `TailnetApply`. Never contains a secret (§8.9)."""
+
+    request_id: str
+    operation: str
+    ok: bool
+    #: For people: what happened, or why not (§11 rung 7). Scrubbed of auth keys.
+    message: str
+    requested_by: str = ""
+    door: str = ""
+    #: Wall-clock time the operation finished (Unix seconds).
+    finished_at: float
+
+
+class ConfigField(Shape):
+    """One operator-settable config field, as its owning module declares it (ADR-0004).
+
+    A declaration, not a value: config is not a message (§6), and no value ever rides in
+    this shape. It crosses a module boundary because the owner declares it and the operator
+    surface renders it. The action manifest (§5) and Stage 1 graduation reuse it as-is.
+    """
+
+    #: Owning module, kebab-case (e.g. "tailnet-gateway"). The field's key is `module.name`.
+    module: str
+    #: Field name, snake_case, unique within the module (e.g. "auth_key").
+    name: str
+    #: Value kind: "str", "int", "bool" or "str_list". Open vocabulary: a surface that
+    #: doesn't know a kind shows the field read-only rather than guessing.
+    kind: str
+    #: §8.9: flagged here and nowhere else. A secret is write-only and reads as set/unset.
+    secret: bool = False
+    #: "site" (wiped when the node leaves a site) or "node" (survives the move). Defaults
+    #: to "site": carrying one site's data to the next is the dangerous failure (ADR-0004 D2).
+    scope: str = "site"
+    #: Short human label, e.g. "Tailscale hostname".
+    label: str = ""
+    #: One-line help for the operator.
+    help: str = ""
+    #: Value when unset. Always None for a secret.
+    default: str | int | bool | list[str] | None = None
+    #: "str" / each "str_list" item: maximum length in characters.
+    max_len: int | None = None
+    #: "str" / each "str_list" item: a regular expression the whole value must match.
+    pattern: str | None = None
+    #: "str_list": maximum number of items.
+    max_items: int | None = None
+    #: "int": inclusive bounds.
+    minimum: int | None = None
+    maximum: int | None = None
+    #: §11 rung-4 warning if *editing* the field disturbs something; else None.
+    may_disturb: str | None = None

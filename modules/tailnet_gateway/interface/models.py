@@ -29,9 +29,38 @@ class OverlaySnapshot(Shape):
     addresses: list[str] = []
     #: Subnet routes (CIDR) this node is currently serving.
     served_routes: list[str] = []
+    #: ACL tags this node carries. Empty when untagged, or when the overlay doesn't say.
+    tags: list[str] = []
+    #: The overlay's state word (tailscaled's BackendState, e.g. "NeedsLogin"); "" unknown.
+    state: str = ""
+    #: Stamped by core: IPv4 networks the node is on now (`SiteNetworkSource`, ADR-0005 A3).
+    site_networks: list[str] = []
+    #: Stamped by core: the writer's record of the last join, None when there is none.
+    join_record: "JoinRecord | None" = None
     #: Every other node visible on the overlay. Empty when disconnected.
     peers: list[OverlayPeer] = []
     #: Stamped by core, not the adapter: when the reading was taken (Unix seconds) and the
     #: tick cadence it rides (§11 rung 11). None only in adapter-level tests.
     observed_at: float | None = None
     period_s: float | None = None
+
+
+class JoinRecord(Shape):
+    """What the operator confirmed when they joined this node to the site tailnet (ADR-0005
+    A2). Written by core's worker after a successful join, updated by Rename and Routes,
+    deleted BEFORE a Leave runs. Its presence is the intent auto-rejoin acts on, and
+    auto-rejoin applies exactly these values, never what is merely saved since. Site-scoped:
+    teardown wipes it."""
+
+    joined_at: float
+    #: The routes the writer last advertised.
+    routes: list[str] = []
+    #: The hostname and tags the confirmed join applied.
+    hostname: str | None = None
+    tags: list[str] = []
+    #: SHA-256 of the auth key file the confirmed join used. Auto-rejoin refuses a key that
+    #: no longer matches; None (a record from before this field) never auto-rejoins.
+    key_sha256: str | None = None
+
+
+OverlaySnapshot.model_rebuild()

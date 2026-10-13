@@ -32,10 +32,11 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 
 | Path | Role |
 |------|------|
-| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.2.0`. All cross-module types live here and nowhere else. |
+| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.5.0`. All cross-module types live here and nowhere else. |
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
+| `config_registry/` | Bus-coupled infra (§4), the one §6 bypass of the bus (ADR-0004): declared `ConfigField`s, values under the daemon's state directory (`site/` wiped at teardown, `node/` kept), secrets as 0600 files only their owner can locate. Wired by `main.py`; no module imports it. |
 | `freshness/` | Neutral package (§4): the one staleness-window authority for renewed levels, `clamp(3 × period_s, min, max)`. Used by stream-relay and the dashboard. |
 | `tools/check_additivity.py` | Contract shape check (§3/§8.1): strict superset, nested shapes typed or declared in `schemas/blind_spots.txt`. Run `check` in CI, `snapshot` at release. |
 | `tools/check_boundaries.py` | Ontology check (§4/§8.1): every top-level package has a tier and keeps that tier's import rules. A new neutral or bus-coupled package is declared in its config sets. |
@@ -43,12 +44,15 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `ci.sh` | The whole gate, the same locally and in CI. |
 | `tools/ledgers/`, `tests/replay/` | Evidence for behaviour/safety constants and the replay corpus (§8.11/§8.12) — this node acts on the world. |
 | `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX and Axis VAPIX (§7). |
-| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (idempotent, `--dry-run`; also the fallback TLS key pair and the Tailscale operator), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), `paths.sh` (host paths + daemon user), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080), and the systemd units. Never imported. |
+| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (idempotent, `--dry-run`; also the fallback TLS key pair and the Tailscale operator), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1), `paths.sh` (host paths, incl. the config registry's state directory, + daemon user), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080; forwarding only from the tailnet), the IPv4-forwarding sysctl for the subnet router (`sysctl/`), and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
-neutral packages `freshness/` · bus-coupled infra none yet · ops tier `ops/` · composition root `main.py`.
+neutral packages `freshness/` · bus-coupled infra `config_registry/` · ops tier `ops/` · composition root `main.py`.
 
-## Topics (contract v0.2.0)
+## Topics (contract v0.5.0)
+
+Not on the wire: `ConfigField` (0.3.0) is a config declaration, shared by the module that
+declares a field and the surface that edits it (ADR-0004).
 
 | Topic | Payload | Producer → consumers |
 |-------|---------|----------------------|
@@ -59,15 +63,17 @@ neutral packages `freshness/` · bus-coupled infra none yet · ops tier `ops/` �
 | `stream/announced` | `StreamAnnouncement` (nested `StreamEndpoint`) | stream-relay → dashboard |
 | `tailnet/status` | `TailnetStatus` | tailnet-gateway → stream-relay, dashboard |
 | `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`), declares `period_s` | tailnet-gateway → dashboard (caller identity, ADR-0003) |
+| `tailnet/apply` | `TailnetApply` (command; no values, no secret) | dashboard via `main.invoke()` → tailnet-gateway writer (ADR-0005) |
+| `tailnet/apply-result` | `TailnetApplyResult` | tailnet-gateway → dashboard |
 
 ## Modules
 
 | Module | Responsibility | Inward interface version |
 |--------|----------------|--------------------------|
-| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table now; will auto-detect the site subnet and propose routes for operator confirmation. Sole writer of Tailscale state. | 0.2.0 |
+| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table now; will auto-detect the site subnet and propose routes for operator confirmation. Sole writer of Tailscale state. Declares its config fields (hostname, tags, auth key; ADR-0004); joins, renames, sets advertised routes (default: the detected site networks) and leaves the site tailnet on a confirmed request, and rejoins a recorded join on its own (ADR-0005; registered disabled until rehearsed). | 0.5.0 |
 | `camera-config` (`modules/camera_config/`) | Bridge to Axis VAPIX: knows the site's cameras; will probe and (operator-confirmed) configure them. Sole writer to cameras. | 0.1.0 |
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003). | 0.3.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry and applies the tailnet config at `/config` (ADR-0004, ADR-0005). | 0.6.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.
@@ -106,7 +112,8 @@ directory and import path.
     operator-confirmed (§11 rung 3), and its warning appears in the action manifest (§5).
 15. **Domain-specific:** MediaMTX's ports and the dashboard's 8080 are reachable only from the tailnet and loopback.
     The `inet commissioning_node` nftables table enforces this, and `mediamtx.service`
-    refuses to run without it. Never `flush ruleset` and never enable Debian's
+    refuses to run without it. Its forward chain lets only the tailnet open forwarded
+    connections (the node is a subnet router, ADR-0005); forwarding is enabled only after it loads. Never `flush ruleset` and never enable Debian's
     `nftables.service` (ADR-0002). A new MediaMTX server or port also means a firewall entry.
 16. Vendor calls (tailscale, VAPIX, MediaMTX) live only in their bridge module's `core/`
     adapter behind an `interface/` seam; every silent vendor behaviour you measure goes in

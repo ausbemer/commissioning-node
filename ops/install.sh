@@ -6,10 +6,12 @@
 #   2. Tailscale from its signed apt repo (key fingerprint pinned), exact version, held,
 #      with the daemon user as its operator (ADR-0003)
 #   3. the commissioning-node firewall table + unit (MediaMTX + dashboard ports: tailnet +
-#      loopback)
+#      loopback; forwarding only from the tailnet). The firewall unit also owns IPv4
+#      forwarding for the subnet router (ADR-0005): on only after its forward chain loads
 #   4. MediaMTX from the sha256-pinned release tarball, its system user, config and unit
 #   5. the admin fallback's TLS key pair, generated on the node once (ADR-0003)
-#   6. the commissioning-node daemon unit (runs main.py)
+#   6. the commissioning-node daemon unit (runs main.py); systemd creates its state
+#      directory for the config registry (ADR-0004)
 #
 # It does NOT log Tailscale in and does NOT set the admin password (both are secrets, spec
 # §8.9: use `tailscale up` and ops/set-admin-password.sh), and touches no firewall rules but
@@ -174,6 +176,14 @@ sync_file "$OPS_DIR/firewall/commissioning-node.nft" "$FW_FILE" 0644
 sync_file "$OPS_DIR/systemd/commissioning-node-firewall.service" "$UNIT_DIR/commissioning-node-firewall.service" 0644
 ensure_service commissioning-node-firewall.service "$CHANGED"
 
+# The firewall unit owns forwarding (on after its forward chain loads). An earlier install
+# put a sysctl drop-in here that enabled it at boot, before the fence: remove it.
+if [[ -e "$LEGACY_SYSCTL_FILE" ]]; then
+  act "remove $LEGACY_SYSCTL_FILE (forwarding is the firewall unit's now)" rm -f "$LEGACY_SYSCTL_FILE"
+else
+  ok "no sysctl drop-in enabling forwarding at boot"
+fi
+
 # ---------------------------------------------------------------------------------------
 step "MediaMTX $MEDIAMTX_VERSION"
 CHANGED=0
@@ -255,6 +265,8 @@ sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@RUN_USER@|$RUN_USER|g" \
   "$OPS_DIR/systemd/commissioning-node.service" > "$work/commissioning-node.service"
 sync_file "$work/commissioning-node.service" "$UNIT_DIR/commissioning-node.service" 0644
 ensure_service commissioning-node.service "$CHANGED"
+if [[ -d "$CN_STATE" ]]; then ok "$CN_STATE (config registry, created by systemd)"
+else echo "    note: systemd creates $CN_STATE when commissioning-node starts (StateDirectory=)"; fi
 
 # ---------------------------------------------------------------------------------------
 step "Done$( ((DRY_RUN)) && echo ' (dry run — nothing was changed)')"

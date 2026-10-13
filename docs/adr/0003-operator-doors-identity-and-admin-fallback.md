@@ -281,6 +281,10 @@ them is this ADR's mechanism for those decisions.
 
 ## Amendments
 
+- **2026-10-13 — §5's "deleted once tailscaled confirms the join" is superseded** by ADR-0005
+  amendment A1: the auth key is kept (reusable, ephemeral) so the node can rejoin after a
+  power cycle, and the site teardown wipes it.
+
 - **2026-10-13 — step 4 implementation choices.** Filled in while building, inside the
   decisions above:
   - **DNS rebinding.** On 8080 the Host header must be the address the request arrived on

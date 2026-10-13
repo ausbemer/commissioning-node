@@ -243,11 +243,28 @@ the writer exists (§8.4 "merge early, register disabled").
 ## Implementation order
 
 1. ~~Accept this ADR with D1–D3.~~ Done 2026-10-13 (recommendations taken).
-2. Contract: `ConfigField` (0.3.0). Then `config_registry/` with its tier declaration and
+2. ~~Contract: `ConfigField` (0.3.0). Then `config_registry/` with its tier declaration and
    tests: atomic writes, malformed-file fallback, secret modes, CR/LF stripping, masking,
-   unknown keys kept.
-3. Ops: `StateDirectory=`, `paths.sh`, doctor checks. Re-run `install.sh` on the node.
-4. Wiring: `tailnet-gateway` declares the three fields and gets `ConfigView`; the dashboard
+   unknown keys kept.~~ Done 2026-10-13.
+3. ~~Ops: `StateDirectory=`, `paths.sh`, doctor checks.~~ Done 2026-10-13. Re-run `install.sh` on
+   the node.
+4. ~~Wiring~~ (done 2026-10-13; `ConfigView` is defined now and injected with step 6's
+   writer, its first reader): `tailnet-gateway` declares the three fields and gets `ConfigView`; the dashboard
    gets `ConfigSurface`, the Config section and the `config.*` actions through `authorize()`.
    Security review (§8.10: approval surface and the first stored network secret).
 5. Then step 6: the `tailnet-gateway` writer, with its own Safety ADR.
+
+## Amendments
+
+- **2026-10-13 — pre-merge review.** Store hardening, each with a regression test:
+  - An unreadable `config.json` (e.g. left root-owned by a run under sudo) makes that scope
+    refuse writes, with the reason. Before, the first write replaced the file with one
+    holding only the new value.
+  - A malformed `config.json` is set aside by `rename`, whole. Before, it was rewritten from
+    the first 64 KiB read.
+  - Directories are created 0700 at every level, whatever the umask.
+  - A secret file over 4 × `MAX_SECRET_LEN` bytes counts as unset.
+  - Temp files a power cut left mid-write (`.<name>.*`) are swept at load, so a leftover
+    copy of a secret is not missed by a clear.
+  - The doctor accepts any secret mode without group/other bits (0600, 0400), the same rule
+    as the registry.

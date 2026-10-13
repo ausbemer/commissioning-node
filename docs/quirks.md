@@ -35,6 +35,45 @@ Pinned dependencies covered here:
   in `/var/lib/mediamtx`.
 - **Last verified:** v1.21.1, 2026-10-12.
 
+### Q-002: `tailscale set` cannot change tags
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** `tailscale set` takes `--hostname` but has no `--advertise-tags`. Tags are
+  set only by `tailscale up --advertise-tags`, which on a joined node may need a
+  re-authentication (not yet measured).
+- **How measured:** `tailscale set --help` and `tailscale up --help` on the node, 2026-10-13.
+- **Detection signature:** `tailscale set --help | grep -c advertise-tags` prints 0.
+- **Our accommodation:** tags are applied only by Join; to retag, Leave and Join with a new
+  key (ADR-0005 D2). The writer's argv goldens are in `tests/test_tailnet_writer.py`.
+- **Last verified:** 1.102.5, 2026-10-13.
+
+### Q-003: `tailscale up` waits forever by default
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** `--timeout` defaults to `0s`, which blocks until tailscaled reaches
+  `Running`. Without an auth key, a logged-out node prints a login URL and waits for someone
+  to open it.
+- **How measured:** `tailscale up --help` on the node, 2026-10-13 ("default (0s) blocks
+  forever").
+- **Detection signature:** a join that never returns.
+- **Our accommodation:** the writer always passes `--timeout=UP_TIMEOUT_S` and kills the
+  process `KILL_MARGIN_S` later; Join is refused without a saved key (ADR-0005 §2, D2).
+- **Last verified:** 1.102.5, 2026-10-13 (help text only; measure on the rehearsal join).
+
+### Q-004: `tailscale status --json` does not say whether a node is ephemeral
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** on a node joined with an ephemeral key, `Self` has no ephemeral field (its
+  keys: Active, Addrs, AllowedIPs, CapMap, Capabilities, Created, CurAddr, DNSName, ExitNode,
+  ExitNodeOption, HostName, ID, InEngine, InMagicSock, InNetworkMap, LastHandshake, LastSeen,
+  LastWrite, NoFileSharingReason, NodeID, OS, Online, PeerAPIURL, PeerRelay, PublicKey,
+  Relay, RxBytes, Tags, TaildropTarget, TailscaleIPs, TxBytes, UserID).
+- **How measured:** the first rehearsal join, 2026-10-13.
+- **Detection signature:** no key containing "phem" in `Self`.
+- **Our accommodation:** the node can't verify D4 after a join; the key's help text and the
+  Join warning carry the requirement (ADR-0005 amendment).
+- **Last verified:** 1.102.5, 2026-10-13.
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
@@ -54,7 +93,20 @@ Pinned dependencies covered here:
   first `tailscale up` and replace the fixtures in `tests/test_tailscale_cli.py` and
   `tests/test_tailnet_peers.py`.
 - `tailscale up --auth-key=file:<path>` reads the key from a file (from `--help` on
-  1.102.5), so the key never appears in argv (ADR-0003 §5). Not yet exercised.
+  1.102.5), so the key never appears in argv (ADR-0003 §5). Not yet exercised, and not yet
+  known whether the CLI (as the daemon user) or tailscaled reads it. The writer relies on
+  the CLI reading it: the file is 0600, owned by the daemon user.
+- `tailscale up` exits 0 only once tailscaled is `Running`. The first rehearsal join
+  (2026-10-13) returned success and the node was `Running` with its tags on the next status
+  read; not yet timed.
+- `Self.Tags` lists the node's own tags: **seen** on the rehearsal join (`tag:mace4-comms`).
+- `tailscale logout` removes an ephemeral node from the tailnet at once. Verify on the
+  rehearsal (ADR-0005 D4).
+- An ephemeral node the control plane removed while offline comes back as
+  `BackendState == "NeedsLogin"` (auto-rejoin's trigger, ADR-0005 A2). Verify: join, power
+  off long enough to be removed, power on, watch the panel.
+- `tailscale up` and `tailscale set` accept `--advertise-routes=` (empty) as "no routes"
+  (from `--help`). The writer always passes it on `up`.
 - Once `install.sh` has run `tailscale set --operator=<daemon user>`, a later `tailscale up`
   that does not repeat `--operator=<user>` is expected to refuse ("requires mentioning all
   non-default flags") rather than silently reset it. This is why the installer and doctor

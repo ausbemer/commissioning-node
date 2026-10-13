@@ -45,8 +45,10 @@ MODULES = "modules"
 OPS = "ops"
 #: neutral shared packages (spec §4) — pure libraries, incl. canonical authorities
 NEUTRAL: set[str] = {"freshness"}
-#: bus-coupled infra (spec §4) — may hold a bus reference, never imports a module
-BUS_COUPLED: set[str] = set()
+#: bus-coupled infra (spec §4) — may hold a bus reference, never imports a module.
+#: config_registry holds none (config is not a message, §6); it is here because it is
+#: stateful, root-wired plumbing that no module may import (ADR-0004 §1).
+BUS_COUPLED: set[str] = {"config_registry"}
 #: trees never scanned (tests/tools are not runtime code; the rest are not Python packages)
 SKIP_PARTS = {"tests", "tools", "schemas", "docs", "scripts", "__pycache__", ".git",
               ".claude", ".venv", "venv", ".github"}

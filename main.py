@@ -32,6 +32,7 @@ import modules.stream_relay.interface as stream_relay_if
 import modules.tailnet_gateway as tailnet_gateway
 import modules.tailnet_gateway.interface as tailnet_gateway_if
 from bus import Bus
+from config_registry import ConfigRegistry
 
 log = logging.getLogger("main")
 
@@ -46,6 +47,9 @@ FALLBACK_PORT = 8443
 ADMIN_CRED_PATH = "/etc/commissioning-node/admin.cred"
 TLS_CERT_PATH = "/etc/commissioning-node/tls/fallback.crt"
 TLS_KEY_PATH = "/etc/commissioning-node/tls/fallback.key"
+#: The config registry's root (ADR-0004). systemd creates it (StateDirectory=); matches
+#: CN_STATE in ops/paths.sh.
+CONFIG_ROOT = "/var/lib/commissioning-node"
 
 INTERFACES = {
     "camera-config": camera_config_if,
@@ -60,6 +64,7 @@ class Node:
     bus: Bus
     registries: list = field(default_factory=list)
     dashboard: dashboard.HttpSurface | None = None
+    config: ConfigRegistry | None = None
 
     def capabilities(self) -> set[str]:
         """The in-process capability registry (§5): every enabled "module:feature" flag."""
@@ -87,14 +92,33 @@ class Node:
 def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.monotonic,
             dashboard_port: int = DASHBOARD_PORT_DEFAULT, dashboard_host: str = DASHBOARD_HOST,
             fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
-            actions: list | None = None) -> Node:
-    """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners."""
+            actions: list | None = None, config_root: str | None = None,
+            tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None,
+            site_networks=None) -> Node:
+    """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
+
+    With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
+    from every module's declared `CONFIG_FIELDS`, and the dashboard gets its operator
+    surface. Without it there is no config editing.
+
+    `tailnet_writer` enables tailnet-gateway's writer (ADR-0005; registered disabled
+    otherwise). Tests pass a fake `overlay_writer` and an inline `writer_spawn`."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
-    dash_registry, node.dashboard = dashboard.build(sub, pub, dashboard_host, dashboard_port,
-                                                    fallback, admin_cred, actions)
+    if config_root is not None:
+        declared = [f for mod in INTERFACES.values() for f in getattr(mod, "CONFIG_FIELDS", [])]
+        node.config = ConfigRegistry(config_root, declared)
+    surface = node.config.operator_surface() if node.config else None
+    dash_registry, node.dashboard = dashboard.build(
+        sub, pub, dashboard_host, dashboard_port, fallback, admin_cred, actions, surface,
+        invoke=lambda topic, payload, requires: invoke(node, topic, payload, requires))
+    gateway_config = node.config.owner_view("tailnet-gateway") if node.config else None
     node.registries = [
-        tailnet_gateway.build(sub, pub, overlay_source),
+        tailnet_gateway.build(sub, pub, overlay_source, config=gateway_config,
+                              writer=overlay_writer, writer_enabled=tailnet_writer,
+                              clock=clock, spawn=writer_spawn, networks=site_networks,
+                              # The join record is site state: teardown wipes it (ADR-0005 A2).
+                              state_dir=os.path.join(config_root, "site") if config_root else None),
         camera_config.build(sub, pub),
         stream_relay.build(sub, pub, clock),
         dash_registry,
@@ -111,7 +135,12 @@ def invoke(node: Node, topic: str, payload: dict, requires: str) -> tuple[bool, 
     module = requires.split(":", 1)[0]
     registry = next((r for r in node.registries if r.module == module), None)
     if requires not in node.capabilities():
-        where = f"at v{registry.version} predates support" if registry else "is not running"
+        if registry is None:
+            where = "is not running"
+        elif requires in registry.registered():
+            where = f"at v{registry.version} has it installed but disabled"
+        else:
+            where = f"at v{registry.version} predates support"
         msg = f"{requires} not available — service {module} {where}."
         log.warning(msg)
         return False, msg
@@ -144,11 +173,21 @@ def _port_from_env() -> int:
     return port
 
 
+def _writer_from_env() -> bool:
+    """CN_TAILNET_WRITER=1 enables the tailnet writer (ADR-0005), until the rehearsal join
+    makes it the default. Anything else, including a typo, leaves it off and says so."""
+    raw = os.environ.get("CN_TAILNET_WRITER", "")
+    if raw not in ("", "0", "1"):
+        log.warning("CN_TAILNET_WRITER=%r is not 0 or 1; the tailnet writer stays disabled", raw)
+    return raw == "1"
+
+
 def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     node = compose(Bus(), dashboard_port=_port_from_env(),
                    fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
-                   admin_cred=ADMIN_CRED_PATH)
+                   admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT,
+                   tailnet_writer=_writer_from_env())
     try:
         node.dashboard.start()
     except OSError as exc:

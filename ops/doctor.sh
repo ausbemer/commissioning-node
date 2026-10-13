@@ -28,6 +28,8 @@ held() { apt-mark showhold 2>/dev/null | grep -qx tailscale; }
 stock_nftables_disabled() { ! systemctl is-enabled --quiet nftables.service 2>/dev/null; }
 quiet() { "$@" > /dev/null 2>&1; }
 owner_mode() { stat -c '%U %a' "$1" 2>/dev/null; }
+# The registry's rule for a secret: owned by the daemon user, no group/other bits (0600, 0400).
+private_to_daemon() { local u m; read -r u m <<< "$(owner_mode "$1")"; [[ "$u" == "$RUN_USER" && "${m: -2}" == "00" ]]; }
 listening() { [[ -n "$(ss -Htln "sport = :$1" 2>/dev/null)" ]]; }
 not_listening() { ! listening "$1"; }
 pref() { tailscale debug prefs 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))" 2>/dev/null; }
@@ -78,9 +80,21 @@ if ((EUID == 0)); then
   check "dashboard 8080 dropped on the site LAN (live rule)" \
     "no live 8080 drop rule — the dashboard's tailnet door is open to the site LAN" \
     grep -q 'tcp dport 8080 drop' <<< "$table"
+  if [[ "$(sysctl -n net.ipv4.ip_forward 2>/dev/null)" == 1 ]]; then
+    check "forwarding fenced: only the tailnet opens forwarded connections (live rule)" \
+      "IPv4 forwarding is ON but the forward chain is missing — the site LAN can route through the node" \
+      grep -q 'only the tailnet opens' <<< "$table"
+  fi
 else
   skip "nftables table check needs root (sudo ops/doctor.sh)"
 fi
+fwd="$(sysctl -n net.ipv4.ip_forward 2>/dev/null)"
+check_warn "IPv4 forwarding on (subnet routes can be served, ADR-0005)" \
+  "IPv4 forwarding is off — advertised routes will not carry traffic; check commissioning-node-firewall" \
+  test "$fwd" == 1
+check "no sysctl drop-in forwards at boot before the fence" \
+  "$LEGACY_SYSCTL_FILE exists: it enables forwarding at boot before the firewall loads — re-run sudo ops/install.sh" \
+  test ! -e "$LEGACY_SYSCTL_FILE"
 
 section "MediaMTX (pinned $MEDIAMTX_VERSION)"
 bin=/opt/mediamtx/current/mediamtx
@@ -146,6 +160,42 @@ else
   # Fail closed: without a credential nothing may answer on the fallback port.
   check "nothing listening on :8443 without a credential" ":8443 is listening but no admin credential exists" \
     not_listening 8443
+fi
+
+section "Config registry (ADR-0004)"
+check "unit declares StateDirectory=commissioning-node" \
+  "unit has no StateDirectory= — config cannot be saved; re-run sudo ops/install.sh" \
+  test "$(systemctl show commissioning-node -p StateDirectory --value 2>/dev/null)" == "commissioning-node"
+if [[ ! -d "$CN_STATE" ]]; then
+  if active commissioning-node.service; then fail "$CN_STATE missing although the daemon is running"
+  else warn "$CN_STATE missing — systemd creates it when commissioning-node starts"; fi
+else
+  check "$CN_STATE owned by $RUN_USER, mode 700" \
+    "$CN_STATE is '$(owner_mode "$CN_STATE")', want '$RUN_USER 700'" \
+    test "$(owner_mode "$CN_STATE")" == "$RUN_USER 700"
+  if [[ -r "$CN_STATE" && -x "$CN_STATE" ]]; then
+    # The registry treats an unsafe secret file as unset; say which one and why.
+    bad_secrets=0
+    for scope in site node; do
+      dir="$CN_STATE/$scope/secrets"
+      [[ -d "$dir" ]] || continue
+      while IFS= read -r -d '' f; do
+        if [[ -L "$f" || ! -f "$f" ]]; then fail "secret $f is not a regular file (ignored by the daemon)"
+        elif ! private_to_daemon "$f"; then
+          fail "secret $f is '$(owner_mode "$f")', want owner $RUN_USER and no group/other access (ignored by the daemon)"
+        else continue; fi
+        bad_secrets=$((bad_secrets + 1))
+      done < <(find "$dir" -mindepth 1 -maxdepth 1 -print0)
+    done
+    ((bad_secrets)) || pass "secret files are regular, owned by $RUN_USER, private"
+    site_secrets="$(find "$CN_STATE/site/secrets" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)"
+    ((site_secrets == 0)) || warn "$site_secrets site secret(s) stored — wiped at teardown; an auth key is deleted after its join"
+    malformed="$(find "$CN_STATE" -maxdepth 2 -name 'config.json.malformed-*' 2>/dev/null)"
+    if [[ -n "$malformed" ]]; then warn "malformed config set aside (defaults in use): $(tr '\n' ' ' <<< "$malformed")"
+    else pass "no malformed config set aside"; fi
+  else
+    skip "secret file checks need read access to $CN_STATE (sudo ops/doctor.sh)"
+  fi
 fi
 
 section "commissioning-node daemon"
