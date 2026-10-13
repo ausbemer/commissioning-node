@@ -64,3 +64,28 @@ def config_rows(surface: ConfigSurface) -> list[dict]:
                      "value": None if field.secret else state.value, "is_set": state.is_set,
                      "set_path": set_path(field), "clear_path": clear_path(field)})
     return rows
+
+
+@runtime_checkable
+class Invoker(Protocol):
+    """Publishes a command for an active invoker, refusing in-band when nobody can act on it
+    (§5). `requires` is "module:feature". Satisfied by `main.invoke`; injected by main.py."""
+
+    def __call__(self, topic: str, payload: dict, requires: str) -> tuple[bool, str]: ...
+
+
+#: The capability a tailnet apply needs (§5): advertised only once the writer is enabled.
+TAILNET_WRITER = "tailnet-gateway:tailnet-writer"
+
+#: Tailnet operations (ADR-0005): operation -> (POST path, may-disturb warning). The warnings
+#: are what the confirm checkbox says and what the action manifest will publish (§5).
+TAILNET_OPERATIONS = {
+    "join": ("/actions/tailnet/join",
+             "Joins the site tailnet with the saved auth key, which is then deleted. Use an "
+             "ephemeral key: the node is removed from the tailnet when it goes offline."),
+    "rename": ("/actions/tailnet/rename",
+               "Changes this node's tailnet name; links using the old name stop working."),
+    "leave": ("/actions/tailnet/leave",
+              "Disconnects this node from the tailnet. Tailnet sessions to it end; recovery is "
+              "the LAN fallback on :8443."),
+}

@@ -22,5 +22,6 @@ class StatusReport:
             connected=snap.connected,
             addresses=snap.addresses,
             served_routes=snap.served_routes,
+            tags=snap.tags,
         )
         return [(TAILNET_STATUS, status.model_dump())]

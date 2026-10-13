@@ -1,4 +1,5 @@
-"""state-collector — keeps the latest card, tailnet status, camera and stream per entity.
+"""state-collector — keeps the latest card, tailnet status and apply result, camera and stream
+per entity.
 
 Terminal consumer (§8.2): it deserializes through the pinned contract models and NEVER
 re-publishes. If it ever must, revisit — forwarders pass raw payloads.
@@ -13,10 +14,12 @@ from interfaces import (
     CAMERA_ANNOUNCED,
     STREAM_ANNOUNCED,
     SYSTEM_CARD,
+    TAILNET_APPLY_RESULT,
     TAILNET_STATUS,
     CameraAnnouncement,
     NodeCard,
     StreamAnnouncement,
+    TailnetApplyResult,
     TailnetStatus,
 )
 
@@ -24,10 +27,15 @@ from ..interface import MODULE, DashboardState
 
 log = logging.getLogger(MODULE)
 
-#: topic -> (state kind, model, key field)
+#: The key for an entry there is only ever one of: this node's own tailnet status and the
+#: last tailnet apply result. Not the hostname: a rename would leave the old name standing.
+SELF = "self"
+
+#: topic -> (state kind, model, key field, or None for the SELF key)
 _ROUTES = {
     SYSTEM_CARD: ("nodes", NodeCard, "hostname"),
-    TAILNET_STATUS: ("tailnet", TailnetStatus, "hostname"),
+    TAILNET_STATUS: ("tailnet", TailnetStatus, None),
+    TAILNET_APPLY_RESULT: ("tailnet_apply", TailnetApplyResult, None),
     CAMERA_ANNOUNCED: ("cameras", CameraAnnouncement, "camera_id"),
     STREAM_ANNOUNCED: ("streams", StreamAnnouncement, "camera_id"),
 }
@@ -48,5 +56,5 @@ class StateCollector:
         except ValidationError as exc:
             log.warning("ignoring malformed %s: %s", topic, exc.errors(include_url=False))
             return []
-        self._state.put(kind, getattr(item, key), item.model_dump())
+        self._state.put(kind, getattr(item, key) if key else SELF, item.model_dump())
         return []

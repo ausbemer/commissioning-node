@@ -245,12 +245,13 @@ dashboard ◀──bus── tailnet/apply-result ◀── drained on the next 
 ## Implementation order
 
 1. ~~Accept this ADR with D1–D4.~~ Done 2026-10-13.
-2. Contract 0.4.0: `TailnetApply`, `TailnetApplyResult`, `TailnetStatus.tags`.
-3. `OverlayWriter` seam and the CLI adapter. Tests use a fake runner and check the argv golden
+2. ~~Contract 0.4.0: `TailnetApply`, `TailnetApplyResult`, `TailnetStatus.tags`.~~ Done 2026-10-13.
+3. ~~`OverlayWriter` seam and the CLI adapter.~~ Done 2026-10-13. Tests use a fake runner and check the argv golden
    per operation, the key scrubbing, both timeouts, and the re-check refusals.
-4. The `tailnet-writer` feature and core's worker (one at a time, queue and drain), plus the
+4. ~~The `tailnet-writer` feature and core's worker~~ (done 2026-10-13; enabled by
+   `CN_TAILNET_WRITER=1` in the daemon's environment) (one at a time, queue and drain), plus the
    injected `ConfigView`. Registered **disabled**.
-5. Dashboard: the `Invoker` seam, the Apply panel, three may-disturb actions, and the last
+5. ~~Dashboard: the `Invoker` seam~~ (done 2026-10-13), the Apply panel, three may-disturb actions, and the last
    result.
 6. Rehearse on a test tailnet from the node with an **ephemeral** key. Measure the timeouts,
    find out whether status reports ephemeral (D4), check that Leave removes the node, record

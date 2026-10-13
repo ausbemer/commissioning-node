@@ -14,7 +14,7 @@ from modules.tailnet_gateway.core.tailscale_cli import TailscaleCliStatusSource
 SAMPLE = {
     "BackendState": "Running",
     "Self": {"HostName": "cn-01", "TailscaleIPs": ["100.64.0.7", "fd7a:115c::7"],
-             "PrimaryRoutes": ["192.168.10.0/24"]},
+             "PrimaryRoutes": ["192.168.10.0/24"], "Tags": ["tag:commissioning"]},
 }
 
 
@@ -33,6 +33,7 @@ def test_status_json_is_mapped() -> None:
     assert snap.hostname == "cn-01" and snap.connected is True
     assert snap.addresses == ["100.64.0.7", "fd7a:115c::7"]
     assert snap.served_routes == ["192.168.10.0/24"]
+    assert snap.tags == ["tag:commissioning"]
 
 
 def test_failing_or_garbage_output_reports_disconnected() -> None:

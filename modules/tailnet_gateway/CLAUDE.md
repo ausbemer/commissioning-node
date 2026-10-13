@@ -5,7 +5,7 @@
 
 ## Role in the ecosystem
 
-Bridge to tailscaled (spec §6): the only module that talks to Tailscale and its single writer (§11 rung 9). Today it reads the node's tailnet status on every tick through the vendor-neutral `OverlayStatusSource` seam and publishes it. Next, it auto-detects the site subnet and *proposes* routes and a hostname for operator confirmation (rung 2). After that it gets a writer feature with its own Safety ADR. Tailscale auth keys are secrets (§8.9).
+Bridge to tailscaled (spec §6): the only module that talks to Tailscale and its single writer (§11 rung 9). It reads the node's tailnet status on every tick through the vendor-neutral `OverlayStatusSource` seam and publishes it. Its writer (ADR-0005) joins, renames and leaves the site tailnet on an operator's confirmed request, through the `OverlayWriter` seam (`core/tailscale_writer.py`), on a worker thread, one operation at a time; it is registered disabled until a rehearsal join (`CN_TAILNET_WRITER=1` enables it). Next, it auto-detects the site subnet and *proposes* routes for operator confirmation (rung 2). Tailscale auth keys are secrets (§8.9).
 
 ## Interfaces
 
@@ -13,14 +13,14 @@ Distinguish the two directions explicitly. **Outward** topics cross service boun
 their payloads conform to the ecosystem contract (`commissioning-node-interfaces`). **Inward**
 topics/types are local to this module and defined by its own `interface/`.
 
-- **Consumes — outward (from the bus):** `system/tick` (`Tick`)
+- **Consumes — outward (from the bus):** `system/tick` (`Tick`), `tailnet/apply` (`TailnetApply`, command; ADR-0005)
 - **Consumes — inward (core → features):** `tailnet-gateway/overlay-snapshot` → `OverlaySnapshot`, stamped by core with `observed_at` and the tick's `period_s`, produced from the `OverlayStatusSource` adapter (`core/tailscale_cli.py`, read-only `tailscale status --json`)
-- **Produces — outward (to the bus):** `tailnet/status` (`TailnetStatus`), `tailnet/peers` (`TailnetPeers`) — conforms to the ecosystem
-  contract (`interfaces/` v0.3.0)
-- **Produces — inward (features → core):** none yet
-- **Config (ADR-0004):** declares `CONFIG_FIELDS` in `interface/config.py`: `hostname`, `tags`, `auth_key` (secret), all site-scoped. Reads them through the `ConfigView` seam, injected with the writer (ADR-0003 step 6); nothing reads them yet.
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.3.0; inward
-  contract `__version__` 0.3.0. Both live in `interface/__init__.py`; see
+- **Produces — outward (to the bus):** `tailnet/status` (`TailnetStatus`), `tailnet/peers` (`TailnetPeers`), `tailnet/apply-result` (`TailnetApplyResult`) — conforms to the ecosystem
+  contract (`interfaces/` v0.4.0)
+- **Produces — inward (features → core):** `WritePlan`s into the `WriterSlot` (`tailnet-writer` → `core/writer_worker.py`); core routes finished `WriteOutcome`s back on `tailnet-gateway/write-outcome` at the next tick
+- **Config (ADR-0004):** declares `CONFIG_FIELDS` in `interface/config.py`: `hostname`, `tags`, `auth_key` (secret), all site-scoped. The writer reads them through the injected `ConfigView`; the worker deletes the key after a successful join.
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.4.0; inward
+  contract `__version__` 0.4.0. Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 
@@ -29,6 +29,7 @@ topics/types are local to this module and defined by its own `interface/`.
 | Feature | Status | Built on interface | Notes |
 |---------|--------|--------------------|-------|
 | `status-report` | enabled | 0.1.0 | Overlay snapshot → `TailnetStatus`. Read-only. |
+| `tailnet-writer` | **registered disabled** | 0.4.0 | Decides join / rename / leave against a fresh overlay reading and the saved config, hands one `WritePlan` at a time to core's worker, publishes every refusal and outcome as `TailnetApplyResult`. Never retries (ADR-0005). |
 | `peer-report` | enabled | 0.2.0 | Overlay snapshot → `TailnetPeers`, every tick, connected or not (an empty table when disconnected). Feeds the dashboard's caller identity (ADR-0003). Read-only. |
 
 ## Rules for agents working here

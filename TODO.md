@@ -22,8 +22,9 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] **ADR-0003 step 6: tailnet-gateway writer** (`docs/adr/0005-tailnet-gateway-writer.md`,
       Accepted 2026-10-13). Join / Rename / Leave through an explicit confirmed Apply; one
       worker, result on `tailnet/apply-result`; the key is deleted after a join; the node is
-      an **ephemeral** device on every site (D4). Registered disabled until a rehearsal join
-      on a test tailnet. Then the combined code + security review of ADR-0004 and ADR-0005,
+      an **ephemeral** device on every site (D4). Steps 2–5 built (2026-10-13). **Next: the
+      rehearsal join** on a test tailnet with an ephemeral key (`CN_TAILNET_WRITER=1`); verify
+      the quirks in `docs/quirks.md`, measure the timeouts, then enable it by default. Then the combined code + security review of ADR-0004 and ADR-0005,
       and merge `feature/config-registry` to `dev`.
 
 ## Next features (each starts read-only; actuation needs an ADR with the Safety section)
@@ -91,6 +92,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       `SOURCE_V6_PREFIX = 64`, `MAX_PENDING_LOGINS = 64`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
       `MAX_BODY = 16 KiB`. Ledger: `tools/ledgers/admin-auth/` (scrypt N is already there).
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
+- [ ] `tailscale_writer`: `UP_TIMEOUT_S = 60`, `SET_TIMEOUT_S = 15`, `LOGOUT_TIMEOUT_S = 15`,
+      `KILL_MARGIN_S = 10`, `OUTPUT_CAP = 4096` (ADR-0005 §2; time the rehearsal join).
 - [ ] `config_registry`: `MAX_VALUE_LEN = 256`, `MAX_LIST_ITEMS = 32`, `MAX_SECRET_LEN = 512`,
       `MAX_FILE_BYTES = 64 KiB` (ADR-0004 §3; measure a real auth key's length on 1.102.5).
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture

@@ -10,7 +10,7 @@ import copy
 import threading
 
 #: Kinds of entry the state holds, each keyed by its entity id.
-KINDS = ("nodes", "tailnet", "cameras", "streams")
+KINDS = ("nodes", "tailnet", "tailnet_apply", "cameras", "streams")
 #: Bound per kind (§8.8). PROVISIONAL — unmeasured (TODO.md, §8.11).
 MAX_PER_KIND = 256
 

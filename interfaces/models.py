@@ -113,6 +113,8 @@ class TailnetStatus(Envelope):
     addresses: list[str] = []
     #: Subnet routes (CIDR) this node is currently serving on the tailnet.
     served_routes: list[str] = []
+    #: ACL tags this node carries, e.g. "tag:commissioning". Empty when untagged or unknown.
+    tags: list[str] = []
 
 
 class TailnetPeer(Shape):
@@ -144,6 +146,39 @@ class TailnetPeers(Envelope):
     #: The cadence the producer intends to publish at, in seconds.
     period_s: float
     peers: list[TailnetPeer] = []
+
+
+
+class TailnetApply(Envelope):
+    """Command: apply the saved Tailscale config to this node (ADR-0005). Produced by the
+    operator surface through `invoke()`; consumed by tailnet-gateway's writer.
+
+    Carries no values: the writer reads the hostname, tags and auth key from its own config
+    (ADR-0004), so nothing here can bypass validation, and no secret is ever on the bus.
+    """
+
+    #: Correlates the result with this request.
+    request_id: str
+    #: "join", "rename" or "leave". Open vocabulary: a writer refuses one it doesn't know.
+    operation: str
+    #: Who asked, as the operator surface recorded them (e.g. "alice@example.com").
+    requested_by: str
+    #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
+    door: str
+
+
+class TailnetApplyResult(Envelope):
+    """The outcome of one `TailnetApply`. Never contains a secret (§8.9)."""
+
+    request_id: str
+    operation: str
+    ok: bool
+    #: For people: what happened, or why not (§11 rung 7). Scrubbed of auth keys.
+    message: str
+    requested_by: str = ""
+    door: str = ""
+    #: Wall-clock time the operation finished (Unix seconds).
+    finished_at: float
 
 
 class ConfigField(Shape):

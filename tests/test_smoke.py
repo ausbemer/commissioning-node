@@ -79,7 +79,7 @@ def test_dashboard_state_sees_every_kind_and_wire_version() -> None:
     snap = node.dashboard._state.snapshot()
     assert set(snap["cameras"]) == {"ACCC8E123456"}
     assert set(snap["streams"]) == {"ACCC8E123456"}
-    assert snap["tailnet"]["cn-test"]["connected"] is True
+    assert snap["tailnet"]["self"]["connected"] is True               # keyed by node, not name
     card = next(iter(snap["nodes"].values()))
     assert {m["name"] for m in card["modules"]} == {"tailnet-gateway", "camera-config", "stream-relay", "dashboard"}
     assert set(snap["wire"].values()) == {interfaces.__version__}

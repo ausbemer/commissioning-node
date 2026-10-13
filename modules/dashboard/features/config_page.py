@@ -4,12 +4,20 @@ Server-rendered, no JavaScript, every value escaped. It does not auto-refresh, s
 being typed is never wiped. A secret is a write-only password input, never pre-filled, and
 reads only as set or unset (§8.9). Each form posts to a config `Action`, behind
 `authorize()`; on success core sends the browser back here (`then`).
+
+At the top, the Tailnet panel (ADR-0005 §3) compares the node's tailnet state with the saved
+values and offers only the operations that make sense now, each with its warning as a
+required confirm checkbox.
 """
 from __future__ import annotations
 
+import time
 from html import escape
 
+from ..interface import TAILNET_OPERATIONS, TAILNET_WRITER
+
 PATH = "/config"
+GATEWAY = "tailnet-gateway"
 
 
 def _shown(value: object, kind: str) -> str:
@@ -69,6 +77,70 @@ def _field(row: dict, csrf: str | None) -> str:
 </section>"""
 
 
+def _button(operation: str, label: str, csrf: str | None) -> str:
+    path, warning = TAILNET_OPERATIONS[operation]
+    return (f'<form method="post" action="{escape(path)}">{_hidden(csrf)}'
+            f'<label class="warn"><input type="checkbox" name="confirm" value="yes" required> '
+            f'{escape(warning)}</label><button type="submit">{escape(label)}</button></form>')
+
+
+def _tailnet_panel(snapshot: dict, rows: list[dict], csrf: str | None) -> str:
+    """Apply panel (ADR-0005 §3): the node's tailnet state against the saved values, the
+    actions that make sense now, and the last result."""
+    saved = {r.get("field", {}).get("name"): r for r in rows
+             if r.get("field", {}).get("module") == GATEWAY}
+    if not saved:
+        return ""
+    status = (snapshot.get("tailnet") or {}).get("self") or {}
+    joined = bool(status.get("connected"))
+    node_tags = list(status.get("tags") or [])
+    want_name = (saved.get("hostname") or {}).get("value")
+    want_tags = list((saved.get("tags") or {}).get("value") or [])
+    key_saved = bool((saved.get("auth_key") or {}).get("is_set"))
+    capabilities = {c for n in (snapshot.get("nodes") or {}).values()
+                    for m in n.get("modules", []) for c in m.get("capabilities", [])}
+
+    facts = [f"On a tailnet: <strong>{'yes' if joined else 'no'}</strong>"]
+    if joined:
+        facts.append(f"Name: <strong>{escape(status.get('hostname', ''))}</strong>; tags: "
+                     f"<strong>{escape(' '.join(node_tags) or 'none')}</strong>")
+    facts.append(f"Saved: name <strong>{escape(want_name or 'not set')}</strong>; tags "
+                 f"<strong>{escape(' '.join(want_tags) or 'none')}</strong>; auth key "
+                 f"<strong>{'saved' if key_saved else 'not saved'}</strong>")
+    notes, buttons = [], []
+    if TAILNET_WRITER not in capabilities:
+        notes.append("The tailnet writer is installed but not enabled yet (ADR-0005: it is enabled "
+                     "after a rehearsal join). Join manually for now; these buttons will refuse.")
+    if key_saved:
+        notes.append("An auth key is stored. It is deleted after a successful join; delete it "
+                     "below if it is no longer needed.")
+    if not joined:
+        if key_saved:
+            buttons.append(_button("join", "Join the tailnet", csrf))
+        else:
+            notes.append("To join: save an ephemeral auth key below, then Join.")
+    else:
+        if want_name and want_name != status.get("hostname"):
+            buttons.append(_button("rename", f"Rename to {want_name}", csrf))
+        if sorted(want_tags) != sorted(node_tags):
+            notes.append("The saved tags differ from the node's. Tags change only on a join: "
+                         "Leave, save a new ephemeral key, then Join.")
+        buttons.append(_button("leave", "Leave the tailnet", csrf))
+
+    last = (snapshot.get("tailnet_apply") or {}).get("self")
+    result = ""
+    if last:
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last.get("finished_at") or 0))
+        verdict = "done" if last.get("ok") else "failed"
+        result = (f'<p class="{"" if last.get("ok") else "warn"}">Last: {escape(last.get("operation", ""))} '
+                  f'{verdict} at {escape(when)}, requested by {escape(last.get("requested_by", ""))} '
+                  f'via the {escape(last.get("door", ""))} door: {escape(last.get("message", ""))}</p>')
+    notes_html = "".join(f'<p class="sub">{escape(n)}</p>' for n in notes)
+    return (f'<h2>Tailnet</h2><section class="field">'
+            + "".join(f"<p>{f}</p>" for f in facts) + result + notes_html + "".join(buttons)
+            + '<p class="sub">Reload this page to see the result of a request.</p></section>')
+
+
 class ConfigPage:
     path = PATH
     content_type = "text/html; charset=utf-8"
@@ -84,8 +156,9 @@ class ConfigPage:
             modules: dict[str, list[dict]] = {}
             for row in rows:
                 modules.setdefault(row.get("field", {}).get("module", ""), []).append(row)
-            body = "".join(f"<h2>{escape(module)}</h2>" + "".join(_field(r, csrf) for r in group)
-                           for module, group in modules.items())
+            body = _tailnet_panel(snapshot, rows, csrf) + "".join(
+                f"<h2>{escape(module)}</h2>" + "".join(_field(r, csrf) for r in group)
+                for module, group in modules.items())
         return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -110,7 +183,7 @@ button {{ margin-top:.5rem; padding:.4rem .9rem; font:inherit; }}
 </style></head><body><main>
 <h1>Config</h1>
 <p class="sub"><a href="/">Back to the overview</a>. Values marked <em>site</em> are wiped when
-the node leaves a site. Saving stores a value; nothing is applied to the node from here yet.</p>
+the node leaves a site. Saving only stores a value; the Tailnet buttons apply the saved ones.</p>
 {body}
 </main></body></html>
 """

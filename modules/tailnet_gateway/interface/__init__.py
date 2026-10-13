@@ -6,15 +6,19 @@ The ONLY package features may import from this module (spec §4).
 #: Defined before the imports below: config.py declares its fields under this name.
 MODULE = "tailnet-gateway"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from .config import AUTH_KEY, CONFIG_FIELDS, HOSTNAME, TAGS, ConfigView  # noqa: E402
 from .feature import Feature  # noqa: E402
 from .models import OVERLAY_SNAPSHOT, OverlayPeer, OverlaySnapshot  # noqa: E402
-from .seams import OverlayStatusSource  # noqa: E402
+from .seams import OverlayStatusSource, OverlayWriter, WriterReply  # noqa: E402
+from .writer import (JOIN, LEAVE, OPERATIONS, RENAME, WRITE_OUTCOME, WriteOutcome,  # noqa: E402
+                     WritePlan, WriterSlot)
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "OverlayPeer", "OverlaySnapshot",
            "OverlayStatusSource", "OVERLAY_SNAPSHOT",
-           "CONFIG_FIELDS", "HOSTNAME", "TAGS", "AUTH_KEY", "ConfigView"]
+           "CONFIG_FIELDS", "HOSTNAME", "TAGS", "AUTH_KEY", "ConfigView",
+           "OverlayWriter", "WriterReply", "WriterSlot", "WritePlan", "WriteOutcome",
+           "WRITE_OUTCOME", "OPERATIONS", "JOIN", "RENAME", "LEAVE"]

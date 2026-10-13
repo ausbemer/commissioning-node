@@ -29,6 +29,8 @@ class OverlaySnapshot(Shape):
     addresses: list[str] = []
     #: Subnet routes (CIDR) this node is currently serving.
     served_routes: list[str] = []
+    #: ACL tags this node carries. Empty when untagged, or when the overlay doesn't say.
+    tags: list[str] = []
     #: Every other node visible on the overlay. Empty when disconnected.
     peers: list[OverlayPeer] = []
     #: Stamped by core, not the adapter: when the reading was taken (Unix seconds) and the

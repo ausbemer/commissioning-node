@@ -7,7 +7,7 @@ ADR, and this module stays its single writer (§11 rung 9).
 Field mapping, against tailscale 1.102.5 on this node (2026-10-12, logged out):
 - VERIFIED present: top-level BackendState, Self, Peer, User; Self.HostName, Self.DNSName,
   Self.TailscaleIPs, Self.UserID. Peer and User are null when logged out.
-- NOT YET VERIFIED (needs a logged-in node): Self.PrimaryRoutes and per-peer Tags (both
+- NOT YET VERIFIED (needs a logged-in node): Self.PrimaryRoutes, Self.Tags and per-peer Tags (all
   omitted when empty), the shape of Peer entries, and User[str(UserID)].LoginName.
   docs/quirks.md tracks this.
 """
@@ -57,6 +57,7 @@ class TailscaleCliStatusSource:
             connected=data.get("BackendState") == "Running",
             addresses=[str(a) for a in me.get("TailscaleIPs") or []],
             served_routes=[str(r) for r in me.get("PrimaryRoutes") or []],
+            tags=[str(t) for t in me.get("Tags") or []],
             peers=self._peers(data),
         )
 

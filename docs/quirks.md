@@ -35,6 +35,31 @@ Pinned dependencies covered here:
   in `/var/lib/mediamtx`.
 - **Last verified:** v1.21.1, 2026-10-12.
 
+### Q-002: `tailscale set` cannot change tags
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** `tailscale set` takes `--hostname` but has no `--advertise-tags`. Tags are
+  set only by `tailscale up --advertise-tags`, which on a joined node may need a
+  re-authentication (not yet measured).
+- **How measured:** `tailscale set --help` and `tailscale up --help` on the node, 2026-10-13.
+- **Detection signature:** `tailscale set --help | grep -c advertise-tags` prints 0.
+- **Our accommodation:** tags are applied only by Join; to retag, Leave and Join with a new
+  key (ADR-0005 D2). The writer's argv goldens are in `tests/test_tailnet_writer.py`.
+- **Last verified:** 1.102.5, 2026-10-13.
+
+### Q-003: `tailscale up` waits forever by default
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** `--timeout` defaults to `0s`, which blocks until tailscaled reaches
+  `Running`. Without an auth key, a logged-out node prints a login URL and waits for someone
+  to open it.
+- **How measured:** `tailscale up --help` on the node, 2026-10-13 ("default (0s) blocks
+  forever").
+- **Detection signature:** a join that never returns.
+- **Our accommodation:** the writer always passes `--timeout=UP_TIMEOUT_S` and kills the
+  process `KILL_MARGIN_S` later; Join is refused without a saved key (ADR-0005 §2, D2).
+- **Last verified:** 1.102.5, 2026-10-13 (help text only; measure on the rehearsal join).
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
@@ -54,7 +79,17 @@ Pinned dependencies covered here:
   first `tailscale up` and replace the fixtures in `tests/test_tailscale_cli.py` and
   `tests/test_tailnet_peers.py`.
 - `tailscale up --auth-key=file:<path>` reads the key from a file (from `--help` on
-  1.102.5), so the key never appears in argv (ADR-0003 §5). Not yet exercised.
+  1.102.5), so the key never appears in argv (ADR-0003 §5). Not yet exercised, and not yet
+  known whether the CLI (as the daemon user) or tailscaled reads it. The writer relies on
+  the CLI reading it: the file is 0600, owned by the daemon user.
+- `tailscale up` exits 0 only once tailscaled is `Running` (the writer reports success on
+  exit 0, and deletes the key). Verify on the rehearsal join (ADR-0005 step 6).
+- `Self.Tags` in `tailscale status --json` lists the node's own tags (feeds
+  `TailnetStatus.tags`). Verify on a tagged join.
+- Whether `tailscale status --json` says a node is **ephemeral** (ADR-0005 D4). If it does,
+  map it and warn on a non-ephemeral join; if not, record that here.
+- `tailscale logout` removes an ephemeral node from the tailnet at once. Verify on the
+  rehearsal (ADR-0005 D4).
 - Once `install.sh` has run `tailscale set --operator=<daemon user>`, a later `tailscale up`
   that does not repeat `--operator=<user>` is expected to refuse ("requires mentioning all
   non-default flags") rather than silently reset it. This is why the installer and doctor

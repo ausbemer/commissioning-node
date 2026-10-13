@@ -92,22 +92,30 @@ class Node:
 def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.monotonic,
             dashboard_port: int = DASHBOARD_PORT_DEFAULT, dashboard_host: str = DASHBOARD_HOST,
             fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
-            actions: list | None = None, config_root: str | None = None) -> Node:
+            actions: list | None = None, config_root: str | None = None,
+            tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
     from every module's declared `CONFIG_FIELDS`, and the dashboard gets its operator
-    surface. Without it there is no config editing."""
+    surface. Without it there is no config editing.
+
+    `tailnet_writer` enables tailnet-gateway's writer (ADR-0005; registered disabled
+    otherwise). Tests pass a fake `overlay_writer` and an inline `writer_spawn`."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
     if config_root is not None:
         declared = [f for mod in INTERFACES.values() for f in getattr(mod, "CONFIG_FIELDS", [])]
         node.config = ConfigRegistry(config_root, declared)
     surface = node.config.operator_surface() if node.config else None
-    dash_registry, node.dashboard = dashboard.build(sub, pub, dashboard_host, dashboard_port,
-                                                    fallback, admin_cred, actions, surface)
+    dash_registry, node.dashboard = dashboard.build(
+        sub, pub, dashboard_host, dashboard_port, fallback, admin_cred, actions, surface,
+        invoke=lambda topic, payload, requires: invoke(node, topic, payload, requires))
+    gateway_config = node.config.owner_view("tailnet-gateway") if node.config else None
     node.registries = [
-        tailnet_gateway.build(sub, pub, overlay_source),
+        tailnet_gateway.build(sub, pub, overlay_source, config=gateway_config,
+                              writer=overlay_writer, writer_enabled=tailnet_writer,
+                              clock=clock, spawn=writer_spawn),
         camera_config.build(sub, pub),
         stream_relay.build(sub, pub, clock),
         dash_registry,
@@ -157,11 +165,21 @@ def _port_from_env() -> int:
     return port
 
 
+def _writer_from_env() -> bool:
+    """CN_TAILNET_WRITER=1 enables the tailnet writer (ADR-0005), until the rehearsal join
+    makes it the default. Anything else, including a typo, leaves it off and says so."""
+    raw = os.environ.get("CN_TAILNET_WRITER", "")
+    if raw not in ("", "0", "1"):
+        log.warning("CN_TAILNET_WRITER=%r is not 0 or 1; the tailnet writer stays disabled", raw)
+    return raw == "1"
+
+
 def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     node = compose(Bus(), dashboard_port=_port_from_env(),
                    fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
-                   admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT)
+                   admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT,
+                   tailnet_writer=_writer_from_env())
     try:
         node.dashboard.start()
     except OSError as exc:
