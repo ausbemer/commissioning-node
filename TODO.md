@@ -5,13 +5,13 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 ## Up next (start here next session)
 
-- [ ] **ADR-0003 step 5: Config registry ADR** (§6 sanctioned exception), then build it.
-      Features declare config fields; the dashboard reads them and edits them as `Action`s
-      behind `authorize()` (ADR-0003 §4). Secret fields (the Tailscale auth key first, D3)
-      are flagged at declaration and never reach the bus or logs (§8.9). Decide: where values
-      persist (the daemon has `ProtectSystem=full`, so `/etc` is read-only to it; ADR-0003
-      Consequences), how a site teardown wipes them, and the graduation cost. The first
-      fields serve step 6: Tailscale hostname, tags, auth key. Use `engineering:architecture`.
+- [ ] **ADR-0003 step 5: build the config registry** (`docs/adr/0004-config-registry.md`,
+      Accepted 2026-10-13). Values in `/var/lib/commissioning-node` (`StateDirectory=`),
+      `site/` vs `node/` scopes so teardown deletes `site/`, graduation cost accepted.
+      Order (ADR-0004): `ConfigField` contract 0.3.0 → `config_registry/` (bus-coupled
+      tier) with tests → ops (`StateDirectory=`, `paths.sh`, doctor; re-run install on the
+      node) → wiring (tailnet-gateway's hostname/tags/auth_key fields, dashboard Config
+      section and `config.*` actions via `authorize()`) → security review.
 - [x] **Step 4 confirmed on the node** (2026-10-13): doctor clean, fallback login from a
       LAN laptop. Certificate regenerated since step 3; its fingerprint is now
       `4D:E0:3A:96:…:86:BA:C4:F0` (printed in full by the doctor). Browser login needed one
