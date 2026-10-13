@@ -7,10 +7,10 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [ ] **Dashboard design** — the next piece of work (operator, 2026-10-13).
 - [ ] **Finish the tailnet writer rehearsal** (ADR-0005), on the node:
-      1. `sudo ops/install.sh`: the firewall unit now owns IPv4 forwarding (review ruling 4)
-         and the old `/etc/sysctl.d/90-commissioning-node.conf` is removed; then the doctor.
-      2. Leave and Join once on `/config`: the current join record predates the key
-         fingerprint, so auto-rejoin deliberately ignores it (ruling 1).
+      1. ~~`sudo ops/install.sh`, then the doctor~~ — done 2026-10-13: the firewall unit owns
+         IPv4 forwarding, the old sysctl file is gone, doctor clean.
+      2. ~~Leave and Join once on `/config`~~ — done 2026-10-13 16:21: the join record now
+         carries `key_sha256` (ruling 1). Join timed in `tools/ledgers/tailnet-writer/`.
       3. Rehearse a power cycle (should come back `Running`, no rejoin) and an ephemeral
          removal (should auto-rejoin; verifies the `NeedsLogin` assumption in quirks.md).
       4. Then make the writer enabled by default (drop `CN_TAILNET_WRITER`), and remove the
@@ -85,7 +85,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] `tailnet_writer`: `REJOIN_BACKOFF_MIN_S = 60`, `REJOIN_BACKOFF_MAX_S = 1800` (ADR-0005 A2);
       `site_networks.IP_TIMEOUT_S = 2.0`.
 - [ ] `tailscale_writer`: `UP_TIMEOUT_S = 60`, `SET_TIMEOUT_S = 15`, `LOGOUT_TIMEOUT_S = 15`,
-      `KILL_MARGIN_S = 10`, `OUTPUT_CAP = 4096` (ADR-0005 §2; time the rehearsal join).
+      `KILL_MARGIN_S = 10`, `OUTPUT_CAP = 4096` (ADR-0005 §2). Ledger started:
+      `tools/ledgers/tailnet-writer/` (2 joins, worst 5.2 s); needs a join from another site.
 - [ ] `config_registry`: `MAX_VALUE_LEN = 256`, `MAX_LIST_ITEMS = 32`, `MAX_SECRET_LEN = 512`,
       `MAX_FILE_BYTES = 64 KiB` (ADR-0004 §3; measure a real auth key's length on 1.102.5).
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture
