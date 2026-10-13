@@ -249,23 +249,31 @@ class ConfigRegistry:
         """Before the first write over a file that was malformed at load, look again: the
         operator may have deleted or fixed it since. Deleted: nothing to keep. Fixed: its
         values are the base for this write. Still malformed: renamed aside, whole.
-        Caller holds the lock. Returns the values the write builds on."""
-        self._malformed[scope] = False
+        Caller holds the lock. Returns the values the write builds on.
+
+        The flag clears only on a definite outcome (gone, fixed, or set aside). Any other
+        failure leaves the scope refusing writes, so a file we can't see is never replaced."""
         path = directory / CONFIG_FILE
         try:
             with open(path, "rb") as f:
                 raw = f.read(MAX_FILE_BYTES + 1)
         except FileNotFoundError:
+            self._malformed[scope] = False
             self._stored[scope] = {}
             return {}
+        except OSError as exc:
+            self._unreadable[scope] = exc.strerror or "error"
+            raise
         values = _decode(raw)
         if values is not None:
             log.info("config %s/%s was fixed since load; building on it", scope, CONFIG_FILE)
+            self._malformed[scope] = False
             self._stored[scope] = values
             self._apply_loaded(scope, values)
             return dict(values)
         aside = directory / f"{CONFIG_FILE}.malformed-{int(time.time())}"
         os.replace(path, aside)                              # whole, as it is on disk
+        self._malformed[scope] = False
         log.warning("config %s/%s: malformed file kept as %s", scope, CONFIG_FILE, aside.name)
         return {}
 

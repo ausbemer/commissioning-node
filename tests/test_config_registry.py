@@ -367,3 +367,22 @@ def test_the_sweep_leaves_files_that_are_not_its_own(tmp_path) -> None:
     ours.write_text("{")
     make(tmp_path)
     assert all(p.exists() for p in keep) and not ours.exists()
+
+
+def test_a_hand_fixed_file_left_unreadable_is_never_overwritten(tmp_path) -> None:
+    """Review round 3: malformed at load, then fixed by hand but left unreadable (e.g. by
+    root). Every write must refuse; none may replace the file."""
+    write_site(tmp_path, "{not json")
+    reg = make(tmp_path)
+    path = tmp_path / "site" / "config.json"
+    path.write_text(json.dumps({"schema_version": 1, "values": {f"{GW}.tags": ["tag:fixed"]}}))
+    original = path.read_bytes()
+    path.chmod(0o000)
+    try:
+        for value in ("gw-1", "gw-2"):
+            result = reg.operator_surface().set(f"{GW}.hostname", value, "alice")
+            assert not result.ok
+    finally:
+        path.chmod(0o600)
+    assert path.read_bytes() == original
+    assert sorted(p.name for p in (tmp_path / "site").iterdir()) == ["config.json"]

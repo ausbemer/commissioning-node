@@ -393,3 +393,7 @@ that chain; this is recorded here so the drop is not mistaken for a bug.
 Round 2, on the fixes: the key deletion above; a malformed `config.json` deleted or fixed
 by hand after load is honoured, not set aside or tripped over; and the temp-file sweeps
 match only their own names (the registry's and the join record's), leaving other dotfiles.
+Round 3: a re-check that failed with anything but "not found" cleared the malformed flag,
+so the next write replaced a hand-fixed but unreadable file. The flag now clears only on a
+definite outcome; any other read error marks the scope unreadable (writes refused), as at
+load.
