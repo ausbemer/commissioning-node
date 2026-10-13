@@ -329,6 +329,7 @@ them is this ADR's mechanism for those decisions.
     and a wrong `Host` are refused as usual. On the fallback it is allowed before login,
     because the login page has the slider too.
   - It returns only to a page this surface serves (`/login` too, on the fallback), never an
-    open redirect; anything else goes to `/`.
+    open redirect; anything else goes to `/`. The page's display query (`/?system=open`) is
+    kept, parsed and re-encoded, so it cannot carry a scheme, a host or a header break.
   - The cookie is read back only as one of the two known values; anything else means
     "follow the device" (`prefers-color-scheme`).

@@ -62,7 +62,7 @@ def test_system_stays_open_across_the_auto_refresh() -> None:
     closed = OverviewPage().render(dict(calm))
     assert '<a href="/?system=open">Show details</a>' in closed and "<table>" not in closed
     opened = OverviewPage().render({**calm, "query": {"system": "open"}})
-    assert '<a href="/">Hide details</a>' in opened and "<caption>Modules</caption>" not in opened
+    assert '<a href="/">Hide details</a>' in opened and 'href="/theme/dark?then=/%3Fsystem%3Dopen"' in opened and "<caption>Modules</caption>" not in opened
     assert "no node card yet" in opened                               # the tables' empty states
     assert "Show details" in OverviewPage().render({**calm, "query": {"system": '"><x'}})
 
@@ -93,6 +93,12 @@ def test_theme_choice_is_a_cookie_and_returns_only_to_a_served_page(tmp_path) ->
         for then in ("https://evil.example/", "//evil.example", "/nowhere", ""):
             assert get(f"/theme/light?then={then}").getheader("Location") == "/"
         assert get("/theme/purple").status == 404
+        back = get("/theme/dark?then=%2F%3Fsystem%3Dopen")              # the slider keeps System open
+        assert back.getheader("Location") == "/?system=open"
+        assert get("/theme/dark?then=/config%3Fx%3D%0d%0aSet-Cookie:a").getheader("Location") == \
+            "/config?x=Set-Cookie%3Aa"                                  # CR/LF dropped, no header split
+        for then in ("/nowhere?system=open", "http://x/?system=open", "//x/?a=b"):
+            assert get(f"/theme/dark?then={then}").getheader("Location") == "/"
         assert "Hide details" in get("/?system=open").body              # the refresh keeps the query
         page_html = get("/config", "cn-theme=dark").body
         assert '<html lang="en" data-theme="dark">' in page_html

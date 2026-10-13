@@ -213,6 +213,7 @@ class OverviewPage:
         streams = list(snapshot.get("streams", {}).values())
         machine = nodes[0].get("hostname", "") if nodes else ""
         name = status.get("hostname") or machine or "commissioning-node"
+        system_open = (snapshot.get("query") or {}).get("system") == SYSTEM_OPEN
         body = f"""<div class="headline">
 <div><h1>{escape(name)}</h1><p>{escape(_summary(status, cameras, streams))}</p></div>
 <span class="tick">Refreshes every {REFRESH_S} s</span>
@@ -222,8 +223,9 @@ class OverviewPage:
 <section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine)}</section>
 <section class="zone tail"><h2>Streams <small>tailnet endpoints</small></h2>{_streams(streams)}</section>
 </div>
-{_system(nodes, snapshot.get("wire", {}), (snapshot.get("query") or {}).get("system") == SYSTEM_OPEN)}"""
+{_system(nodes, snapshot.get("wire", {}), system_open)}"""
         theme = snapshot.get("theme")
         return page(title=f"{name} · commissioning-node", body=body, style=STYLE, refresh_s=REFRESH_S,
-                    theme=theme, banner_html=banner(name=name, status=status or None, current=self.path,
-                                                    viewer=snapshot.get("viewer"), theme=theme))
+                    theme=theme, banner_html=banner(
+                        name=name, status=status or None, current=self.path, viewer=snapshot.get("viewer"),
+                        theme=theme, back=f"/?system={SYSTEM_OPEN}" if system_open else None))

@@ -14,7 +14,7 @@ as `data-theme` on the root. With no choice made the page follows the device's
 from __future__ import annotations
 
 from html import escape
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 #: Pages the banner links to, in order: (path, label).
 NAV = (("/", "Overview"), ("/config", "Config"))
@@ -32,9 +32,17 @@ def theme_choice(value: str | None) -> str | None:
 
 
 def theme_return(then: str | None, pages: set[str]) -> str:
-    """Where the slider sends the browser back to: only a page this surface serves, never
-    an open redirect; anything else goes to the overview."""
-    return then if then in pages else "/"
+    """Where the slider sends the browser back to: only a page this surface serves, with its
+    display query (e.g. `/?system=open`) re-encoded; never an open redirect, and anything
+    else goes to the overview."""
+    try:
+        parts = urlsplit(then or "")
+    except ValueError:
+        return "/"
+    if parts.scheme or parts.netloc or parts.path not in pages:
+        return "/"
+    query = urlencode(parse_qsl(parts.query))
+    return f"{parts.path}?{query}" if query else parts.path
 
 _COND = 'Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif'
 _MONO = 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace'
