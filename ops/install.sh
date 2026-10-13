@@ -3,13 +3,17 @@
 # ADR-0002). Installs, at the versions pinned in ops/pins.sh:
 #
 #   1. apt prerequisites (ca-certificates, curl, gnupg, nftables)
-#   2. Tailscale from its signed apt repo (key fingerprint pinned), exact version, held
-#   3. the commissioning-node firewall table + unit (MediaMTX ports: tailnet + loopback)
+#   2. Tailscale from its signed apt repo (key fingerprint pinned), exact version, held,
+#      with the daemon user as its operator (ADR-0003)
+#   3. the commissioning-node firewall table + unit (MediaMTX + dashboard ports: tailnet +
+#      loopback)
 #   4. MediaMTX from the sha256-pinned release tarball, its system user, config and unit
-#   5. the commissioning-node daemon unit (runs main.py)
+#   5. the admin fallback's TLS key pair, generated on the node once (ADR-0003)
+#   6. the commissioning-node daemon unit (runs main.py)
 #
-# It does NOT log Tailscale in (an auth key is a secret, spec §8.9) and touches no
-# firewall rules but its own table. Re-running is safe: each step checks before changing.
+# It does NOT log Tailscale in and does NOT set the admin password (both are secrets, spec
+# §8.9: use `tailscale up` and ops/set-admin-password.sh), and touches no firewall rules but
+# its own table. Re-running is safe: each step checks before changing.
 #
 # Usage:  sudo ops/install.sh        apply
 #         ops/install.sh --dry-run   show what would change; needs no root and no network
@@ -19,12 +23,14 @@ OPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$OPS_DIR")"
 # shellcheck source=ops/pins.sh
 . "$OPS_DIR/pins.sh"
+# shellcheck source=ops/paths.sh
+. "$OPS_DIR/paths.sh"
 
 DRY_RUN=0
 case "${1:-}" in
   "") ;;
   --dry-run) DRY_RUN=1 ;;
-  -h | --help) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
 esac
 
@@ -33,9 +39,7 @@ TS_LIST=/etc/apt/sources.list.d/tailscale.list
 MTX_ROOT=/opt/mediamtx
 MTX_DIR="$MTX_ROOT/$MEDIAMTX_VERSION"
 MTX_CONF=/etc/mediamtx/mediamtx.yml
-FW_FILE=/etc/commissioning-node/firewall.nft
 UNIT_DIR=/etc/systemd/system
-RUN_USER="$(stat -c %U "$REPO_ROOT")"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -146,8 +150,19 @@ fi
 if apt-mark showhold 2>/dev/null | grep -qx tailscale; then ok "tailscale held at its pin"
 else act "apt-mark hold tailscale" apt-mark hold tailscale; fi
 
+# The daemon user may run tailscale without root, so the tailnet-gateway writer (ADR-0003
+# step 6) never needs sudo. It is a tailscaled pref, so tailscaled must be running. A failure
+# here warns and carries on: it is a convenience, and must never stop the firewall step.
+operator() { tailscale debug prefs 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("OperatorUser",""))' 2>/dev/null; }
+set_operator() {
+  tailscale set --operator="$RUN_USER" \
+    || echo "    WARNING: tailscale set --operator failed; re-run the installer once tailscaled is up" >&2
+}
+if [[ "$(operator)" == "$RUN_USER" ]]; then ok "tailscale operator is $RUN_USER"
+else act "tailscale set --operator=$RUN_USER" set_operator; fi
+
 # ---------------------------------------------------------------------------------------
-step "Firewall (MediaMTX ports: tailnet + loopback only)"
+step "Firewall (MediaMTX + dashboard ports: tailnet + loopback only)"
 CHANGED=0
 if ((EUID == 0)) && command -v nft > /dev/null; then
   nft -c -f "$OPS_DIR/firewall/commissioning-node.nft" || refuse "firewall rules do not validate"
@@ -199,6 +214,41 @@ sync_file "$OPS_DIR/systemd/mediamtx.service" "$UNIT_DIR/mediamtx.service" 0644
 ensure_service mediamtx.service "$CHANGED"
 
 # ---------------------------------------------------------------------------------------
+step "Admin fallback TLS key (ADR-0003; born on the node, never regenerated)"
+# A complete pair is never touched again: the operator has compared its fingerprint, and a
+# new one would look exactly like an interception. An incomplete or mismatched pair (a run
+# interrupted between the two renames) can never have served TLS, so it is replaced whole.
+gen_tls() {
+  local name; name="$(hostname)"
+  (umask 077; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -keyout "$work/fallback.key" -out "$work/fallback.crt" -days 3650 \
+    -subj "/CN=$name commissioning-node fallback" \
+    -addext "subjectAltName=DNS:$name,DNS:$name.local")
+  install -d -m 0755 "$TLS_DIR"
+  install -m 0644 "$work/fallback.crt" "$TLS_CERT.new"
+  install -o "$RUN_USER" -m 0600 "$work/fallback.key" "$TLS_KEY.new"
+  mv -f "$TLS_KEY.new" "$TLS_KEY" && mv -f "$TLS_CERT.new" "$TLS_CERT"
+}
+pair_matches() {
+  [[ -f "$TLS_KEY" && -f "$TLS_CERT" ]] || return 1
+  # Without root the key may be unreadable (dry run): trust the pair rather than guess.
+  [[ -r "$TLS_KEY" ]] || return 0
+  local pub; pub="$(openssl x509 -in "$TLS_CERT" -noout -pubkey 2>/dev/null)"
+  [[ -n "$pub" && "$pub" == "$(openssl pkey -in "$TLS_KEY" -pubout 2>/dev/null)" ]]
+}
+if pair_matches; then
+  ok "$TLS_CERT ($(openssl x509 -in "$TLS_CERT" -noout -fingerprint -sha256 | cut -d= -f2))"
+else
+  act "generate a self-signed P-256 key pair in $TLS_DIR (key 0600, owner $RUN_USER)" gen_tls
+fi
+fix_key() { chown "$RUN_USER" "$TLS_KEY" && chmod 0600 "$TLS_KEY"; }
+if [[ -f "$TLS_KEY" && "$(stat -c '%U %a' "$TLS_KEY")" != "$RUN_USER 600" ]]; then
+  act "set $TLS_KEY to owner $RUN_USER, mode 0600" fix_key
+fi
+if [[ -f "$ADMIN_CRED" ]]; then ok "admin password set ($ADMIN_CRED)"
+else echo "    note: no admin password yet, so the LAN fallback stays off: sudo ops/set-admin-password.sh"; fi
+
+# ---------------------------------------------------------------------------------------
 step "commissioning-node daemon"
 CHANGED=0
 sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@RUN_USER@|$RUN_USER|g" \
@@ -208,5 +258,6 @@ ensure_service commissioning-node.service "$CHANGED"
 
 # ---------------------------------------------------------------------------------------
 step "Done$( ((DRY_RUN)) && echo ' (dry run — nothing was changed)')"
-echo "    Next: sudo tailscale up   (joins the tailnet; manual until the tailnet-gateway writer exists)"
-echo "          ops/doctor.sh       (read-only health check; sudo for the firewall checks)"
+echo "    Next: tailscale up --operator=$RUN_USER   (joins the tailnet; manual until the tailnet-gateway writer exists)"
+echo "          sudo ops/set-admin-password.sh   (enables the LAN fallback, ADR-0003)"
+echo "          sudo ops/doctor.sh               (read-only health check)"

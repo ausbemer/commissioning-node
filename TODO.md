@@ -7,12 +7,11 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [ ] **Identity + admin fallback ADR** (ADR-0001 posture). Drafted as
       `docs/adr/0003-operator-doors-identity-and-admin-fallback.md` (Accepted); implement in
-      its order. Step 2 done (`tailnet/peers`, `freshness`, dashboard `PeerDirectory`).
-      Next: step 3 (ops: admin password, TLS key, 8080 firewall entry, doctor checks). Decide on tailnet identity
-      resolution (peer → login, §15), for example by fronting the dashboard with
-      `tailscale serve` and reading its identity headers. Decide on the local fallback's
-      listener, credential storage (§8.9) and lifecycle. Until this ADR exists, the dashboard
-      stays loopback-only and read-only.
+      its order. Steps 2 and 3 done (`tailnet/peers`, `freshness`, dashboard `PeerDirectory`;
+      admin-password script, fallback TLS key, 8080 firewall entry, operator, doctor checks).
+      Next: step 4 (dashboard doors, fallback listener, sessions, CSRF, rate limit,
+      `authorize()`; lift the `http_surface.py` guard only then). Until step 4 lands, the
+      dashboard stays loopback-only and read-only.
 - [ ] **Config registry** (§6 sanctioned exception). Features declare fields, the
       dashboard reads and edits them, and secrets are flagged at declaration. Document the
       graduation cost.
@@ -35,8 +34,10 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [x] Idempotent installer, doctor, firewall and units (`ops/`, ADR-0002). Tailscale
       1.102.5 and MediaMTX v1.21.1 are pinned in `ops/pins.sh`.
-- [ ] **Run it on the node:** `sudo ops/install.sh`, then `sudo tailscale up` (manual: an
-      auth key is a secret), then `sudo ops/doctor.sh`.
+- [x] Run it on the node (`sudo ops/install.sh`, 2026-10-12).
+- [ ] Re-run `sudo ops/install.sh` for ADR-0003 step 3, then `sudo ops/set-admin-password.sh`
+      and `sudo ops/doctor.sh`. `tailscale up --operator=<user>` waits for the dashboard's
+      join flow (ADR-0003 step 6) or a manual join.
 - [ ] Provenance (§2, ADR-0002): run a tagged checkout on shipped nodes, and have the
       doctor and node card report the running commit.
 - [ ] A check that `relay_planner.MEDIAMTX_RTSP_PORT` matches `rtspAddress` in the MediaMTX

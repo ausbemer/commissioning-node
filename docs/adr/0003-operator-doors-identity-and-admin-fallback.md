@@ -257,10 +257,12 @@ them is this ADR's mechanism for those decisions.
 ## Implementation order
 
 1. ~~Amend ADR-0001's posture line, and accept this ADR.~~ Done 2026-10-12.
-2. Contract: `TailnetPeer` + `tailnet/peers`. Then `tailnet-gateway` publishes peers. Then the
-   dashboard's `resolve_peer`. All of this is still read-only, so it is safe to merge first.
-3. Ops: the admin-password script, TLS key generation, the 8080 firewall entry, the doctor
-   checks.
+2. ~~Contract: `TailnetPeer` + `tailnet/peers`. Then `tailnet-gateway` publishes peers. Then the
+   dashboard's `resolve_peer`. All of this is still read-only, so it is safe to merge first.~~
+   Done 2026-10-12.
+3. ~~Ops: the admin-password script, TLS key generation, the 8080 firewall entry, the doctor
+   checks.~~ Done 2026-10-13 (`ops/set-admin-password.sh`, `ops/paths.sh`; scrypt N ledgered in
+   `tools/ledgers/admin-auth/`).
 4. Dashboard: door classification, the fallback listener + sessions + CSRF + rate limit, and
    `authorize()`. Lift the `http_surface.py` guard in this step and no earlier (rung 12).
 5. Config registry: its own ADR (§6 graduation cost), with secret fields.

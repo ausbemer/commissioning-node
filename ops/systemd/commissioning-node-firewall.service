@@ -1,6 +1,6 @@
 # Installed by ops/install.sh. Loads ONLY the commissioning_node nftables table (ADR-0002).
 [Unit]
-Description=commissioning-node firewall (MediaMTX ports: tailnet + loopback only)
+Description=commissioning-node firewall (MediaMTX + dashboard ports: tailnet + loopback only)
 Before=network-pre.target mediamtx.service
 Wants=network-pre.target
 # Debian's nftables.service (disabled on this host) runs `flush ruleset`. If someone enables

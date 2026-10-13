@@ -55,5 +55,11 @@ Pinned dependencies covered here:
   `tests/test_tailnet_peers.py`.
 - `tailscale up --auth-key=file:<path>` reads the key from a file (from `--help` on
   1.102.5), so the key never appears in argv (ADR-0003 §5). Not yet exercised.
+- Once `install.sh` has run `tailscale set --operator=<daemon user>`, a later `tailscale up`
+  that does not repeat `--operator=<user>` is expected to refuse ("requires mentioning all
+  non-default flags") rather than silently reset it. This is why the installer and doctor
+  print `tailscale up --operator=<user>`. Also expected, not verified: `tailscale set
+  --operator` works while logged out (`NeedsLogin`). `OperatorUser` is omitted from
+  `tailscale debug prefs` when unset (verified on 1.102.5, logged out, 2026-10-13).
 - MediaMTX's RTSP port 8554 (`relay_planner.MEDIAMTX_RTSP_PORT`) must match `rtspAddress`
   in `ops/mediamtx/mediamtx.conf.yml`. They match today, but nothing checks it yet.
