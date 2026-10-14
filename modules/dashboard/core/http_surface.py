@@ -59,7 +59,8 @@ THEME_MAX_AGE_S = 365 * 24 * 3600
 #: same-origin (Fetch, "append a request Origin header"), and `same_origin()` refuses them
 #: all. `same-origin` still sends nothing to other sites.
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; "
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; "
+                               "style-src 'unsafe-inline'; "
                                "form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",

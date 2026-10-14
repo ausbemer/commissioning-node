@@ -85,3 +85,32 @@ script, not on refusing script files the node itself ships.
 3. Overview refresh: `<noscript>` meta refresh, and a script refresh that pauses during a
    slide.
 4. `ci.sh` JS gate (`node --check`, loud SKIPPED) and the page-level test.
+
+## Amendments
+
+### 2026-10-13 — the refresh and the theme stay in place (`connect-src 'self'`)
+
+**Problem (operator).** A full reload repaints the page from the top before the browser
+restores the scroll position, so a page scrolled down blinked to the top every 5 s. The
+day/night links navigate (`/theme/<t>` → 303 → the page), and a navigation always lands
+at the top. A reload also cleared a ticked confirm box on Join, Rename or Routes.
+
+**Decision.** The CSP gains `connect-src 'self'`: the node's own script may call back to
+the node, and nowhere else. Decision 4 changes from "the page reloads itself" to:
+
+- **Refresh is a swap.** The script fetches the same URL and replaces the banner and
+  `<main>` with the fresh ones. Scroll stays put and focus is kept by position. The refresh
+  waits while a slide is moved *or a confirm box is ticked*. An error, a redirect (an
+  expired fallback session) or a page without those parts falls back to a full reload.
+- **The theme switches in place.** A slider click fetches `/theme/<t>` without following its
+  redirect, so the server still sets the HttpOnly cookie, then sets `data-theme` on the root.
+  If that fails, the link is followed as before.
+
+**Unchanged:** no inline script, no `eval`, no other origin, and every page works without
+script (meta refresh in `<noscript>`, theme links, `/?system=open`). The server trusts the
+script no more than before: both requests are GETs it already serves through the doors.
+
+**Risk.** `connect-src 'self'` adds nothing an injected *markup* fragment can use, because it
+still cannot run script. It matters only if script is already running, and then same-origin
+requests were already possible by navigation. A test pins `connect-src` to exactly `'self'`,
+and another checks that every page has the banner and `<main>` the swap relies on.

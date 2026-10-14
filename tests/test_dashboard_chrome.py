@@ -119,6 +119,15 @@ def test_csp_allows_only_this_nodes_own_script() -> None:
     csp = SECURITY_HEADERS["Content-Security-Policy"]
     assert "script-src 'self';" in csp and "unsafe-eval" not in csp
     assert "unsafe-inline" not in csp.split("script-src", 1)[1].split(";", 1)[0]
+    # The script may call back to this node only (the refresh and the theme, ADR-0006
+    # amendment); never anywhere else.
+    assert "connect-src 'self';" in csp
+    assert re.findall(r"connect-src[^;]*", csp) == ["connect-src 'self'"]
+
+
+def test_every_page_has_the_parts_the_refresh_swaps() -> None:
+    for html in _pages():
+        assert html.count('<header class="banner">') == 1 and html.count("<main") == 1
 
 
 def test_leave_is_a_slide_and_lives_on_the_overview() -> None:
