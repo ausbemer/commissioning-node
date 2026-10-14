@@ -24,7 +24,7 @@ STREAM_ANNOUNCED = "stream/announced"
 TAILNET_STATUS = "tailnet/status"
 #: Every peer this node can see on its tailnet, as one snapshot. Payload: `TailnetPeers`.
 TAILNET_PEERS = "tailnet/peers"
-#: Command: operator asks tailnet-gateway to join, rename or leave (ADR-0005).
+#: Command: operator asks tailnet-gateway to join, rename, set or stop routes, or leave (ADR-0005).
 #: Payload: `TailnetApply`. Carries no values and no secret.
 TAILNET_APPLY = "tailnet/apply"
 #: The outcome of one `tailnet/apply`. Payload: `TailnetApplyResult`.

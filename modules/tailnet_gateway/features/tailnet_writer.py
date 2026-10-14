@@ -14,7 +14,11 @@ Automatic rejoin (A2) is the one thing it starts on its own, and only to rejoin 
 operator already joined: the writer's join record exists, the operator hasn't asked to
 leave since, `auto_rejoin` is on, a key is saved, and the fresh reading says the overlay
 needs a login. It applies the record's confirmed hostname, tags and routes, and the worker
-refuses it unless the saved key is the one confirmed. Attempts back off from
+refuses it unless the saved key is the one confirmed. It also refuses while any recorded route
+is not a network the node is on now (release review, 2026-10-13): the node may have moved site
+with the same reusable key, and the old site's routes must never be offered from the new one.
+That refusal is published once per episode and re-checked every reading, so a network that
+comes up late at boot still rejoins. Attempts back off from
 REJOIN_BACKOFF_MIN_S, doubling, to REJOIN_BACKOFF_MAX_S. Operator requests are never retried.
 """
 from __future__ import annotations
@@ -62,13 +66,15 @@ class TailnetWriter:
         #: no reading taken around a Leave can start a rejoin (review 2026-10-13).
         self._left = False
         self._warned_old_record = False
+        #: A rejoin refused because the node is off its recorded networks has been reported;
+        #: cleared when the networks match again, so the next episode is reported too.
+        self._reported_moved = False
 
     def handle(self, topic: str, payload: dict) -> list[tuple[str, dict]]:
         if topic == OVERLAY_SNAPSHOT:
             self._snapshot = OverlaySnapshot.model_validate(payload)
             self._snapshot_at = self._clock()
-            self._maybe_rejoin(self._snapshot)
-            return []
+            return self._maybe_rejoin(self._snapshot)
         if topic == WRITE_OUTCOME:
             outcome = WriteOutcome.model_validate(payload)
             if outcome.plan.operation == JOIN:
@@ -157,26 +163,40 @@ class TailnetWriter:
                          tags=list(self._config.get("tags") or []),
                          routes=self._wanted_routes(snap), key_path=key_path)
 
-    def _maybe_rejoin(self, snap: OverlaySnapshot) -> None:
+    def _maybe_rejoin(self, snap: OverlaySnapshot) -> list[tuple[str, dict]]:
         """A2: rejoin a tailnet the operator joined, when the overlay needs a login again,
         with exactly what they confirmed (the join record), never what is merely saved."""
         record = snap.join_record
         if record is None or self._left or self._config is None or snap.state != NEEDS_LOGIN:
-            return
+            return []
         if not self._config.get("auto_rejoin"):
-            return
+            return []
         if record.key_sha256 is None:
             if not self._warned_old_record:
                 log.warning("tailnet: the join record predates confirmed-key fingerprints; not "
                             "rejoining on its own. Leave and Join once to record it.")
                 self._warned_old_record = True
-            return
+            return []
+        off = [r for r in record.routes if r not in snap.site_networks]
+        if off:
+            # Fail toward not joining: a reusable key travels between sites, so only the
+            # networks prove the node is still where the operator joined it.
+            if self._reported_moved:
+                return []
+            self._reported_moved = True
+            message = (f"auto-rejoin refused: the node is no longer on {', '.join(off)}, the "
+                       "routes it joined with; it may have moved site. Check the routes on "
+                       "/config, then press Join")
+            log.warning("tailnet: %s", message)
+            return [self._result(uuid.uuid4().hex[:12], JOIN, False, message, AUTO_REJOIN_BY,
+                                 AUTO_REJOIN_DOOR)]
+        self._reported_moved = False
         now = self._clock()
         if now < self._next_rejoin:
-            return
+            return []
         key_path = self._config.secret_path("auth_key")
         if key_path is None:
-            return
+            return []
         plan = WritePlan(request_id=uuid.uuid4().hex[:12], operation=JOIN,
                          requested_by=AUTO_REJOIN_BY, door=AUTO_REJOIN_DOOR,
                          hostname=record.hostname, tags=list(record.tags),
@@ -184,11 +204,12 @@ class TailnetWriter:
                          expected_key_sha256=record.key_sha256)
         base = {"request_id": plan.request_id}
         if self._slot.submit(plan) is not None:
-            return                                   # an operator request is running
+            return []                                # an operator request is running
         self._next_rejoin = now + self._backoff
         log.warning("tailnet: the node needs a login again; rejoining with the saved key "
                     "(request %s; next attempt no sooner than %.0fs)", base["request_id"], self._backoff)
         self._backoff = min(self._backoff * 2, REJOIN_BACKOFF_MAX_S)
+        return []
 
     # -- reporting -----------------------------------------------------------------------
 

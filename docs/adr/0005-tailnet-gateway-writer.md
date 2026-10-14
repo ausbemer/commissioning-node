@@ -458,3 +458,25 @@ doesn't know.
 - **On `/config`** the advertised-routes row has one slider, a toggle: *Stop advertising
   routes* (danger colour) while any are advertised, else *Advertise <saved routes>*. Moving
   from one set to another goes through off.
+
+### 2026-10-13 — release review: no auto-rejoin off the recorded networks
+
+The v0.1.0 release review found an interaction that per-merge reviews couldn't see. The join
+record (A2), the reusable OAuth secret carried from site to site (rehearsal step 3 amendment)
+and the still-missing teardown procedure (TODO) together let a node moved to a new site
+rejoin on its own with the **previous site's routes**. It boots `NeedsLogin` (its ephemeral
+node was removed while it was off, Q-005), the key fingerprint still matches, and about 5 s
+later it would offer the old site's subnet from the new site's LAN. With route
+auto-approval, tailnet traffic for that range would leave on the wrong LAN; with two sites
+on the same range, operators would reach the wrong site's devices.
+
+**Ruling (operator, 2026-10-13):** auto-rejoin refuses while any recorded route is not a
+network the node is on now (`TailnetStatus.site_networks`, the detected networks). This fails
+toward not joining. The refusal is a failed `tailnet/apply-result` from `auto-rejoin`,
+published once per episode ("the node may have moved site … press Join") and re-checked on
+every reading, so a site network that comes up late at boot still rejoins. An operator's
+Join is unaffected: it resolves routes from where the node is now. A record with no routes
+has nothing to offer the wrong LAN, so it still rejoins.
+
+Also found, not fixed in v0.1.0 (TODO): a service restart while a Join, Rename or Routes is
+still running loses its outcome, and can leave the join record behind what tailscaled did.

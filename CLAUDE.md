@@ -66,15 +66,15 @@ declares a field and the surface that edits it (ADR-0004).
 | `tailnet/apply` | `TailnetApply` (command; no values, no secret) | dashboard via `main.invoke()` → tailnet-gateway writer (ADR-0005) |
 | `tailnet/apply-result` | `TailnetApplyResult` | tailnet-gateway → dashboard |
 | `site/scan` | `SiteScan` (command; no targets) | dashboard via `main.invoke()` → site-survey (ADR-0007) |
-| `site/hosts` | `SiteHosts` (nested `SiteHost`), a snapshot per completed scan | site-survey → dashboard, camera-config |
+| `site/hosts` | `SiteHosts` (nested `SiteHost`), a snapshot per completed scan | site-survey → dashboard (camera-config planned, ADR-0007 step 5) |
 | `site/scan-result` | `SiteScanResult` | site-survey → dashboard |
-| `camera/identified` | `CameraIdentification` (not a registration) | camera-config → dashboard |
+| `camera/identified` | `CameraIdentification` (not a registration) | camera-config → dashboard; **planned** (ADR-0007 step 5): no producer yet |
 
 ## Modules
 
 | Module | Responsibility | Inward interface version |
 |--------|----------------|--------------------------|
-| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table now; will auto-detect the site subnet and propose routes for operator confirmation. Sole writer of Tailscale state. Declares its config fields (hostname, tags, auth key; ADR-0004); joins, renames, sets advertised routes (default: the detected site networks) and leaves the site tailnet on a confirmed request, and rejoins a recorded join on its own (ADR-0005; on by default, `CN_TAILNET_WRITER=0` switches it off); stops advertising routes on request (`routes-off`). Reports each peer's direct endpoint for the site map (ADR-0007). | 0.7.0 |
+| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table; detects the site networks and proposes them as routes for operator confirmation (ADR-0005 A3). Sole writer of Tailscale state. Declares its config fields (hostname, tags, auth key; ADR-0004); joins, renames, sets advertised routes (default: the detected site networks) and leaves the site tailnet on a confirmed request, and rejoins a recorded join on its own (ADR-0005; on by default, `CN_TAILNET_WRITER=0` switches it off); stops advertising routes on request (`routes-off`). Reports each peer's direct endpoint for the site map (ADR-0007). | 0.7.0 |
 | `camera-config` (`modules/camera_config/`) | Bridge to Axis VAPIX: knows the site's cameras; will probe and (operator-confirmed) configure them. Sole writer to cameras. | 0.1.0 |
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
 | `site-survey` (`modules/site_survey/`) | Bridge to nmap and the neighbour table: scans the site networks once per operator request (gentle, unprivileged, ports 80/443/554) and publishes every host that answered, with MAC, maker, hostname and open ports (ADR-0007). Never writes to a device; hosts are never persisted. | 0.1.0 |
