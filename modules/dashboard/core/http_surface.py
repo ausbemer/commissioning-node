@@ -294,6 +294,8 @@ class HttpSurface:
                 # Display state a page keeps across its own auto-refresh (e.g. a section left
                 # open); the view reads only the keys it knows and escapes what it shows.
                 snap["query"] = {k: v[0] for k, v in parse_qs(query).items()}
+                # The write paths this surface answers, so a view offers only what exists.
+                snap["writes"] = sorted(surface._actions)
                 if surface._config is not None:
                     snap["config"] = config_rows(surface._config)   # secrets carry no value
                 self._send(200, view.content_type, view.render(snap))

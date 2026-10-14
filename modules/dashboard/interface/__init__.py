@@ -7,7 +7,7 @@ from .chrome import (SCRIPT, STATIC_PATH, THEME_COOKIE, THEME_PATH, banner, op_f
                      theme_choice, theme_return)
 from .admin import AdminAuth, Session
 from .config import (CONFIG_ACTIONS, ConfigFieldState, ConfigSurface, ConfigWriteResult,
-                     TAILNET_OPERATIONS, TAILNET_WRITER, Invoker, clear_path, config_key,
+                     RESTART_PATH, RESTART_WARNING, TAILNET_OPERATIONS, TAILNET_WRITER, Invoker, clear_path, config_key,
                      config_rows, set_path)
 from .doors import (DOORS, FALLBACK, LOCAL, TAILNET, Caller, Decision, Refusal, authorize,
                     classify, host_allowed, same_origin)
@@ -30,4 +30,4 @@ __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "Vie
            "authorize", "classify", "host_allowed", "same_origin",
            "ConfigSurface", "ConfigFieldState", "ConfigWriteResult", "CONFIG_ACTIONS",
            "config_key", "config_rows", "set_path", "clear_path", "Invoker",
-           "TAILNET_WRITER", "TAILNET_OPERATIONS"]
+           "TAILNET_WRITER", "TAILNET_OPERATIONS", "RESTART_PATH", "RESTART_WARNING"]

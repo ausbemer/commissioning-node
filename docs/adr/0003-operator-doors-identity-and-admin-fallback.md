@@ -333,3 +333,26 @@ them is this ADR's mechanism for those decisions.
     kept, parsed and re-encoded, so it cannot carry a scheme, a host or a header break.
   - The cookie is read back only as one of the two known values; anything else means
     "follow the device" (`prefers-color-scheme`).
+
+### 2026-10-13 — Restart the service from the dashboard
+
+The operator restarted the daemon from a terminal to pick up changes, and asked for a control
+on `/config` instead. **Decision:** a write, `node.restart` (`POST /actions/node/restart`),
+in the config page's index so it stays in reach while scrolling.
+
+- **Through the doors like every write:** it is sorted into a door, passes `authorize()`, and
+  is may-disturb, so it needs `confirm=yes` (the slider, or the checkbox without script). It
+  is open to every door that may write (local, tailnet, fallback with a session), and its
+  log line records who asked and through which door.
+- **How it restarts:** the daemon can't call `systemctl` (it runs as the daemon user). Main
+  answers the request, stops the loop `RESTART_GRACE_S` (1 s) later, and exits with status
+  75 (`RESTART_EXIT`). The unit's `Restart=on-failure` starts it again after `RestartSec`.
+  The unit also sets `RestartForceExitStatus=75` and `SuccessExitStatus=75`, so 75 always
+  restarts and is not logged as a failure; a test keeps the two in step. The service comes
+  back running whatever is checked out (ADR-0002 "Provenance").
+- **What it doesn't touch:** tailscaled, MediaMTX and the streams are separate services. The
+  tailnet is not left, so a restart from the tailnet door comes back on the same door.
+- **Known gap:** a tailnet write still running (a Join's `tailscale up`) is cut off when the
+  process exits. tailscaled may still finish the join, but the join record isn't written,
+  so the node won't auto-rejoin until the next confirmed Join. Don't restart mid-write. A
+  guard needs the writer's busy state on the bus; it isn't there today.

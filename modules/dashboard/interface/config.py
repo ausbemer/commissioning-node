@@ -74,6 +74,12 @@ class Invoker(Protocol):
     def __call__(self, topic: str, payload: dict, requires: str) -> tuple[bool, str]: ...
 
 
+#: Restart the commissioning-node service (service-restart): its POST path and warning.
+RESTART_PATH = "/actions/node/restart"
+RESTART_WARNING = ("Restarts the commissioning-node service: the dashboard is away for about "
+                   "10 s and runs the code checked out now. tailscaled, MediaMTX and the "
+                   "streams keep running.")
+
 #: The capability a tailnet apply needs (§5): advertised only once the writer is enabled.
 TAILNET_WRITER = "tailnet-gateway:tailnet-writer"
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from html import escape
 
-from ..interface import TAILNET_WRITER, banner, op_form, page
+from ..interface import RESTART_PATH, RESTART_WARNING, TAILNET_WRITER, banner, op_form, page
 
 PATH = "/config"
 GATEWAY = "tailnet-gateway"
@@ -74,11 +74,13 @@ STYLE = """
 .field .extra p { margin:0; color:var(--muted); }
 .field .extra:empty { display:none; }
 .field .extra p.fail { color:var(--crit); }
-/* A compact slider: it sits in a dense row, under the field it applies. */
+/* A compact slider: under the field it applies, and the restart in the index. */
 .field .extra .op.bare { max-width:300px; }
-.field .extra .slide { height:32px; border-radius:16px; }
-.field .extra .slide-knob { width:26px; height:26px; border-radius:13px; font-size:12px; }
-.field .extra .slide-text { font-size:12.5px; padding-left:30px; }
+.field .extra .slide, .index .slide { height:32px; border-radius:16px; }
+.field .extra .slide-knob, .index .slide-knob { width:26px; height:26px; border-radius:13px; font-size:12px; }
+.field .extra .slide-text, .index .slide-text { font-size:12.5px; padding-left:30px; }
+.index .restart { margin-top:18px; }
+@media (max-width: 760px) { .index .restart { margin-top:10px; max-width:300px; } }
 @media (max-width: 1000px) {
   .field { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
   .field .about { grid-column:1 / -1; }
@@ -119,6 +121,17 @@ def _input(field: dict, row: dict) -> str:
             if not row.get("is_set") and default not in (None, [], "") else "")
     return (f'<input {kind_attr} name="value" value="{escape(current)}"{hint} autocomplete="off" '
             f'aria-label="{label}">')
+
+
+def _restart(csrf: str | None) -> str:
+    """The service restart, in the index so it stays in reach while scrolling. A slider
+    like the others (script waits for the service to come back, then reloads); without
+    script, the warning is the required confirm."""
+    return (f'<form class="op bare restart" method="post" action="{RESTART_PATH}" data-slide '
+            f'data-await-restart>{_hidden(csrf)}'
+            f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '
+            f'<span>{escape(RESTART_WARNING)}</span></label>'
+            '<button class="btn" type="submit">Restart service</button></form>')
 
 
 def _hidden(csrf: str | None) -> str:
@@ -266,8 +279,9 @@ class ConfigPage:
             marker = "" if tailnet is None else (
                 '<div data-live id="live-last" hidden data-last-apply="'
                 f'{escape(str((tailnet.get("last") or {}).get("finished_at", "")))}"></div>')
-            content = (f'<div class="cfg"><nav class="index" aria-label="Config sections"><ol>'
-                       f'{"".join(index)}</ol></nav><div>{blocks}{marker}'
+            restart = _restart(csrf) if RESTART_PATH in (snapshot.get("writes") or []) else ""
+            content = (f'<div class="cfg"><div class="index"><nav aria-label="Config sections"><ol>'
+                       f'{"".join(index)}</ol></nav>{restart}</div><div>{blocks}{marker}'
                        '<p class="keyline"><span class="tag site">site</span> wiped when the node leaves '
                        'a site. <span class="tag node">node</span> kept between sites.</p></div></div>')
         body = ('<div class="cfg-head"><h1>Config</h1><p>Saving only stores a value. A tailnet change '

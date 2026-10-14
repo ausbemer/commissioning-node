@@ -9,7 +9,8 @@
 //    be dragged to the far end; let go anywhere short of it and the knob snaps back.
 //    A confirmed slide posts in the background and holds at "…" until the page shows the
 //    outcome: the write runs after the response, so the page the POST returns is stale.
-//    A refusal is shown on the slider, which then resets.
+//    A refusal is shown on the slider, which then resets. A form marked data-await-restart
+//    (the service restart) instead waits for the page to go away and come back, then reloads.
 // 2. Auto-refresh: <body data-refresh="N"> refreshes the page every N seconds (the
 //    <noscript> meta refresh covers no-script browsers). It fetches the same URL and swaps
 //    in the new banner and <main>, so scroll and focus stay put (ADR-0006 amendment). It
@@ -194,7 +195,8 @@
         if (!res.ok) {
           return res.text().then(function (t) { refused(t.trim() || "Refused (" + res.status + ")"); });
         }
-        watch(action, before, false, Date.now() + 30000);
+        if (form.hasAttribute("data-await-restart")) awaitRestart(false, Date.now() + 60000);
+        else watch(action, before, false, Date.now() + 30000);
       })
       .catch(function () { refused("The node did not answer"); });
   }
@@ -220,6 +222,19 @@
           }
         })
         .catch(function () { location.reload(); });
+    }, 1000);
+  }
+
+  // The service restart: the page goes away, then comes back. Reload once it answers again
+  // after having been away (or after a minute, whatever happened).
+  function awaitRestart(down, deadline) {
+    setTimeout(function () {
+      fetch(location.href, { credentials: "same-origin", cache: "no-store" })
+        .then(function (res) { return res.ok; }, function () { return false; })
+        .then(function (up) {
+          if ((up && down) || Date.now() > deadline) location.reload();
+          else awaitRestart(down || !up, deadline);
+        });
     }, 1000);
   }
 

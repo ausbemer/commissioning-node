@@ -168,3 +168,44 @@ def test_static_files_are_an_allowlist_behind_the_doors(tmp_path) -> None:
             assert get(path)[0].status == 404
     finally:
         node.dashboard.stop()
+
+
+def test_service_restart_is_a_confirmed_write_on_config(tmp_path) -> None:
+    asked: list[bool] = []
+    node = main.compose(Bus(), dashboard_port=0, dashboard_host="127.0.0.1",
+                        config_root=str(tmp_path), restart=lambda: asked.append(True))
+    _, port = node.dashboard.start()
+    origin = {"Origin": f"http://127.0.0.1:{port}",
+              "Content-Type": "application/x-www-form-urlencoded"}
+    try:
+        def call(method: str, path: str, body: str | None = None):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request(method, path, body=body, headers=origin if body is not None else {})
+            resp = conn.getresponse()
+            return resp, resp.read().decode()
+
+        _, config = call("GET", "/config")
+        form = config.split('action="/actions/node/restart"', 1)[1].split("</form>", 1)[0]
+        assert form.startswith(" data-slide data-await-restart>") and ">Restart service</button>" in form
+        assert config.index('class="index"') < config.index("/actions/node/restart") < config.index('class="block"')
+        resp, _ = call("POST", "/actions/node/restart", "then=%2Fconfig")
+        assert resp.status == 409 and asked == []                  # may-disturb: confirm first
+        resp, _ = call("POST", "/actions/node/restart", "confirm=yes&then=%2Fconfig")
+        assert resp.status == 303 and resp.getheader("Location") == "/config" and asked == [True]
+    finally:
+        node.dashboard.stop()
+    # Not wired (tests, one-shot modes): no path, so no control.
+    bare = main.compose(Bus(), dashboard_port=0, config_root=str(tmp_path))
+    assert "/actions/node/restart" not in bare.dashboard._actions
+    rows = [{"key": "tailnet-gateway.hostname", "value": None, "is_set": False,
+             "set_path": "/s", "clear_path": "/c",
+             "field": {"module": "tailnet-gateway", "name": "hostname", "kind": "str", "scope": "site"}}]
+    assert "/actions/node/restart" not in ConfigPage().render({"config": rows, "writes": ["/s", "/c"]})
+    assert "/actions/node/restart" in ConfigPage().render({"config": rows, "writes": ["/actions/node/restart"]})
+
+
+def test_restart_exit_status_matches_the_unit() -> None:
+    from pathlib import Path
+    unit = (Path(__file__).resolve().parent.parent / "ops/systemd/commissioning-node.service").read_text()
+    assert f"RestartForceExitStatus={main.RESTART_EXIT}" in unit
+    assert f"SuccessExitStatus={main.RESTART_EXIT}" in unit
