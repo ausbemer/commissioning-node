@@ -5,8 +5,10 @@ being typed is never wiped. A secret is a write-only password input, never pre-f
 reads only as set or unset (§8.9). Each form posts to a config `Action`, behind
 `authorize()`; on success core sends the browser back here (`then`).
 
-The operations that apply saved tailnet values (join, rename, routes, leave; ADR-0005 §3)
-are on the overview, in the gateway section, beside the state they change.
+Saving only stores a value. Two tailnet operations apply a saved value to a joined node and
+sit beside their field (ADR-0005 §3): Rename under the hostname, Routes under the advertised
+routes, which also show what `auto` means now and what is advertised and approved. Each is a
+may-disturb form with its warning inline. Join and Leave are the overview's slider.
 
 Layout (mockup 3): dense, because this page grows with every module that declares config —
 a module index (a side list on wide screens, a strip on phones), one block per module, one
@@ -16,9 +18,10 @@ from __future__ import annotations
 
 from html import escape
 
-from ..interface import banner, page
+from ..interface import TAILNET_WRITER, banner, op_form, page
 
 PATH = "/config"
+GATEWAY = "tailnet-gateway"
 
 STYLE = """
 .cfg-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 20px; margin-bottom:18px; }
@@ -66,6 +69,9 @@ STYLE = """
 .aside .btn { font-size:12.5px; color:var(--muted); background:transparent; border-color:var(--line); }
 .aside .btn:hover { color:var(--ink); border-color:var(--line-strong); }
 .aside .btn.del { color:var(--crit); }
+.field .extra { grid-column:1 / -1; display:grid; gap:8px; font-size:13px; }
+.field .extra p { margin:0; color:var(--muted); }
+.field .extra .op { max-width:640px; }
 @media (max-width: 1000px) {
   .field { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
   .field .about { grid-column:1 / -1; }
@@ -117,7 +123,45 @@ def _anchor(module: str) -> str:
     return "cfg-" + "".join(c if c.isalnum() or c == "-" else "-" for c in module)
 
 
-def _field(row: dict, csrf: str | None) -> str:
+def _mono(values: list[str]) -> str:
+    return " ".join(f'<span class="mono">{escape(v)}</span>' for v in values) if values else "none"
+
+
+def _tailnet_extra(name: str, tailnet: dict | None, csrf: str | None) -> str:
+    """Beside a tailnet-gateway field: the node's live value and the operation that applies
+    the saved one, when there is a difference to apply. `tailnet` is None without a writer."""
+    if tailnet is None:
+        return ""
+    status, saved = tailnet["status"], tailnet["saved"]
+    joined = bool(status.get("connected"))
+    parts = []
+    if name == "advertise_routes":
+        # Resolved by tailnet-gateway, the one authority for what "auto" means.
+        wanted = list(status.get("wanted_routes") or [])
+        advertised = list(status.get("advertised_routes") or [])
+        approved = list(status.get("served_routes") or [])
+        parts.append(f"<p>Site networks now: {_mono(list(status.get('site_networks') or []))}. "
+                     f"Saved value means: {_mono(wanted)}.</p>")
+        if joined:
+            parts.append(f"<p>Advertised: {_mono(advertised)}. Approved by the tailnet: {_mono(approved)}.</p>")
+            if sorted(wanted) != sorted(advertised):
+                label = f"Advertise {', '.join(wanted)}" if wanted else "Advertise no routes"
+                parts.append(op_form("routes", label, csrf, PATH))
+        else:
+            parts.append("<p>Applied when the node joins.</p>")
+    elif name == "hostname" and joined:
+        want = (saved.get("hostname") or {}).get("value")
+        if want and want != status.get("hostname"):
+            parts.append(op_form("rename", f"Rename to {want}", csrf, PATH))
+    elif name == "tags" and joined:
+        want = sorted((saved.get("tags") or {}).get("value") or [])
+        if want != sorted(status.get("tags") or []):
+            parts.append(f"<p>The node has {_mono(list(status.get('tags') or []))}. Tags change only on "
+                         "a join: Leave, then Join (the saved key is reused).</p>")
+    return f'<div class="extra">{"".join(parts)}</div>' if parts else ""
+
+
+def _field(row: dict, csrf: str | None, extra: str = "") -> str:
     field = row.get("field", {})
     kind = field.get("kind", "")
     secret, is_set = field.get("secret"), row.get("is_set")
@@ -155,7 +199,23 @@ def _field(row: dict, csrf: str | None) -> str:
 <form class="save" method="post" action="{escape(row.get("set_path", ""))}">{_hidden(csrf)}
 {_input(field, row)}<button class="btn primary" type="submit">Save</button>{confirm}</form>
 <div>{clear}</div>
-</li>"""
+{extra}</li>"""
+
+
+def _tailnet(snapshot: dict, rows: list[dict]) -> dict | None:
+    """What the tailnet extras need, or None when the writer is off (nothing to apply)."""
+    capabilities = {c for n in (snapshot.get("nodes") or {}).values()
+                    for m in n.get("modules", []) for c in m.get("capabilities", [])}
+    if not rows or TAILNET_WRITER not in capabilities:
+        return None
+    return {"status": (snapshot.get("tailnet") or {}).get("self") or {},
+            "saved": {r.get("field", {}).get("name"): r for r in rows}}
+
+
+def _extra(module: str, row: dict, tailnet: dict | None, csrf: str | None) -> str:
+    if module != GATEWAY:
+        return ""
+    return _tailnet_extra(row.get("field", {}).get("name", ""), tailnet, csrf)
 
 
 class ConfigPage:
@@ -175,17 +235,20 @@ class ConfigPage:
                 modules.setdefault(row.get("field", {}).get("module", ""), []).append(row)
             index = [f'<li><a href="#{_anchor(m)}">{escape(m)} <span class="n">{len(g)}</span></a></li>'
                       for m, g in modules.items()]
+            tailnet = _tailnet(snapshot, modules.get(GATEWAY, []))
             blocks = "".join(
                 f'<section class="block" id="{_anchor(m)}"><header><h2>{escape(m)}</h2>'
                 f'<span>{len(g)} field{"s" if len(g) != 1 else ""}</span></header>'
-                f'<ul class="fields">{"".join(_field(r, csrf) for r in g)}</ul></section>'
+                f'<ul class="fields">{"".join(_field(r, csrf, _extra(m, r, tailnet, csrf)) for r in g)}'
+                '</ul></section>'
                 for m, g in modules.items())
             content = (f'<div class="cfg"><nav class="index" aria-label="Config sections"><ol>'
                        f'{"".join(index)}</ol></nav><div>{blocks}'
                        '<p class="keyline"><span class="tag site">site</span> wiped when the node leaves '
                        'a site. <span class="tag node">node</span> kept between sites.</p></div></div>')
-        body = ('<div class="cfg-head"><h1>Config</h1><p>Saving only stores a value. Tailnet values '
-                f'are applied from the <a href="/">overview</a>, in the gateway section.</p></div>{content}')
+        body = ('<div class="cfg-head"><h1>Config</h1><p>Saving only stores a value. A tailnet change '
+                'applies with the button beside its field; Join and Leave are on the '
+                f'<a href="/">overview</a>.</p></div>{content}')
         status = (snapshot.get("tailnet") or {}).get("self") or {}
         nodes = list((snapshot.get("nodes") or {}).values())
         name = status.get("hostname") or (nodes[0].get("hostname", "") if nodes else "") or "commissioning-node"

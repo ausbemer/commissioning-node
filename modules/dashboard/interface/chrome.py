@@ -17,6 +17,8 @@ from __future__ import annotations
 from html import escape
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
+from .config import TAILNET_OPERATIONS
+
 #: Pages the banner links to, in order: (path, label).
 NAV = (("/", "Overview"), ("/config", "Config"))
 
@@ -140,22 +142,26 @@ input:focus-visible, select:focus-visible {{ outline:2px solid var(--accent); ou
 .op {{ border:1px solid var(--line-strong); border-radius:8px; padding:10px 12px; background:var(--surface); margin:0; }}
 .op.danger {{ border-color:var(--crit); }}
 .op h3 {{ font-size:15px; margin-bottom:6px; }}
+.op.bare {{ border:0; padding:0; background:none; }}
 .confirm {{ display:flex; gap:8px; align-items:flex-start; font-size:13px; margin-bottom:10px; }}
 .confirm input {{ margin-top:3px; accent-color:var(--accent); flex:none; }}
 .op.danger .confirm input {{ accent-color:var(--crit); }}
-.js-slide .confirm input, .js-slide button[type="submit"] {{ display:none; }}
+.js-slide .confirm, .js-slide button[type="submit"] {{ display:none; }}
 .slide {{ position:relative; height:44px; border-radius:22px; background:var(--surface-2);
   border:1px solid var(--line-strong); overflow:hidden; touch-action:none; user-select:none; }}
 .op.danger .slide {{ border-color:var(--crit); }}
-.slide-fill {{ position:absolute; inset:0 auto 0 0; width:22px; background:var(--crit-soft); }}
+.slide-fill {{ position:absolute; inset:0 auto 0 0; width:22px; background:var(--accent-soft); }}
+.op.danger .slide-fill {{ background:var(--crit-soft); }}
 .slide-text {{ position:absolute; inset:0; display:grid; place-items:center; font-size:13px;
   font-weight:600; color:var(--muted); padding-left:40px; pointer-events:none; }}
 .slide-knob {{ position:absolute; top:2px; left:2px; width:38px; height:38px; border-radius:19px;
-  display:grid; place-items:center; background:var(--crit); color:var(--surface); font-weight:700;
+  display:grid; place-items:center; background:var(--accent); color:var(--accent-ink); font-weight:700;
   cursor:grab; touch-action:none; }}
+.op.danger .slide-knob {{ background:var(--crit); color:var(--surface); }}
 .slide-knob:active {{ cursor:grabbing; }}
 .slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:transform .2s ease, width .2s ease; }}
-.slide.done .slide-text {{ color:var(--crit); }}
+.slide.done .slide-text {{ color:var(--accent); }}
+.op.danger .slide.done .slide-text {{ color:var(--crit); }}
 .slide:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px; }}
 @media (prefers-reduced-motion: reduce) {{ .slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:none; }} }}
 
@@ -246,3 +252,19 @@ def page(*, title: str, body: str, banner_html: str, style: str = "",
 {body}
 </main></body></html>
 """
+
+
+def op_form(operation: str, label: str, csrf: str | None, then: str, *, slide: bool = False) -> str:
+    """One tailnet operation (`TAILNET_OPERATIONS`) as a may-disturb form posting back to
+    `then`: its warning as the required confirm, and a submit button named `label`. With
+    `slide`, script swaps the confirm and button for a slider reading `label` (ADR-0006), on
+    a bare form; the warning then shows only without script, where it is the confirm."""
+    path, warning = TAILNET_OPERATIONS[operation]
+    danger = operation == "leave"
+    classes = "op" + (" danger" if danger else "") + (" bare" if slide else "")
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    return (f'<form class="{classes}" method="post" action="{escape(path)}"{" data-slide" if slide else ""}>'
+            f'{token}<input type="hidden" name="then" value="{escape(then)}">'
+            f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '
+            f'<span>{escape(warning)}</span></label>'
+            f'<button class="btn {"danger" if danger else "primary"}" type="submit">{escape(label)}</button></form>')

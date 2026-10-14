@@ -130,18 +130,24 @@ def test_every_page_has_the_parts_the_refresh_swaps() -> None:
         assert html.count('<header class="banner">') == 1 and html.count("<main") == 1
 
 
-def test_leave_is_a_slide_and_lives_on_the_overview() -> None:
+def test_leave_is_the_overviews_one_slider() -> None:
     rows = [{"key": "tailnet-gateway.hostname", "value": None, "is_set": False,
              "set_path": "/s", "clear_path": "/c",
              "field": {"module": "tailnet-gateway", "name": "hostname", "kind": "str", "scope": "site"}}]
-    html = OverviewPage().render({**SNAPSHOT, "config": rows})
+    writer = {"nodes": {"n": {"modules": [{"capabilities": ["tailnet-gateway:tailnet-writer"]}]}}}
+    html = OverviewPage().render({**SNAPSHOT, **writer, "config": rows})
+    assert html.count("<form") == html.count('action="/actions/tailnet/leave"') == 1
     leave = html.split('action="/actions/tailnet/leave"', 1)[1].split("</form>", 1)[0]
     assert leave.startswith(" data-slide>") and 'name="confirm" value="yes" required' in leave
-    assert '<input type="hidden" name="then" value="/">' in leave
+    assert '<input type="hidden" name="then" value="/">' in leave and ">Leave the Tailnet</button>" in leave
+    assert "Tailnet actions" not in html and 'class="notes"' not in html
     assert '<noscript><meta http-equiv="refresh" content="5"></noscript>' in html
     assert '<body data-refresh="5">' in html
-    config = ConfigPage().render({**SNAPSHOT, "config": rows})
-    assert "/actions/tailnet/" not in config and "data-refresh" not in config
+    # Without the writer there is nothing to slide, only the fact that it is off.
+    off = OverviewPage().render({**SNAPSHOT, "config": rows})
+    assert "/actions/tailnet/" not in off and "Tailnet writer off" in off
+    config = ConfigPage().render({**SNAPSHOT, **writer, "config": rows})
+    assert "/actions/tailnet/leave" not in config and "data-refresh" not in config
 
 
 def test_static_files_are_an_allowlist_behind_the_doors(tmp_path) -> None:

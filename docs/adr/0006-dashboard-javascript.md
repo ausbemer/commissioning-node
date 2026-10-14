@@ -114,3 +114,13 @@ script no more than before: both requests are GETs it already serves through the
 still cannot run script. It matters only if script is already running, and then same-origin
 requests were already possible by navigation. A test pins `connect-src` to exactly `'self'`,
 and another checks that every page has the banner and `<main>` the swap relies on.
+
+### 2026-10-13 — one slider on the overview
+
+At the operator's request the overview's tailnet actions are a single slider with no
+notes: **Leave the Tailnet** when joined, **Join the Tailnet** when not. Join joins Leave as
+a slide-to-confirm (accent, not danger). The slider reads the action itself; its warning
+shows only without script, where it is the required confirm. Rename and Routes move to
+`/config`, beside the hostname and the advertised routes, as ordinary may-disturb forms
+with the warning inline. The last result stays visible as the gateway's *Last action* fact
+(ADR-0005 A2: every outcome is visible).

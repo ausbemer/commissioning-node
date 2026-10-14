@@ -34,7 +34,7 @@
     track.className = "slide";
     track.tabIndex = 0;
     track.setAttribute("role", "slider");
-    track.setAttribute("aria-label", "Slide to " + label.toLowerCase());
+    track.setAttribute("aria-label", "Slide to confirm: " + label);
     track.setAttribute("aria-valuemin", "0");
     track.setAttribute("aria-valuemax", "100");
     track.setAttribute("aria-valuenow", "0");
@@ -42,7 +42,7 @@
     fill.className = "slide-fill";
     var text = document.createElement("span");
     text.className = "slide-text";
-    text.textContent = "Slide to " + label.toLowerCase();
+    text.textContent = label;
     var knob = document.createElement("span");
     knob.className = "slide-knob";
     knob.setAttribute("aria-hidden", "true");

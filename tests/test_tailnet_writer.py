@@ -425,10 +425,11 @@ def test_overview_offers_join_only_with_a_key(served) -> None:
     node, _, conn, origin = served
     page = call(conn, "GET", "/")[2]
     assert "not connected" in page and 'action="/actions/tailnet/join"' not in page
-    assert "save a reusable ephemeral auth key" in page and "writer is switched off" not in page
+    assert ">Save an auth key</a> to join." in page and "Tailnet writer off" not in page
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     page = call(conn, "GET", "/")[2]
-    assert 'action="/actions/tailnet/join"' in page and 'name="confirm"' in page
+    assert 'action="/actions/tailnet/join" data-slide>' in page and 'name="confirm"' in page
+    assert ">Join the Tailnet</button>" in page
     assert 'action="/actions/tailnet/leave"' not in page and KEY not in page
 
 
@@ -444,7 +445,7 @@ def test_join_from_the_page_needs_confirmation_and_reports_back(served, caplog) 
         main.tick(node)
         page = call(conn, "GET", "/")[2]
     assert writer.calls and writer.calls[0][0] == "join"
-    assert '<span class="chip ok">Done</span> Join at' in page and "requested by local via the local door" in page
+    assert '<dt>Last action</dt><dd><span class="chip ok">Done</span> Join at' in page and ", by local</dd>" in page
     assert "192.168.137.0/24" in page
     assert KEY not in caplog.text and KEY not in page
 
@@ -456,7 +457,7 @@ def test_disabled_writer_is_said_on_the_page_and_refused(tmp_path) -> None:
     try:
         main.tick(node)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        assert "writer is switched off" in call(conn, "GET", "/")[2]
+        assert "Tailnet writer off" in call(conn, "GET", "/")[2]
         status, _, body = call(conn, "POST", "/actions/tailnet/leave", {"confirm": "yes"},
                                {"Origin": f"http://127.0.0.1:{port}"})
         assert status == 400 and "not available" in body
@@ -624,19 +625,38 @@ def test_teardown_wipes_the_join_record(tmp_path) -> None:
     assert writer.calls == []                                  # no record, no key: never joins
 
 
-def test_overview_offers_routes_and_flags_unapproved(served) -> None:
+def test_config_offers_routes_beside_the_field_and_flags_unapproved(served) -> None:
     node, writer, conn, origin = served
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
     main.tick(node)
     page = call(conn, "GET", "/")[2]
     assert '<dt>Advertised</dt><dd><span class="mono">192.168.137.0/24</span>' in page
-    assert "Not yet approved by the tailnet: 192.168.137.0/24" in page
-    assert 'action="/actions/tailnet/routes"' not in page      # nothing to change
+    assert "1 awaiting approval" in page
+    assert "/actions/tailnet/routes" not in page              # never on the overview
+    config = call(conn, "GET", "/config")[2]
+    assert "Approved by the tailnet: none" in config
+    assert 'action="/actions/tailnet/routes"' not in config    # nothing to change
     call(conn, "POST", "/actions/config/tailnet-gateway/advertise_routes", {"value": "10.20.0.0/16"}, origin)
     main.tick(node)
-    page = call(conn, "GET", "/")[2]
-    assert 'action="/actions/tailnet/routes"' in page and "Advertise 10.20.0.0/16" in page
+    config = call(conn, "GET", "/config")[2]
+    routes = config.split('action="/actions/tailnet/routes"', 1)[1].split("</form>", 1)[0]
+    assert '<input type="hidden" name="then" value="/config">' in routes
+    assert "tailnet users lose access" in routes and ">Advertise 10.20.0.0/16</button>" in routes
+    assert "/actions/tailnet/routes" not in call(conn, "GET", "/")[2]
+
+
+def test_rename_sits_beside_the_hostname_on_config(served) -> None:
+    node, writer, conn, origin = served
+    call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
+    call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
+    main.tick(node)
+    assert "/actions/tailnet/rename" not in call(conn, "GET", "/config")[2]
+    call(conn, "POST", "/actions/config/tailnet-gateway/hostname", {"value": "site-b-gw"}, origin)
+    main.tick(node)
+    config = call(conn, "GET", "/config")[2]
+    assert 'action="/actions/tailnet/rename"' in config and ">Rename to site-b-gw</button>" in config
+    assert "/actions/tailnet/rename" not in call(conn, "GET", "/")[2]
 
 
 # -- review 2026-10-13: auto-rejoin acts only on what was confirmed, never after a Leave ----

@@ -1,4 +1,4 @@
-"""tailnet-apply — the Join, Rename and Leave buttons as dashboard writes (ADR-0005 §3).
+"""tailnet-apply — the Join, Rename, Routes and Leave operations as dashboard writes (ADR-0005 §3).
 
 Each is an `Action` with its own may-disturb warning, so `authorize()` makes the caller
 confirm, and adds the LAN-fallback recovery note on the tailnet door. `run` sends a
@@ -6,7 +6,7 @@ confirm, and adds the LAN-fallback recovery note on the tailnet door. `run` send
 and the caller, and carries no values. tailnet-gateway reads the saved ones itself.
 
 The answer is immediate ("requested"); the outcome arrives on `tailnet/apply-result` and is
-shown on /config.
+shown on the overview, as the gateway's last action.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class TailnetApplyAction:
         if not ok:
             return ActionResult(False, message)
         return ActionResult(True, f"{self.operation} requested (request {command.request_id}); "
-                                  "the result appears on /config")
+                                  "the result appears on the overview")
 
 
 def tailnet_apply_actions(invoke: Invoker) -> list[TailnetApplyAction]:
