@@ -4,7 +4,7 @@ The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
 
 **Two versions, two meanings (spec §4 dual versioning).** `__version__` (here,
-`0.5.1`) is the *inward contract* version: it bumps only when this `interface/`
+`0.6.0`) is the *inward contract* version: it bumps only when this `interface/`
 package changes. `VERSION` is the module's *release* version: it bumps with features and
 implementation. A module shipping features behind an unchanged interface bumps `VERSION`
 only.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"tailnet-gateway"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.5.1`).
-- `__version__` — the inward interface semver (`0.5.1`).
+- `VERSION` — the module release version (`0.6.0`).
+- `__version__` — the inward interface semver (`0.6.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -65,6 +65,8 @@ interface objects").
 ## Changelog
 
 - v0.5.0 — routes and auto-rejoin (ADR-0005 amendment): `ADVERTISE_ROUTES`, `AUTO_REJOIN`, `resolve_routes`, `route_problem`, `JoinRecord`, `SiteNetworkSource`, `ROUTES`, `WritePlan.routes`; `OverlaySnapshot.state`, `.site_networks`, `.join_record`. `OverlayWriter.join(hostname, tags, key_path, routes=())` (routes last, optional) and `set_routes`; `JoinRecord` holds the confirmed hostname, tags, routes and key fingerprint; `WritePlan.expected_key_sha256`. New implementers of `OverlayWriter` must add `set_routes`; the only implementations are in this module.
+- v0.5.1 — `AUTH_KEY` accepts an OAuth client secret's `?ephemeral=true` / `preauthorized=` options (ADR-0005 amendment).
+- v0.6.0 — `ROUTES_OFF` (`"routes-off"`): stop advertising any route, whatever is saved; needs no fresh reading (the safe direction) and records no routes in the join record (additive).
 - v0.4.0 — `OverlayWriter`, `WriterReply`, `WriterSlot`, `WritePlan`, `WriteOutcome`, `WRITE_OUTCOME`; `OverlaySnapshot.tags` (additive).
 - v0.3.0 — `CONFIG_FIELDS` and `ConfigView` (`config.py`) (additive).
 - v0.2.0 — `OverlayPeer`; `OverlaySnapshot.peers`, `.observed_at`, `.period_s` (additive).

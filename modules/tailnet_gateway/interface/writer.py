@@ -22,7 +22,9 @@ from interfaces import Shape
 WRITE_OUTCOME = "tailnet-gateway/write-outcome"
 
 JOIN, RENAME, ROUTES, LEAVE = "join", "rename", "routes", "leave"
-OPERATIONS = (JOIN, RENAME, ROUTES, LEAVE)
+#: Stop advertising any route, whatever is saved (0.6.0).
+ROUTES_OFF = "routes-off"
+OPERATIONS = (JOIN, RENAME, ROUTES, ROUTES_OFF, LEAVE)
 
 
 class WritePlan(Shape):
@@ -35,7 +37,7 @@ class WritePlan(Shape):
     door: str
     hostname: str | None = None
     tags: list[str] = []
-    #: Routes to advertise (join, routes), already resolved and checked.
+    #: Routes to advertise (join, routes; always empty for routes-off), resolved and checked.
     routes: list[str] = []
     key_path: str | None = None
     #: Auto-rejoin only: the key file must still hash to this, or the join is refused.

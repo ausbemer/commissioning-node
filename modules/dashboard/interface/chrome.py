@@ -5,17 +5,52 @@ banner (node identity, page navigation, who is signed in and via which door, the
 slider) and the components both pages use. Features build their page body and hand it to
 `page()`; they never import each other, so the shared frame lives here.
 
-Everything stays inside the dashboard's CSP: no script, no outside font or image, inline
-CSS only, every value escaped. The slider is two radio inputs; with neither checked the page
-follows the device's `prefers-color-scheme`. `theme` ("light"/"dark") sets `data-theme` on
-the root for a server-remembered choice.
+Everything stays inside the dashboard's CSP: no inline script, no outside font or image,
+inline CSS, every value escaped. Pages load the one first-party script (`SCRIPT`, ADR-0006)
+and work without it. The day/night slider is two links to `THEME_PATH`; core
+remembers the choice in a cookie (ADR-0003 amendment, 2026-10-13) and the page renders it
+as `data-theme` on the root. With no choice made the page follows the device's
+`prefers-color-scheme`.
 """
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
+
+from .config import TAILNET_OPERATIONS
 
 #: Pages the banner links to, in order: (path, label).
 NAV = (("/", "Overview"), ("/config", "Config"))
+
+#: Static files core serves from the module's `static/` directory (ADR-0006).
+STATIC_PATH = "/static/"
+#: The one script every page loads; progressive enhancement only.
+SCRIPT = STATIC_PATH + "dashboard.js"
+
+#: The slider's links are `THEME_PATH/<theme>?then=<page>`; the choice lives in THEME_COOKIE.
+THEME_PATH = "/theme"
+THEME_COOKIE = "cn-theme"
+#: Valid choices, as `data-theme` values: (theme, label).
+THEMES = (("light", "Day"), ("dark", "Night"))
+
+
+def theme_choice(value: str | None) -> str | None:
+    """A cookie or path value → a known theme, or None (follow the device)."""
+    return value if value in dict(THEMES) else None
+
+
+def theme_return(then: str | None, pages: set[str]) -> str:
+    """Where the slider sends the browser back to: only a page this surface serves, with its
+    display query (e.g. `/?system=open`) re-encoded; never an open redirect, and anything
+    else goes to the overview."""
+    try:
+        parts = urlsplit(then or "")
+    except ValueError:
+        return "/"
+    if parts.scheme or parts.netloc or parts.path not in pages:
+        return "/"
+    query = urlencode(parse_qsl(parts.query))
+    return f"{parts.path}?{query}" if query else parts.path
 
 _COND = 'Bahnschrift, "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif'
 _MONO = 'ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace'
@@ -35,8 +70,6 @@ STYLE = f"""
 :root {{ {_LIGHT} }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ {_DARK} }} }}
 :root[data-theme="dark"] {{ {_DARK} }}
-:root:has(#theme-night:checked) {{ {_DARK} }}
-:root:has(#theme-day:checked) {{ {_LIGHT} }}
 
 * {{ box-sizing:border-box; }}
 html {{ -webkit-text-size-adjust:100%; }}
@@ -72,16 +105,14 @@ main.wrap {{ padding-block:28px 40px; }}
 
 .theme {{ position:relative; display:inline-grid; grid-template-columns:1fr 1fr; width:64px; height:30px;
   border:1px solid var(--line-strong); border-radius:15px; background:var(--surface-2); flex:none; }}
-.theme input {{ position:absolute; opacity:0; width:1px; height:1px; margin:0; }}
-.theme label {{ position:relative; z-index:2; display:grid; place-items:center; cursor:pointer; color:var(--muted); }}
-.theme label svg {{ width:14px; height:14px; }}
+.theme a {{ position:relative; z-index:2; display:grid; place-items:center; color:var(--muted); border-radius:12px; }}
+.theme a:hover, .theme a[aria-current="true"] {{ color:var(--ink); }}
+.theme a:focus-visible {{ outline-offset:-2px; }}
+.theme svg {{ width:14px; height:14px; }}
 .theme .thumb {{ position:absolute; z-index:1; top:2px; left:2px; width:26px; height:24px; border-radius:12px;
   background:var(--surface); border:1px solid var(--line-strong); transition:transform .18s ease; }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) .theme .thumb {{ transform:translateX(32px); }} }}
-:root[data-theme="dark"] .theme .thumb, :root:has(#theme-night:checked) .theme .thumb {{ transform:translateX(32px); }}
-:root:has(#theme-day:checked) .theme .thumb {{ transform:translateX(0); }}
-.theme input:focus-visible + label {{ outline:2px solid var(--accent); outline-offset:-2px; border-radius:12px; }}
-.theme input:checked + label {{ color:var(--ink); }}
+:root[data-theme="dark"] .theme .thumb {{ transform:translateX(32px); }}
 @media (prefers-reduced-motion: reduce) {{ .theme .thumb {{ transition:none; }} }}
 @media (max-width: 560px) {{
   .who .via {{ display:none; }}
@@ -108,6 +139,34 @@ input:focus-visible, select:focus-visible {{ outline:2px solid var(--accent); ou
 .chip.crit {{ color:var(--crit); background:var(--crit-soft); }}
 .chip.none {{ color:var(--muted); border-color:var(--line-strong); }}
 
+.op {{ border:1px solid var(--line-strong); border-radius:8px; padding:10px 12px; background:var(--surface); margin:0; }}
+.op.danger {{ border-color:var(--crit); }}
+.op h3 {{ font-size:15px; margin-bottom:6px; }}
+.op.bare {{ border:0; padding:0; background:none; }}
+.confirm {{ display:flex; gap:8px; align-items:flex-start; font-size:13px; margin-bottom:10px; }}
+.confirm input {{ margin-top:3px; accent-color:var(--accent); flex:none; }}
+.op.danger .confirm input {{ accent-color:var(--crit); }}
+.js-slide .confirm, .js-slide button[type="submit"] {{ display:none; }}
+.slide {{ position:relative; height:44px; border-radius:22px; background:var(--surface-2);
+  border:1px solid var(--line-strong); overflow:hidden; touch-action:none; user-select:none; }}
+.op.danger .slide {{ border-color:var(--crit); }}
+.slide-fill {{ position:absolute; inset:0 auto 0 0; width:22px; background:var(--accent-soft); }}
+.op.danger .slide-fill {{ background:var(--crit-soft); }}
+.slide-text {{ position:absolute; inset:0; display:grid; place-items:center; font-size:13px;
+  font-weight:600; color:var(--muted); padding:0 12px 0 40px; pointer-events:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.slide-knob {{ position:absolute; top:2px; left:2px; width:38px; height:38px; border-radius:19px;
+  display:grid; place-items:center; background:var(--accent); color:var(--accent-ink); font-weight:700;
+  cursor:grab; touch-action:none; }}
+.op.danger .slide-knob {{ background:var(--crit); color:var(--surface); }}
+.slide-knob:active {{ cursor:grabbing; }}
+.slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:transform .2s ease, width .2s ease; }}
+.slide.done .slide-text {{ color:var(--accent); }}
+.slide.failed .slide-text, .op.danger .slide.failed .slide-text {{ color:var(--crit); }}
+.op.danger .slide.done .slide-text {{ color:var(--crit); }}
+.slide:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px; }}
+@media (prefers-reduced-motion: reduce) {{ .slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:none; }} }}
+
 .scroll {{ overflow-x:auto; }}
 table {{ border-collapse:collapse; width:100%; font-size:13.5px; }}
 th {{ text-align:left; font-weight:600; color:var(--muted); font-size:12.5px; padding:6px 10px 6px 0;
@@ -127,11 +186,17 @@ _MARK = ('<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">'
          '<rect x="15" y="7" width="6" height="8" rx="1.5" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.6"/>'
          '<path d="M7 11h8" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>')
 
-_SLIDER = f"""<div class="theme" role="radiogroup" aria-label="Day or night">
-<input type="radio" name="theme" id="theme-day"><label for="theme-day" title="Day">{_SUN}<span class="sr">Day</span></label>
-<input type="radio" name="theme" id="theme-night"><label for="theme-night" title="Night">{_MOON}<span class="sr">Night</span></label>
-<span class="thumb" aria-hidden="true"></span>
-</div>"""
+_ICONS = {"light": _SUN, "dark": _MOON}
+
+
+def slider(back: str, theme: str | None = None) -> str:
+    """The day/night slider: one link per theme, each returning to `back`."""
+    then, chosen = quote(back, safe="/"), ' aria-current="true"'
+    links = "".join(
+        f'<a href="{THEME_PATH}/{t}?then={then}" title="{label}"{chosen if t == theme else ""}>'
+        f'{_ICONS[t]}<span class="sr">{label}</span></a>'
+        for t, label in THEMES)
+    return f'<nav class="theme" aria-label="Day or night">{links}<span class="thumb" aria-hidden="true"></span></nav>'
 
 
 def tailnet_badge(status: dict | None) -> tuple[str, str]:
@@ -144,9 +209,10 @@ def tailnet_badge(status: dict | None) -> tuple[str, str]:
 
 
 def banner(*, name: str, status: dict | None = None, current: str | None = None,
-           viewer: dict | None = None) -> str:
+           viewer: dict | None = None, theme: str | None = None, back: str | None = None) -> str:
     """Node identity, page links (`current` is the path being shown; None hides the
-    links), who is signed in, and the day/night slider."""
+    links), who is signed in, and the day/night slider (returning to `back`, default
+    `current`, and marking `theme` as chosen)."""
     cls, text = tailnet_badge(status)
     ident = (f'<div class="ident">{_MARK}<strong>{escape(name)}</strong>'
              + (f'<span class="state {cls}">{escape(text)}</span>' if current is not None else "")
@@ -165,22 +231,46 @@ def banner(*, name: str, status: dict | None = None, current: str | None = None,
             who += ('<form method="post" action="/logout"><input type="hidden" name="csrf" '
                     f'value="{escape(viewer["csrf"])}"><button class="btn" type="submit">Log out</button></form>')
         who += "</div>"
-    return f'<header class="banner"><div class="wrap">{ident}{nav}{who}{_SLIDER}</div></header>'
+    return f'<header class="banner"><div class="wrap">{ident}{nav}{who}{slider(back or current or "/", theme)}</div></header>'
 
 
 def page(*, title: str, body: str, banner_html: str, style: str = "",
-         refresh_s: int | None = None, theme: str | None = None) -> str:
+         refresh_s: int | None = None, theme: str | None = None, script: bool = True) -> str:
     """A whole HTML document. `body` and `banner_html` are already-escaped markup; `style`
-    is the page's own CSS, added after the shared sheet."""
-    root = f' data-theme="{theme}"' if theme in ("light", "dark") else ""
-    refresh = f'<meta http-equiv="refresh" content="{int(refresh_s)}">\n' if refresh_s else ""
+    is the page's own CSS, added after the shared sheet. `refresh_s` reloads the page: by
+    the script (which waits out a slide in progress), or by a <noscript> meta refresh."""
+    root = f' data-theme="{theme}"' if theme_choice(theme) else ""
+    refresh = (f'<noscript><meta http-equiv="refresh" content="{int(refresh_s)}"></noscript>\n'
+               if refresh_s else "")
+    data = f' data-refresh="{int(refresh_s)}"' if refresh_s else ""
+    js = f'<script src="{SCRIPT}" defer></script>\n' if script else ""
     return f"""<!doctype html>
 <html lang="en"{root}><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 {refresh}<title>{escape(title)}</title>
-<style>{STYLE}{style}</style></head><body>
+{js}<style>{STYLE}{style}</style></head><body{data}>
 {banner_html}
 <main class="wrap">
 {body}
 </main></body></html>
 """
+
+
+#: Operations that take something away from tailnet users: drawn in the danger colour.
+DANGER_OPERATIONS = {"leave", "routes-off"}
+
+
+def op_form(operation: str, label: str, csrf: str | None, then: str, *, slide: bool = False) -> str:
+    """One tailnet operation (`TAILNET_OPERATIONS`) as a may-disturb form posting back to
+    `then`: its warning as the required confirm, and a submit button named `label`. With
+    `slide`, script swaps the confirm and button for a slider reading `label` (ADR-0006), on
+    a bare form; the warning then shows only without script, where it is the confirm."""
+    path, warning = TAILNET_OPERATIONS[operation]
+    danger = operation in DANGER_OPERATIONS
+    classes = "op" + (" danger" if danger else "") + (" bare" if slide else "")
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    return (f'<form class="{classes}" method="post" action="{escape(path)}"{" data-slide" if slide else ""}>'
+            f'{token}<input type="hidden" name="then" value="{escape(then)}">'
+            f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '
+            f'<span>{escape(warning)}</span></label>'
+            f'<button class="btn {"danger" if danger else "primary"}" type="submit">{escape(label)}</button></form>')

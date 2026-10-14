@@ -17,6 +17,7 @@ import logging
 import os
 import signal
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -38,6 +39,13 @@ log = logging.getLogger("main")
 
 #: Tick cadence, seconds. PROVISIONAL — not yet measured (TODO.md, §8.11).
 TICK_PERIOD_S = 5.0
+#: Exit status that asks systemd to start the service again (the dashboard's restart). The
+#: unit's Restart=on-failure restarts any non-zero exit; ops marks 75 as a forced restart
+#: and a success, so the journal doesn't call it a failure.
+RESTART_EXIT = 75
+#: Grace between answering the restart request and stopping, so the 303 reaches the browser.
+#: Not a behaviour constant: nothing on the node depends on it.
+RESTART_GRACE_S = 1.0
 #: Every address: the dashboard sorts each request into a door itself, and the firewall
 #: drops 8080 off lo/tailscale0 (ADR-0003 §1).
 DASHBOARD_HOST = "::"
@@ -94,12 +102,14 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
             fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
             actions: list | None = None, config_root: str | None = None,
             tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None,
-            site_networks=None) -> Node:
+            site_networks=None, restart: Callable[[], None] | None = None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
     from every module's declared `CONFIG_FIELDS`, and the dashboard gets its operator
     surface. Without it there is no config editing.
+
+    `restart` (serve's) lets the dashboard restart the service.
 
     `tailnet_writer` enables tailnet-gateway's writer (ADR-0005; registered disabled
     otherwise). Tests pass a fake `overlay_writer` and an inline `writer_spawn`."""
@@ -111,7 +121,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
     surface = node.config.operator_surface() if node.config else None
     dash_registry, node.dashboard = dashboard.build(
         sub, pub, dashboard_host, dashboard_port, fallback, admin_cred, actions, surface,
-        invoke=lambda topic, payload, requires: invoke(node, topic, payload, requires))
+        invoke=lambda topic, payload, requires: invoke(node, topic, payload, requires),
+        restart=restart)
     gateway_config = node.config.owner_view("tailnet-gateway") if node.config else None
     node.registries = [
         tailnet_gateway.build(sub, pub, overlay_source, config=gateway_config,
@@ -187,16 +198,22 @@ def _writer_from_env() -> bool:
 
 def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    stop, restarting = threading.Event(), threading.Event()
+
+    def restart() -> None:
+        # Answer first: the dashboard's 303 goes out before the loop stops.
+        restarting.set()
+        threading.Timer(RESTART_GRACE_S, stop.set).start()
+
     node = compose(Bus(), dashboard_port=_port_from_env(),
                    fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
                    admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT,
-                   tailnet_writer=_writer_from_env())
+                   tailnet_writer=_writer_from_env(), restart=restart)
     try:
         node.dashboard.start()
     except OSError as exc:
         log.error("dashboard not available — could not bind %s:%s (%s); running without it",
                   DASHBOARD_HOST, _port_from_env(), exc)
-    stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     log.info("commissioning-node up; capabilities: %s", ", ".join(sorted(node.capabilities())))
@@ -207,6 +224,9 @@ def serve() -> None:
         deadline = max(deadline + TICK_PERIOD_S, time.monotonic())
         stop.wait(max(0.0, deadline - time.monotonic()))
     node.dashboard.stop()
+    if restarting.is_set():
+        log.info("commissioning-node stopped to restart (exit %d)", RESTART_EXIT)
+        sys.exit(RESTART_EXIT)
     log.info("commissioning-node stopped")
 
 

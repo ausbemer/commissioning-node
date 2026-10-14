@@ -12,6 +12,9 @@ ExecStart=/usr/bin/python3 @REPO_ROOT@/main.py
 Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=5
+# The dashboard's Restart exits 75: always start again, and don't log it as a failure.
+RestartForceExitStatus=75
+SuccessExitStatus=75
 NoNewPrivileges=yes
 ProtectSystem=full
 # The config registry's values and secrets (ADR-0004). /etc stays read-only to the daemon,

@@ -441,3 +441,20 @@ environment says `CN_TAILNET_WRITER=0`. The switch is kept as the node's off-swi
 operator join, leave or rejoin), and a malformed value turns the writer off with a
 warning. The rehearsal drop-in (`…/commissioning-node.service.d/tailnet-writer.conf`) is
 removed on the node. `auto_rejoin` on `/config` still turns off only the automatic rejoin.
+
+### 2026-10-13 — Routes off
+
+The operator needed to stop advertising routes without editing the saved value. A new
+operation, **`routes-off`**, sets the advertised routes to none
+(`tailscale set --advertise-routes=`), whatever is saved. The contract needs no change:
+`TailnetApply.operation` is an open vocabulary, and an older writer refuses a name it
+doesn't know.
+
+- **Safe direction, like Leave:** it offers the tailnet less, so it needs no fresh reading.
+  It still takes the one write slot (rung 5), and its outcome is a visible result (rung 7).
+- **It is confirmed state:** the join record then holds no routes, so an auto-rejoin
+  restores *no routes*, not the saved ones (ruling 1: a rejoin applies only what was
+  confirmed). Routes applies the saved ones again.
+- **On `/config`** the advertised-routes row has one slider, a toggle: *Stop advertising
+  routes* (danger colour) while any are advertised, else *Advertise <saved routes>*. Moving
+  from one set to another goes through off.

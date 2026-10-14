@@ -74,6 +74,12 @@ class Invoker(Protocol):
     def __call__(self, topic: str, payload: dict, requires: str) -> tuple[bool, str]: ...
 
 
+#: Restart the commissioning-node service (service-restart): its POST path and warning.
+RESTART_PATH = "/actions/node/restart"
+RESTART_WARNING = ("Restarts the commissioning-node service: the dashboard is away for about "
+                   "10 s and runs the code checked out now. tailscaled, MediaMTX and the "
+                   "streams keep running.")
+
 #: The capability a tailnet apply needs (§5): advertised only once the writer is enabled.
 TAILNET_WRITER = "tailnet-gateway:tailnet-writer"
 
@@ -88,6 +94,9 @@ TAILNET_OPERATIONS = {
     "routes": ("/actions/tailnet/routes",
                "Changes the site networks this node offers the tailnet; tailnet users lose "
                "access to any network it stops advertising."),
+    "routes-off": ("/actions/tailnet/routes-off",
+                   "Stops offering the site networks to the tailnet; tailnet users lose access "
+                   "to them. The saved routes are kept."),
     "leave": ("/actions/tailnet/leave",
               "Disconnects this node from the tailnet. Tailnet sessions to it end; recovery is "
               "the LAN fallback on :8443."),

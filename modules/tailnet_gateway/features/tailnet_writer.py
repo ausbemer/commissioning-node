@@ -31,7 +31,7 @@ from interfaces import (TAILNET_APPLY, TAILNET_APPLY_RESULT, TailnetApply, Tailn
                         __version__ as CONTRACT_VERSION)
 
 from ..interface import (JOIN, LEAVE, MODULE, OPERATIONS, OVERLAY_SNAPSHOT, RENAME, ROUTES,
-                         WRITE_OUTCOME, ConfigView, OverlaySnapshot, WriteOutcome, WritePlan,
+                         ROUTES_OFF, WRITE_OUTCOME, ConfigView, OverlaySnapshot, WriteOutcome, WritePlan,
                          WriterSlot, resolve_routes)
 
 log = logging.getLogger(MODULE)
@@ -115,6 +115,10 @@ class TailnetWriter:
             # tailnet"), so it needs no fresh reading: an unreadable status must not trap the
             # node on a tailnet the operator wants it off.
             return WritePlan(**base), ""
+        if cmd.operation == ROUTES_OFF:
+            # The same safe direction for routes: offer the tailnet no site network. The join
+            # record then holds no routes, so a rejoin doesn't bring them back.
+            return WritePlan(**base, routes=[]), ""
         snap = self._snapshot
         period = snap.period_s if snap else None
         if snap is None or not is_fresh(self._snapshot_at, period, self._clock()):

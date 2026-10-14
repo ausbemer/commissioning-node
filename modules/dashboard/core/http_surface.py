@@ -10,6 +10,14 @@
 Every decision is a pure function from `interface/` (`classify`, `host_allowed`,
 `same_origin`, `authorize`, `AdminAuth`); this file only moves bytes and calls them, and
 every write passes `authorize()` first. Every refusal is in-band with its reason (rung 7).
+
+Static files (`STATIC_PATH`, ADR-0006) are the module's `static/` directory as it was at
+startup: an allowlist by name, never a path joined from the request, and sorted into a door
+like a page.
+
+The day/night choice (`THEME_PATH`) is not a write: it changes nothing on the node, only a
+cookie in the caller's own browser. It is still sorted into a door like any page, and it
+returns only to a page this surface serves (ADR-0003 amendment, 2026-10-13).
 """
 from __future__ import annotations
 
@@ -20,14 +28,16 @@ import socket
 import ssl
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Mapping
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qs, parse_qsl
 
-from ..interface import (FALLBACK, MODULE, Action, ActionResult, AdminAuth, Caller,
-                         ConfigSurface, DashboardState, PeerDirectory, Refusal, View, authorize,
-                         classify, config_rows, host_allowed, same_origin)
+from ..interface import (FALLBACK, MODULE, STATIC_PATH, THEME_COOKIE, THEME_PATH, Action, ActionResult,
+                         AdminAuth, Caller, ConfigSurface, DashboardState, PeerDirectory, Refusal,
+                         View, authorize, classify, config_rows, host_allowed, same_origin,
+                         theme_choice, theme_return)
 from ..interface.admin import COOKIE, LABEL
 
 log = logging.getLogger(MODULE)
@@ -39,20 +49,37 @@ LOGOUT_PATH = "/logout"
 MAX_BODY = 16 * 1024
 #: Seconds a connection may sit idle mid-request (a slow client holds one thread only).
 CONN_TIMEOUT_S = 15
+#: How long a browser keeps the day/night choice. A display preference, not a behaviour constant.
+THEME_MAX_AGE_S = 365 * 24 * 3600
 
 #: On every response. No framing (clickjacking a form), no sniffing, no referrer leaks;
-#: the pages have inline CSS only and no scripts. Referrer-Policy is `same-origin`, never
+#: inline CSS, and script only from this node's own files (ADR-0006): no inline script, no
+#: event-handler attributes, no eval, nothing from another origin. Referrer-Policy is `same-origin`, never
 #: `no-referrer`: under `no-referrer` browsers send `Origin: null` on every POST, even
 #: same-origin (Fetch, "append a request Origin header"), and `same_origin()` refuses them
 #: all. `same-origin` still sends nothing to other sites.
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; "
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; "
+                               "style-src 'unsafe-inline'; "
                                "form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
     "Cache-Control": "no-store",
 }
+
+
+#: The module's static files and the types they are served as (ADR-0006).
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
+
+
+def load_static(directory: Path = STATIC_DIR) -> dict[str, tuple[str, str]]:
+    """{file name: (content type, text)} for every servable file, read once at startup."""
+    if not directory.is_dir():
+        return {}
+    return {f.name: (STATIC_TYPES[f.suffix], f.read_text(encoding="utf-8"))
+            for f in sorted(directory.iterdir()) if f.is_file() and f.suffix in STATIC_TYPES}
 
 
 @dataclass(frozen=True)
@@ -141,8 +168,11 @@ class HttpSurface:
         self._actions = {a.path: a for a in (actions or [])}
         self._login_view = login_view
         self._config = config
+        self._static = load_static()
         reserved = {LOGIN_PATH, LOGOUT_PATH, STATE_PATH}
-        clash = (set(self._views) & set(self._actions)) | (reserved & (set(self._views) | set(self._actions)))
+        paths = set(self._views) | set(self._actions)
+        clash = ((set(self._views) & set(self._actions)) | (reserved & paths)
+                 | {p for p in paths if p == THEME_PATH or p.startswith((THEME_PATH + "/", STATIC_PATH))})
         if clash:
             raise ValueError(f"dashboard paths claimed twice: {sorted(clash)}")
         self._host, self._port = host, port
@@ -221,26 +251,37 @@ class HttpSurface:
                                                     "tailnet IP address (or localhost on the node)")
                 return who
 
-            def _cookie(self) -> str | None:
+            def _cookie(self, name: str = COOKIE) -> str | None:
                 try:
                     jar = SimpleCookie(self.headers.get("Cookie", ""))
                 except CookieError:
                     return None
-                return jar[COOKIE].value if COOKIE in jar else None
+                return jar[name].value if name in jar else None
+
+            def _theme(self) -> str | None:
+                return theme_choice(self._cookie(THEME_COOKIE))
 
             # -- GET ---------------------------------------------------------------------
 
             def do_GET(self) -> None:  # noqa: N802 — http.server naming
-                path = self.path.split("?", 1)[0]
+                path, _, query = self.path.partition("?")
                 if tls and path == LOGIN_PATH:
                     return self._login_page("", 200)
                 caller = self._caller()
                 if isinstance(caller, Refusal):
                     return self._refuse(caller.status, caller.message)
+                if path.startswith(THEME_PATH + "/"):
+                    # Allowed before a fallback login too: the login page has the slider.
+                    return self._set_theme(path[len(THEME_PATH) + 1:], query)
                 if caller is None:
                     if path == STATE_PATH:
                         return self._refuse(401, "log in first")
                     return self._redirect(LOGIN_PATH)
+                if path.startswith(STATIC_PATH):
+                    found = surface._static.get(path[len(STATIC_PATH):])
+                    if found is None:
+                        return self._refuse(404, "not found")
+                    return self._send(200, *found)
                 if path == STATE_PATH:
                     return self._send(200, "application/json",
                                       json.dumps(surface._state.snapshot(), indent=2))
@@ -249,6 +290,12 @@ class HttpSurface:
                     return self._refuse(404, "not found")
                 snap = surface._state.snapshot()
                 snap["viewer"] = {"label": caller.label, "door": caller.door, "csrf": caller.csrf}
+                snap["theme"] = self._theme()
+                # Display state a page keeps across its own auto-refresh (e.g. a section left
+                # open); the view reads only the keys it knows and escapes what it shows.
+                snap["query"] = {k: v[0] for k, v in parse_qs(query).items()}
+                # The write paths this surface answers, so a view offers only what exists.
+                snap["writes"] = sorted(surface._actions)
                 if surface._config is not None:
                     snap["config"] = config_rows(surface._config)   # secrets carry no value
                 self._send(200, view.content_type, view.render(snap))
@@ -326,14 +373,28 @@ class HttpSurface:
 
             # -- responses ---------------------------------------------------------------
 
+            def _set_theme(self, name: str, query: str) -> None:
+                theme = theme_choice(name)
+                if theme is None:
+                    return self._refuse(404, "not found")
+                pages = set(surface._views) | ({LOGIN_PATH} if tls else set())
+                then = (parse_qs(query).get("then") or [None])[0]
+                secure = "; Secure" if tls else ""
+                self._redirect(theme_return(then, pages),
+                               set_cookie=f"{THEME_COOKIE}={theme}; Path=/; Max-Age={THEME_MAX_AGE_S}; "
+                                          f"HttpOnly; SameSite=Strict{secure}")
+
             def _login_page(self, message: str, code: int) -> None:
                 view = surface._login_view
-                body = view.render({"message": message}) if view else message
+                body = view.render({"message": message, "theme": self._theme()}) if view else message
                 self._send(code, view.content_type if view else "text/plain; charset=utf-8", body)
 
-            def _redirect(self, to: str, cookie: str | None = None, clear_cookie: bool = False) -> None:
+            def _redirect(self, to: str, cookie: str | None = None, clear_cookie: bool = False,
+                          set_cookie: str | None = None) -> None:
                 self.send_response(303)
                 self.send_header("Location", to)
+                if set_cookie is not None:
+                    self.send_header("Set-Cookie", set_cookie)
                 if cookie is not None:
                     self.send_header("Set-Cookie", f"{COOKIE}={cookie}; Path=/; Secure; HttpOnly; SameSite=Strict")
                 elif clear_cookie:

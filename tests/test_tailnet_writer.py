@@ -421,14 +421,15 @@ def served(tmp_path):
     node.dashboard.stop()
 
 
-def test_panel_offers_join_only_with_a_key(served) -> None:
+def test_overview_offers_join_only_with_a_key(served) -> None:
     node, _, conn, origin = served
-    page = call(conn, "GET", "/config")[2]
-    assert "On a tailnet: <strong>no</strong>" in page and 'action="/actions/tailnet/join"' not in page
-    assert "save a reusable ephemeral auth key" in page and "not enabled yet" not in page
+    page = call(conn, "GET", "/")[2]
+    assert "not connected" in page and 'action="/actions/tailnet/join"' not in page
+    assert ">Save an auth key</a> to join." in page and "Tailnet writer off" not in page
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
-    page = call(conn, "GET", "/config")[2]
-    assert 'action="/actions/tailnet/join"' in page and 'name="confirm"' in page
+    page = call(conn, "GET", "/")[2]
+    assert 'action="/actions/tailnet/join" data-slide>' in page and 'name="confirm"' in page
+    assert ">Join the Tailnet</button>" in page
     assert 'action="/actions/tailnet/leave"' not in page and KEY not in page
 
 
@@ -442,9 +443,9 @@ def test_join_from_the_page_needs_confirmation_and_reports_back(served, caplog) 
                                   {"confirm": "yes", "then": "/config"}, origin)
         assert status == 303 and headers["location"] == "/config"
         main.tick(node)
-        page = call(conn, "GET", "/config")[2]
+        page = call(conn, "GET", "/")[2]
     assert writer.calls and writer.calls[0][0] == "join"
-    assert "Last: join done" in page and "requested by local via the local door" in page
+    assert '<dt>Last action</dt><dd><span class="chip ok">Done</span> Join at' in page and ", by local</dd>" in page
     assert "192.168.137.0/24" in page
     assert KEY not in caplog.text and KEY not in page
 
@@ -456,7 +457,7 @@ def test_disabled_writer_is_said_on_the_page_and_refused(tmp_path) -> None:
     try:
         main.tick(node)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        assert "not enabled yet" in call(conn, "GET", "/config")[2]
+        assert "Tailnet writer off" in call(conn, "GET", "/")[2]
         status, _, body = call(conn, "POST", "/actions/tailnet/leave", {"confirm": "yes"},
                                {"Origin": f"http://127.0.0.1:{port}"})
         assert status == 400 and "not available" in body
@@ -624,19 +625,96 @@ def test_teardown_wipes_the_join_record(tmp_path) -> None:
     assert writer.calls == []                                  # no record, no key: never joins
 
 
-def test_panel_offers_routes_and_flags_unapproved(served) -> None:
+def test_config_routes_slider_toggles_off_and_back_on(served) -> None:
     node, writer, conn, origin = served
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
     main.tick(node)
-    page = call(conn, "GET", "/config")[2]
-    assert "Routes advertised: <strong>192.168.137.0/24</strong>" in page
-    assert "Not yet approved by the tailnet: 192.168.137.0/24" in page
-    assert 'action="/actions/tailnet/routes"' not in page      # nothing to change
+    page = call(conn, "GET", "/")[2]
+    assert '<dt>Advertised</dt><dd><span class="mono">192.168.137.0/24</span>' in page
+    assert "1 awaiting approval" in page and "/actions/tailnet/routes" not in page
+    config = call(conn, "GET", "/config")[2]
+    assert "Approved by the tailnet: none" in config
+    # Advertising: the slider is the off switch, drawn like Leave; nothing to advertise.
+    off = config.split('action="/actions/tailnet/routes-off"', 1)[1].split("</form>", 1)[0]
+    assert off.startswith(" data-slide>") and ">Stop advertising routes</button>" in off
+    assert '<input type="hidden" name="then" value="/config">' in off
+    assert 'class="op danger bare"' in config and 'action="/actions/tailnet/routes"' not in config
+    status, headers, _ = call(conn, "POST", "/actions/tailnet/routes-off",
+                              {"confirm": "yes", "then": "/config"}, origin)
+    assert status == 303 and headers["location"] == "/config"
+    main.tick(node)
+    assert writer.calls[-1] == ("routes", ())
+    # Off: the slider advertises the saved routes again (a custom CIDR here).
     call(conn, "POST", "/actions/config/tailnet-gateway/advertise_routes", {"value": "10.20.0.0/16"}, origin)
     main.tick(node)
-    page = call(conn, "GET", "/config")[2]
-    assert 'action="/actions/tailnet/routes"' in page and "Advertise 10.20.0.0/16" in page
+    config = call(conn, "GET", "/config")[2]
+    assert "Advertised: none" in config and "/actions/tailnet/routes-off" not in config
+    on = config.split('action="/actions/tailnet/routes"', 1)[1].split("</form>", 1)[0]
+    assert on.startswith(" data-slide>") and ">Advertise 10.20.0.0/16</button>" in on
+    call(conn, "POST", "/actions/tailnet/routes", {"confirm": "yes", "then": "/config"}, origin)
+    main.tick(node)
+    assert writer.calls[-1] == ("routes", ("10.20.0.0/16",))
+    assert "/actions/tailnet/routes" not in call(conn, "GET", "/")[2]
+
+
+def test_pages_mark_the_last_outcome_and_config_shows_a_failure_in_place(served) -> None:
+    import re
+    node, writer, conn, origin = served
+    call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
+    call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
+    main.tick(node)
+
+    def marker(page: str) -> str:
+        return re.search(r'data-last-apply="([^"]*)"', page).group(1)
+
+    config = call(conn, "GET", "/config")[2]
+    before = marker(config)
+    assert before and before == marker(call(conn, "GET", "/")[2])
+    # Swappable regions, so the script refreshes them without touching typed input.
+    for name in ("hostname", "tags", "advertise_routes"):
+        assert f'<div class="extra" data-live id="live-{name}">' in config
+    assert '<div data-live id="live-last" hidden' in config
+    writer.ok = False
+    call(conn, "POST", "/actions/tailnet/routes-off", {"confirm": "yes", "then": "/config"}, origin)
+    main.tick(node)
+    config = call(conn, "GET", "/config")[2]
+    assert marker(config) != before
+    region = config.split('id="live-advertise_routes">', 1)[1].split("</div>", 1)[0]
+    assert '<p class="fail">Routes-off failed:' in region
+    assert ">Stop advertising routes</button>" in region           # still advertising
+
+
+def test_routes_off_is_what_a_rejoin_restores(tmp_path) -> None:
+    clock = Clock()
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, results = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    apply(node, "routes-off")
+    main.tick(node)
+    assert results[-1]["operation"] == "routes-off" and results[-1]["ok"]
+    writer.calls.clear()
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+    clock.now += 61
+    main.tick(node)
+    assert writer.calls and writer.calls[0][0] == "join" and writer.calls[0][3] == ()
+
+
+def test_rename_sits_beside_the_hostname_on_config(served) -> None:
+    node, writer, conn, origin = served
+    call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
+    call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
+    main.tick(node)
+    assert "/actions/tailnet/rename" not in call(conn, "GET", "/config")[2]
+    call(conn, "POST", "/actions/config/tailnet-gateway/hostname", {"value": "site-b-gw"}, origin)
+    main.tick(node)
+    config = call(conn, "GET", "/config")[2]
+    assert 'action="/actions/tailnet/rename"' in config and ">Rename to site-b-gw</button>" in config
+    assert "/actions/tailnet/rename" not in call(conn, "GET", "/")[2]
 
 
 # -- review 2026-10-13: auto-rejoin acts only on what was confirmed, never after a Leave ----
