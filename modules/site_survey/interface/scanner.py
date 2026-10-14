@@ -31,7 +31,8 @@ PORTS = (80, 443, 554)
 
 def scan_problem(networks: list[str]) -> str | None:
     """Why these networks may not be scanned, or None. The one rule, used by the feature
-    before it plans and re-checked by the adapter before it runs (rung 13)."""
+    before it plans and re-checked by the adapter before it runs (rung 13). Every network must
+    pass, or none is scanned: a request covers what the node is on, never a subset of it."""
     if not networks:
         return "the node is on no IPv4 site network"
     for raw in networks:
@@ -39,6 +40,11 @@ def scan_problem(networks: list[str]) -> str | None:
             net = ipaddress.IPv4Network(raw, strict=True)
         except ValueError:
             return f"{raw!r} is not an IPv4 network"
+        if str(net) != raw:
+            return f"{raw!r} is not in CIDR form"
+        if (net.is_loopback or net.is_reserved or net.is_multicast or net.is_link_local
+                or net.subnet_of(ipaddress.IPv4Network("0.0.0.0/8"))):
+            return f"{net} is not a site network; refusing to scan it"
         if net.prefixlen < MAX_PREFIX:
             return f"{net} is wider than /{MAX_PREFIX}; refusing to scan it"
         if net.subnet_of(ipaddress.IPv4Network("100.64.0.0/10")):

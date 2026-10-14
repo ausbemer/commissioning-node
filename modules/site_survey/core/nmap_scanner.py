@@ -6,11 +6,13 @@ construction:
 
 - `--unprivileged` connect scan of `PORTS` only, discovery on the same ports; no version
   probes, no scripts, no UDP. A rate cap and a per-host timeout; one total timeout after which
-  nmap is terminated, then killed.
+  nmap's process group is terminated, then killed. Output is read in chunks and never held
+  past `OUTPUT_CAP`.
 - Networks are re-checked here (`scan_problem`, rung 13), and passed as validated CIDRs in an
   argument list, never through a shell. The node's own addresses are excluded.
-- Afterwards `ip -j -4 neigh` supplies the MACs, and the hosts that answered ARP but dropped
-  every probe (quirks Q-006). The maker comes from nmap's own prefix table, longest prefix
+- Afterwards `ip -s -j -4 neigh` supplies the MACs, and the hosts that answered ARP but dropped
+  every probe (quirks Q-006). Only entries confirmed during this scan count: Linux keeps STALE
+  entries for long-gone devices while the table is small, so an older entry proves nothing. The maker comes from nmap's own prefix table, longest prefix
   first; a locally administered MAC is "private MAC" (Q-007).
 - Hosts are site data: returned, never written anywhere (ADR-0007 Safety 6). Hostnames come
   from the site's resolver and are untrusted text: control characters are dropped and the
@@ -21,8 +23,12 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+import os
+import selectors
 import shutil
+import signal
 import subprocess
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable
@@ -53,28 +59,76 @@ PRIVATE_MAC = "private MAC"
 _DEAD = {"FAILED", "INCOMPLETE"}
 
 
+#: Seconds of slack on "confirmed during the scan": the neighbour read follows nmap's exit.
+CONFIRM_SLACK_S = 5
+
+
 @dataclass
 class NmapRun:
     returncode: int
     stdout: bytes
     stderr: bytes
+    #: Wall seconds the run took; the neighbour table is read against it.
+    elapsed_s: float = 0.0
 
 
-def run_nmap(argv: list[str]) -> NmapRun:
-    """Run nmap with the total timeout: terminate, then kill. Raises TimeoutExpired when it had
-    to be stopped. Output beyond OUTPUT_CAP is cut (the parser then fails, loudly)."""
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+class OutputTooLarge(Exception):
+    pass
+
+
+def run_nmap(argv: list[str], timeout_s: float | None = None, cap: int | None = None) -> NmapRun:
+    """Run nmap in its own process group with the total timeout: terminate the group, then
+    kill it. Output is read in chunks; past `cap` the group is killed and OutputTooLarge
+    raised. Raises TimeoutExpired when it had to be stopped."""
+    timeout_s = SCAN_TIMEOUT_S if timeout_s is None else timeout_s
+    cap = OUTPUT_CAP if cap is None else cap
+    started = time.monotonic()
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL, start_new_session=True)
+    out, err = bytearray(), bytearray()
+    sel = selectors.DefaultSelector()
+    sel.register(proc.stdout, selectors.EVENT_READ, out)
+    sel.register(proc.stderr, selectors.EVENT_READ, err)
     try:
-        out, err = proc.communicate(timeout=SCAN_TIMEOUT_S)
+        while sel.get_map():
+            left = started + timeout_s - time.monotonic()
+            if left <= 0:
+                _stop(proc)
+                raise subprocess.TimeoutExpired(argv, timeout_s)
+            for key, _ in sel.select(timeout=min(left, 1.0)):
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    sel.unregister(key.fileobj)
+                    continue
+                key.data.extend(chunk)
+                if len(out) > cap:
+                    _stop(proc)
+                    raise OutputTooLarge(f"more than {cap} bytes of output")
+                del err[:-MESSAGE_CAP]
+        proc.wait(timeout=max(0.1, started + timeout_s - time.monotonic()))
     except subprocess.TimeoutExpired:
-        proc.terminate()
-        try:
-            proc.communicate(timeout=KILL_MARGIN_S)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
+        _stop(proc)
         raise
-    return NmapRun(proc.returncode, out[:OUTPUT_CAP], err[-MESSAGE_CAP:])
+    finally:
+        sel.close()
+        proc.stdout.close()
+        proc.stderr.close()
+    return NmapRun(proc.returncode, bytes(out), bytes(err), time.monotonic() - started)
+
+
+def _stop(proc: subprocess.Popen) -> None:
+    """Terminate nmap's whole process group, then kill it after KILL_MARGIN_S. Never blocks
+    longer than that: a child holding a pipe can't keep the worker waiting."""
+    for sig, wait in ((signal.SIGTERM, KILL_MARGIN_S), (signal.SIGKILL, 1.0)):
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            proc.wait(timeout=wait)
+            return
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def nmap_argv(binary: str, networks: list[str], exclude: list[str]) -> list[str]:
@@ -169,9 +223,12 @@ class NmapScanner:
         own = [a for a in self._ip_list(["addr", "show", "up"], self._own_addresses)
                if any(ipaddress.IPv4Address(a) in n for n in nets)]
         try:
-            done = self._run(nmap_argv(self._binary, networks, own))
+            # Normalised CIDRs only reach nmap (scan_problem already insists on them).
+            done = self._run(nmap_argv(self._binary, [str(n) for n in nets], own))
         except subprocess.TimeoutExpired:
             return ScanReply(ok=False, message=f"scan failed: nmap did not finish within {SCAN_TIMEOUT_S} s and was stopped")
+        except OutputTooLarge as exc:
+            return ScanReply(ok=False, message=f"scan failed: nmap wrote {exc}; it was stopped")
         except OSError as exc:
             return ScanReply(ok=False, message=f"scan failed: nmap could not run ({exc.strerror})")
         if done.returncode != 0:
@@ -182,7 +239,8 @@ class NmapScanner:
         except ET.ParseError as exc:
             return ScanReply(ok=False, message=f"scan failed: nmap's output was unreadable ({exc})")
         found_tcp = len(hosts)
-        for address, mac in self._ip_list(["neigh", "show"], self._neighbours):
+        fresh_s = (done.elapsed_s or SCAN_TIMEOUT_S) + CONFIRM_SLACK_S
+        for address, mac in self._ip_list(["-s", "neigh", "show"], lambda e: self._neighbours(e, fresh_s)):
             ip = ipaddress.IPv4Address(address)
             if address in own or not any(ip in n for n in nets):
                 continue
@@ -213,7 +271,7 @@ class NmapScanner:
                                 timeout=IP_TIMEOUT_S, check=True)
             data = json.loads(done.stdout)
         except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-            log.warning("ip %s unreadable (%s)", args[0], exc)
+            log.warning("ip %s unreadable (%s)", " ".join(args), exc)
             return []
         return pick(data if isinstance(data, list) else [])
 
@@ -229,10 +287,15 @@ class NmapScanner:
         return out
 
     @staticmethod
-    def _neighbours(entries: list) -> list[tuple[str, str]]:
+    def _neighbours(entries: list, fresh_s: float) -> list[tuple[str, str]]:
+        """Entries with a MAC that answered ARP within the last `fresh_s` seconds (`ip -s`'s
+        `confirmed` age). No age, no claim: fails toward leaving a host off the map."""
         out = []
         for e in entries:
             if not isinstance(e, dict) or not e.get("lladdr") or set(e.get("state") or []) & _DEAD:
+                continue
+            confirmed = e.get("confirmed")
+            if not isinstance(confirmed, (int, float)) or isinstance(confirmed, bool) or not 0 <= confirmed <= fresh_s:
                 continue
             try:
                 out.append((str(ipaddress.IPv4Address(e.get("dst"))), str(e["lladdr"]).lower()))

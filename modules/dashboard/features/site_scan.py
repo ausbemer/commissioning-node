@@ -30,5 +30,7 @@ class SiteScanAction:
         ok, message = self._invoke(SITE_SCAN, command.model_dump(), SITE_SCANNER)
         if not ok:
             return ActionResult(False, message)
-        return ActionResult(True, f"scan requested (request {command.request_id}); "
-                                  "the result appears on the overview")
+        # Delivered, not accepted: site-survey may still refuse it (busy, stale status), and
+        # says so on site/scan-result, which the overview shows.
+        return ActionResult(True, f"scan request sent (request {command.request_id}); "
+                                  "the outcome appears on the overview")

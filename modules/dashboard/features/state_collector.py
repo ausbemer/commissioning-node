@@ -1,5 +1,6 @@
 """state-collector — keeps the latest card, tailnet status and apply result, camera and stream
-per entity, and the last site scan and its result (ADR-0007; in memory only, Safety 6).
+per entity, and the last site scan request, its hosts and its result (ADR-0007; in memory
+only, Safety 6). The request is observed, never acted on: the map shows a scan as running.
 
 Terminal consumer (§8.2): it deserializes through the pinned contract models and NEVER
 re-publishes. If it ever must, revisit — forwarders pass raw payloads.
@@ -7,12 +8,15 @@ re-publishes. If it ever must, revisit — forwarders pass raw payloads.
 from __future__ import annotations
 
 import logging
+import time
+from typing import Callable
 
 from pydantic import ValidationError
 
 from interfaces import (
     CAMERA_ANNOUNCED,
     SITE_HOSTS,
+    SITE_SCAN,
     SITE_SCAN_RESULT,
     STREAM_ANNOUNCED,
     SYSTEM_CARD,
@@ -21,6 +25,7 @@ from interfaces import (
     CameraAnnouncement,
     NodeCard,
     SiteHosts,
+    SiteScan,
     SiteScanResult,
     StreamAnnouncement,
     TailnetApplyResult,
@@ -44,15 +49,19 @@ _ROUTES = {
     STREAM_ANNOUNCED: ("streams", StreamAnnouncement, "camera_id"),
     SITE_HOSTS: ("site_hosts", SiteHosts, None),
     SITE_SCAN_RESULT: ("site_scan", SiteScanResult, None),
+    SITE_SCAN: ("site_request", SiteScan, None),
 }
+#: Kinds stored with the wall-clock time they arrived (`received_at`), for a payload that
+#: carries no time of its own: the map says since when a scan has run.
+_STAMPED = {"site_request"}
 
 
 class StateCollector:
     name = "state-collector"
     subscriptions = list(_ROUTES)
 
-    def __init__(self, state: DashboardState) -> None:
-        self._state = state
+    def __init__(self, state: DashboardState, now: Callable[[], float] = time.time) -> None:
+        self._state, self._now = state, now
 
     def handle(self, topic: str, payload: dict) -> list[tuple[str, dict]]:
         self._state.note_wire(topic, str(payload.get("schema_version", "missing")))
@@ -62,5 +71,8 @@ class StateCollector:
         except ValidationError as exc:
             log.warning("ignoring malformed %s: %s", topic, exc.errors(include_url=False))
             return []
-        self._state.put(kind, getattr(item, key) if key else SELF, item.model_dump())
+        value = item.model_dump()
+        if kind in _STAMPED:
+            value["received_at"] = self._now()
+        self._state.put(kind, getattr(item, key) if key else SELF, value)
         return []

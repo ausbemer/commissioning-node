@@ -38,8 +38,9 @@ REFRESH_S = 5
 #: network before unflagged hosts fold into one, and the age past which a scan reads as old.
 MAP_TILES = 24
 SCAN_OLD_S = 3600
-#: How long a confirmed Scan slide waits for its result: site-survey's total timeout (300 s)
-#: and kill margin (10 s), plus a tick to publish it.
+#: How long a requested scan reads as running without a result: site-survey's total timeout
+#: (300 s) and kill margin (10 s), plus a tick to publish it. After that the map says no result
+#: came, rather than "Scanning" forever.
 SCAN_AWAIT_S = 320
 
 STYLE = """
@@ -320,6 +321,7 @@ def _network(network: str, hosts: list[dict], cameras: dict[str, dict], scanned:
     seen = {h.get("address") for h in mine}
     # A registered camera the scan didn't find still belongs on its network, marked as such.
     mine += [{"address": a, "missing": scanned} for a in cameras if _in(a, network) and a not in seen]
+    mine.sort(key=lambda h: ipaddress.ip_address(h.get("address", "0.0.0.0")))
     tiles = [_tile(h, cameras.get(h.get("address", ""))) for h in mine]
     flagged = [t for f, t in tiles if f]
     rest = [(h, t) for h, (f, t) in zip(mine, tiles) if not f]
@@ -339,9 +341,12 @@ def _network(network: str, hosts: list[dict], cameras: dict[str, dict], scanned:
 
 
 def scan_marker(snapshot: dict) -> str:
-    """When the last scan result finished: a confirmed Scan slide holds until it changes."""
+    """The last scan request and result: a confirmed Scan slide holds until either changes (a
+    refusal is a new result; an accepted request turns the slider into "Scanning")."""
+    req = (snapshot.get("site_request") or {}).get("self") or {}
     last = (snapshot.get("site_scan") or {}).get("self") or {}
-    return f'<span hidden data-last-scan="{escape(str(last.get("finished_at", "")))}"></span>'
+    mark = f'{req.get("request_id", "")}:{last.get("finished_at", "")}'
+    return f'<span hidden data-last-scan="{escape(mark)}"></span>'
 
 
 def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now: float) -> str:
@@ -362,11 +367,21 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
     if result and not result.get("ok") and (result.get("finished_at") or 0) >= ((scan or {}).get("scanned_at") or 0):
         line += (f'<span class="fail">Last scan at {_clock(result.get("finished_at") or 0)}, by '
                  f'{escape(result.get("requested_by", ""))}: {escape(result.get("message", ""))}</span>')
+    # A request with no result of its own yet: running, for as long as a scan can take.
+    req = (snapshot.get("site_request") or {}).get("self")
+    pending = bool(req) and (result or {}).get("request_id") != req.get("request_id")
+    since = (req or {}).get("received_at") or 0
+    if pending and now - since > SCAN_AWAIT_S:
+        line += (f'<span class="fail">No result for the scan requested at {_clock(since)} by '
+                 f'{escape(req.get("requested_by", ""))}; see the journal.</span>')
+        pending = False
     control = ""
-    if SITE_SCANNER in _capabilities(snapshot):
+    if pending:
+        control = (f'<span class="chip plan">Scanning since {_clock(since)}, by '
+                   f'{escape(req.get("requested_by", ""))}</span>')
+    elif SITE_SCANNER in _capabilities(snapshot):
         csrf = (snapshot.get("viewer") or {}).get("csrf")
-        control = op_form("scan", "Scan the site network", csrf, "/", slide=True,
-                          marker="data-last-scan", await_s=SCAN_AWAIT_S)
+        control = op_form("scan", "Scan the site network", csrf, "/", slide=True, marker="data-last-scan")
     elif snapshot.get("nodes"):
         control = '<span class="chip none">Scanner off</span>'
 

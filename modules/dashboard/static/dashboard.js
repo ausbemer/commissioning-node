@@ -10,8 +10,8 @@
 //    A confirmed slide posts in the background and holds at "…" until the page shows the
 //    outcome: the write runs after the response, so the page the POST returns is stale.
 //    The outcome is the page's data-last-apply marker changing (or the form going), for up
-//    to 30 s; a form may name another marker (data-marker) and wait (data-await-s), as the
-//    site scan does. A refusal is shown on the slider, which then resets. A form marked data-await-restart
+//    to 30 s; a form may name another marker (data-marker), as the site scan does. A refusal
+//    is shown on the slider, which then resets. A form marked data-await-restart
 //    (the service restart) instead waits for the page to go away and come back, then reloads.
 // 2. Auto-refresh: <body data-refresh="N"> refreshes the page every N seconds (the
 //    <noscript> meta refresh covers no-script browsers). It fetches the same URL and swaps
@@ -192,7 +192,6 @@
 
   function submit(form, refused) {
     var action = form.getAttribute("action"), marker = markerOf(form), before = lastApply(document, marker);
-    var wait = Number(form.getAttribute("data-await-s")) > 0 ? Number(form.getAttribute("data-await-s")) : 30;
     fetch(form.action, { method: "POST", credentials: "same-origin",
                          body: new URLSearchParams(new FormData(form)) })
       .then(function (res) {
@@ -205,7 +204,7 @@
           return res.text().then(function (t) { refused(t.trim() || "Refused (" + res.status + ")"); });
         }
         if (form.hasAttribute("data-await-restart")) awaitRestart(false, Date.now() + 60000);
-        else watch(action, marker, before, false, Date.now() + wait * 1000);
+        else watch(action, marker, before, false, Date.now() + 30000);
       })
       .catch(function () { refused("The node did not answer"); });
   }

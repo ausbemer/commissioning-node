@@ -58,7 +58,9 @@ camera-config speaks VAPIX, tailnet-gateway speaks Tailscale. Nobody else runs n
 - **Scope:** the IPv4 networks the node is on now, i.e. `TailnetStatus.site_networks`
   (tailnet-gateway is their authority, ADR-0005 A3). The command carries **no targets**, like
   `TailnetApply`: a dashboard request can't point the scanner anywhere else. A network wider than
-  `MAX_PREFIX` (/22, 1022 hosts) is refused with a reason. The tailnet and the node's own
+  `MAX_PREFIX` (/22, 1022 hosts) is refused with a reason. Every detected network must pass, or
+  none is scanned: a node also on a /16 (or a docker bridge) scans nothing until that network is
+  gone, and the refusal says which one. The tailnet and the node's own
   addresses are never scanned.
 - **Probes:** unprivileged nmap host discovery and a connect scan of a short port list:
   `80, 443, 554` (web and RTSP, the ones that matter to cameras), with reverse DNS through the
@@ -187,8 +189,9 @@ and sends `site/scan` through `invoke()` with `requires=site-survey:scanner`.
    *Done 2026-10-13* (dashboard 0.9.0): the Scan slider and its result, the map. One change from
    D5: the map is HTML tiles on CSS "wires", not two SVG drawings. It reflows from phone to wide
    screen without a second drawing, its text stays selectable and readable by screen readers,
-   and it needs no script either. The slider waits on its own marker (`data-last-scan`) for up
-   to 320 s, the scan's timeout plus a tick.
+   and it needs no script either. The dashboard also records the `site/scan` it sent, so while a
+   scan runs the map reads "Scanning since …" in place of the slider (and says so if no result
+   came within 320 s, the scan's timeout plus a tick); the page keeps refreshing meanwhile.
 4. **tailnet-gateway:** `TailnetPeer.endpoint`; the map flags tailnet nodes.
 5. **camera-config:** VAPIX identification (read-only) and `camera/identified`; the map flags
    cameras.

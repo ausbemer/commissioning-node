@@ -54,14 +54,17 @@ XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 NEIGH = [
-    {"dst": "10.20.30.1", "dev": "eth0", "lladdr": "04:42:1a:00:00:01", "state": ["REACHABLE"]},
-    {"dst": "10.20.30.21", "dev": "eth0", "lladdr": "AC:CC:8E:12:34:56", "state": ["REACHABLE"]},
-    {"dst": "10.20.30.40", "dev": "eth0", "lladdr": "da:00:00:00:00:40", "state": ["DELAY"]},
-    # Answered ARP, dropped every probe (Q-006): only the neighbour table knows it.
-    {"dst": "10.20.30.50", "dev": "eth0", "lladdr": "70:b3:d5:98:70:01", "state": ["STALE"]},
+    {"dst": "10.20.30.1", "dev": "eth0", "lladdr": "04:42:1a:00:00:01", "state": ["REACHABLE"], "confirmed": 2},
+    {"dst": "10.20.30.21", "dev": "eth0", "lladdr": "AC:CC:8E:12:34:56", "state": ["REACHABLE"], "confirmed": 5},
+    {"dst": "10.20.30.40", "dev": "eth0", "lladdr": "da:00:00:00:00:40", "state": ["DELAY"], "confirmed": 20},
+    # Answered ARP during the scan, dropped every probe (Q-006): only the neighbour table knows it.
+    {"dst": "10.20.30.50", "dev": "eth0", "lladdr": "70:b3:d5:98:70:01", "state": ["STALE"], "confirmed": 25},
+    # Gone for 16 minutes; Linux keeps STALE entries while the table is small. Not a host.
+    {"dst": "10.20.30.70", "dev": "eth0", "lladdr": "00:11:22:33:44:70", "state": ["DELAY"], "confirmed": 966},
+    {"dst": "10.20.30.71", "dev": "eth0", "lladdr": "00:11:22:33:44:71", "state": ["STALE"]},   # no age
     {"dst": "10.20.30.60", "dev": "eth0", "state": ["FAILED"]},
-    {"dst": "10.20.30.61", "dev": "eth0", "lladdr": "00:24:24:00:00:61", "state": ["INCOMPLETE"]},
-    {"dst": "192.168.99.5", "dev": "wlan0", "lladdr": "00:11:22:33:44:55", "state": ["REACHABLE"]},
+    {"dst": "10.20.30.61", "dev": "eth0", "lladdr": "00:24:24:00:00:61", "state": ["INCOMPLETE"], "confirmed": 1},
+    {"dst": "192.168.99.5", "dev": "wlan0", "lladdr": "00:11:22:33:44:55", "state": ["REACHABLE"], "confirmed": 1},
 ]
 ADDRS = [{"ifname": "lo", "addr_info": [{"local": "127.0.0.1", "prefixlen": 8}]},
          {"ifname": "eth0", "addr_info": [{"local": SELF, "prefixlen": 24}]},
@@ -73,7 +76,7 @@ PREFIXES = {"04421A": "ASUSTek Computer", "ACCC8E": "Axis Communications AB",
 class Nmap:
     def __init__(self, run: NmapRun | None = None, raises: Exception | None = None):
         self.argv: list[list[str]] = []
-        self.run = run or NmapRun(0, XML, b"")
+        self.run = run or NmapRun(0, XML, b"", elapsed_s=24.0)
         self.raises = raises
 
     def __call__(self, argv):
@@ -83,7 +86,11 @@ class Nmap:
         return self.run
 
 
+IP_CALLS: list[list[str]] = []
+
+
 def ip_run(argv, **kw):
+    IP_CALLS.append(argv)
     data = NEIGH if "neigh" in argv else ADDRS
     return subprocess.CompletedProcess(argv, 0, json.dumps(data), "")
 
@@ -123,6 +130,46 @@ def test_scan_merges_the_neighbour_table() -> None:
     assert by["10.20.30.50"].found_by == "arp" and by["10.20.30.50"].axis_maker   # Q-006, MA-S
     assert all(h.found_by == "tcp" for a, h in by.items() if a != "10.20.30.50")
     assert reply.message == f"scanned {NET}: 3 hosts answered a probe, 1 more answered only ARP"
+    assert ["ip", "-j", "-4", "-s", "neigh", "show"] in IP_CALLS
+
+
+def test_only_neighbours_confirmed_during_the_scan_count() -> None:
+    nmap = Nmap(NmapRun(0, XML, b"", elapsed_s=10.0))          # .40 (20 s) and .50 (25 s) predate it
+    by = {h.address: h for h in adapter(nmap).scan([NET]).hosts}
+    assert "10.20.30.50" not in by and "10.20.30.70" not in by and "10.20.30.71" not in by
+    assert by["10.20.30.40"].mac is None and by["10.20.30.40"].maker is None     # nmap saw it; no fresh MAC
+
+
+def test_hosts_past_the_cap_are_cut_and_said(monkeypatch) -> None:
+    monkeypatch.setattr(ns, "MAX_HOSTS", 2)
+    reply = adapter(Nmap()).scan([NET])
+    assert [h.address for h in reply.hosts] == ["10.20.30.1", "10.20.30.21"]
+    assert reply.message.endswith("; 2 more not kept")
+
+
+@pytest.mark.parametrize("raw, clean", [("cam\x07-gate3", "cam-gate3"), ("\u202egnp.exe", "gnp.exe"),
+                                        ("a" * 300, "a" * 253), ("  ", None), (None, None)])
+def test_hostnames_from_the_site_resolver_are_cleaned(raw, clean) -> None:
+    assert ns.clean_hostname(raw) == clean
+
+
+def test_run_nmap_returns_output_and_capped_errors() -> None:
+    r = ns.run_nmap(["python3", "-c", "import sys; sys.stdout.write('x' * 1000); sys.stderr.write('e' * 900); sys.exit(3)"])
+    assert (r.returncode, len(r.stdout), len(r.stderr)) == (3, 1000, ns.MESSAGE_CAP) and r.elapsed_s >= 0
+
+
+def test_run_nmap_stops_runaway_output() -> None:
+    with pytest.raises(ns.OutputTooLarge):
+        ns.run_nmap(["python3", "-c", "import sys\nwhile True: sys.stdout.write('y' * 65536); sys.stdout.flush()"],
+                    cap=1_000_000)
+
+
+def test_run_nmap_stops_the_whole_group_on_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(ns, "KILL_MARGIN_S", 1)
+    with pytest.raises(subprocess.TimeoutExpired):
+        ns.run_nmap(["bash", "-c", "trap '' TERM; (trap '' TERM; sleep 30) & sleep 30"], timeout_s=0.5)
+    left = subprocess.run(["pgrep", "-f", "^sleep 30$"], capture_output=True, text=True).stdout
+    assert left == ""
 
 
 @pytest.mark.parametrize("mac, maker", [
@@ -144,7 +191,9 @@ def test_only_axis_itself_is_axis() -> None:
 
 
 @pytest.mark.parametrize("networks", [[], ["10.0.0.0/16"], ["100.100.1.0/24"], ["8.8.8.0/24"],
-                                      ["10.20.30.5/24"], ["-oN/tmp/x"]])
+                                      ["10.20.30.5/24"], ["-oN/tmp/x"], ["10.0.0.0/255.255.252.0"],
+                                      ["10.0.0.5"], ["127.0.0.0/24"], ["0.0.0.0/24"], ["169.254.1.0/24"],
+                                      ["240.0.0.0/22"], [NET, "10.0.0.0/16"]])
 def test_adapter_rechecks_the_networks_and_never_runs_nmap(networks) -> None:
     nmap = Nmap()
     reply = adapter(nmap).scan(networks)
@@ -158,6 +207,7 @@ def test_adapter_rechecks_the_networks_and_never_runs_nmap(networks) -> None:
     (Nmap(raises=FileNotFoundError(2, "No such file")), None, "could not run"),
     (Nmap(NmapRun(1, b"", b"Failed to resolve \"x\"")), None, "nmap: Failed to resolve"),
     (Nmap(NmapRun(0, XML[: len(XML) // 2], b"")), None, "unreadable"),
+    (Nmap(raises=ns.OutputTooLarge("more than 4 bytes of output")), None, "it was stopped"),
 ])
 def test_failures_say_why(nmap, which, said) -> None:
     reply = (adapter(nmap, which) if which else adapter(nmap)).scan([NET])

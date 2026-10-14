@@ -261,19 +261,18 @@ DANGER_OPERATIONS = {"leave", "routes-off"}
 
 
 def op_form(operation: str, label: str, csrf: str | None, then: str, *, slide: bool = False,
-            marker: str | None = None, await_s: int | None = None) -> str:
+            marker: str | None = None) -> str:
     """One tailnet or site operation (`TAILNET_OPERATIONS`, `SITE_OPERATIONS`) as a may-disturb
     form posting back to `then`: its warning as the required confirm, and a submit button
     named `label`. With `slide`, script swaps the confirm and button for a slider reading
     `label` (ADR-0006), on a bare form; the warning then shows only without script, where it
-    is the confirm. A confirmed slide waits for the page's `data-last-apply` marker to change,
-    for up to 30 s; `marker` names another marker attribute and `await_s` another wait (0.9.0)."""
+    is the confirm. A confirmed slide waits up to 30 s for the form to go or the page's
+    `data-last-apply` marker to change; `marker` names another marker attribute (0.9.0)."""
     path, warning = TAILNET_OPERATIONS.get(operation) or SITE_OPERATIONS[operation]
     danger = operation in DANGER_OPERATIONS
     classes = "op" + (" danger" if danger else "") + (" bare" if slide else "")
     token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
-    waits = (f' data-marker="{escape(marker)}"' if marker else "") + \
-        (f' data-await-s="{int(await_s)}"' if await_s else "")
+    waits = f' data-marker="{escape(marker)}"' if marker else ""
     return (f'<form class="{classes}" method="post" action="{escape(path)}"{" data-slide" if slide else ""}{waits}>'
             f'{token}<input type="hidden" name="then" value="{escape(then)}">'
             f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '

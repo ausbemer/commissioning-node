@@ -29,7 +29,7 @@ def host(address, **kw):
             "axis_maker": False, "found_by": "tcp", **kw}
 
 
-def snap(hosts=None, scanned_at=NOW - 240, result=None, cameras=None, nodes=CARD, status=None):
+def snap(hosts=None, scanned_at=NOW - 240, result=None, cameras=None, nodes=CARD, status=None, request=None):
     s = {"nodes": nodes, "tailnet": {"self": status or {"hostname": "cn", "connected": True,
                                                         "addresses": ["100.64.0.7"], "site_networks": [NET]}},
          "cameras": cameras or {}, "streams": {}, "wire": {}, "now": NOW,
@@ -39,6 +39,8 @@ def snap(hosts=None, scanned_at=NOW - 240, result=None, cameras=None, nodes=CARD
                                     "self_addresses": ["10.20.30.2"], "requested_by": "alice@example.com"}}
     if result is not None:
         s["site_scan"] = {"self": result}
+    if request is not None:
+        s["site_request"] = {"self": request}
     return s
 
 
@@ -54,9 +56,9 @@ def test_not_scanned_yet_shows_the_detected_network_and_the_slider() -> None:
     page = render(snap())
     assert "Not scanned yet. A scan probes the site network once, when you ask." in page
     assert f'<span class="cidr mono">{NET}</span>' in page and "Not scanned yet.</li>" in page
-    assert 'action="/actions/site/scan" data-slide data-marker="data-last-scan" data-await-s="320">' in page
+    assert 'action="/actions/site/scan" data-slide data-marker="data-last-scan">' in page
     assert "Probes every address on the site network (ports 80, 443, 554)" in page
-    assert '<span hidden data-last-scan=""></span>' in page
+    assert '<span hidden data-last-scan=":"></span>' in page
 
 
 def test_scanner_off_has_no_slider() -> None:
@@ -110,13 +112,37 @@ def test_an_old_scan_reads_old_and_a_failure_says_why() -> None:
                                "message": "scan refused: a scan is already running"}))
     assert '<section class="site old"' in page and "Scanned 2 h ago" in page
     assert 'class="fail">Last scan at' in page and "by bob: scan refused: a scan is already running" in page
-    assert f'data-last-scan="{NOW - 30}"' in page
+    assert f'data-last-scan=":{NOW - 30}"' in page
 
 
 def test_a_failure_older_than_the_scan_is_not_shown() -> None:
     page = render(snap([host("10.20.30.1")], result={"ok": False, "finished_at": NOW - 900,
                                                      "requested_by": "bob", "message": "old news"}))
     assert "old news" not in page
+
+
+def test_a_running_scan_replaces_the_slider_until_its_result() -> None:
+    req = {"request_id": "r2", "requested_by": "bob", "door": "tailnet", "received_at": NOW - 40}
+    page = render(snap([host("10.20.30.1")], request=req,
+                       result={"request_id": "r1", "ok": True, "finished_at": NOW - 300, "message": "ok"}))
+    assert "Scanning since" in page and ", by bob</span>" in page and "/actions/site/scan" not in page
+    assert 'data-last-scan="r2:' in page
+    page = render(snap([host("10.20.30.1")], request=req,
+                       result={"request_id": "r2", "ok": True, "finished_at": NOW - 5, "message": "ok"}))
+    assert "Scanning since" not in page and "/actions/site/scan" in page
+
+
+def test_a_scan_with_no_result_stops_reading_as_running() -> None:
+    req = {"request_id": "r2", "requested_by": "bob", "door": "tailnet", "received_at": NOW - ov.SCAN_AWAIT_S - 1}
+    page = render(snap(request=req))
+    assert "Scanning since" not in page and "No result for the scan requested at" in page
+    assert "/actions/site/scan" in page
+
+
+def test_tiles_are_in_address_order_after_the_flagged() -> None:
+    cams = {"A": {"camera_id": "X", "address": "10.20.30.5", "label": "Lobby"}}
+    t = tiles(render(snap([host("10.20.30.9"), host("10.20.30.30")], cameras=cams)))
+    assert ["10.20.30.5" in t[0], "10.20.30.9" in t[1], "10.20.30.30" in t[2]] == [True, True, True]
 
 
 # -- the Scan action through the real doors --------------------------------------------------
@@ -172,11 +198,12 @@ def test_scan_needs_confirmation_then_the_map_shows_the_result(served) -> None:
     status, headers, _ = call(conn, "POST", "/actions/site/scan", {"confirm": "yes", "then": "/"}, origin)
     assert status == 303 and headers["location"] == "/"
     assert scanner.calls == [[NET]]
+    assert "Scanning since" in call(conn, "GET", "/")[2]   # the outcome isn't drained until the tick
     main.tick(node)                                       # the outcome is drained and published
     page = call(conn, "GET", "/")[2]
     assert "by local: 1 host answered on 10.20.30.0/24." in page
     assert "Axis by maker" in page and "10.20.30.21" in page
-    assert re.search(r'data-last-scan="\d', page)
+    assert re.search(r'data-last-scan="[0-9a-f]{12}:\d', page) and "Scanning since" not in page
 
 
 def test_scan_without_the_same_origin_is_refused(served) -> None:
