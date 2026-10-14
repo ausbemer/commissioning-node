@@ -29,10 +29,10 @@ AUTH_KEY = ConfigField(
     help="A tag-locked OAuth client secret, or a reusable, ephemeral, tagged auth key. It is "
          "kept so the node can rejoin after a power cycle (ADR-0005 A1, A2). An OAuth secret "
          "may end in ?preauthorized=true (and &ephemeral=true) so a rejoin needs no approval.",
-    # Tailscale's OAuth-secret options, each at most once (ADR-0005 amendment); baseURL is
-    # not accepted.
-    pattern=r"tskey-[A-Za-z0-9-]+(\?(ephemeral|preauthorized)=(true|false)"
-            r"(&(?!\2)(ephemeral|preauthorized)=(true|false))?)?")
+    # Tailscale's OAuth-secret options, each at most once (ADR-0005 amendment). baseURL is
+    # not accepted, nor ephemeral=false: the node is ephemeral on every site (D4).
+    pattern=r"tskey-[A-Za-z0-9-]+(\?(ephemeral=true|preauthorized=(true|false)"
+            r"|ephemeral=true&preauthorized=(true|false)|preauthorized=(true|false)&ephemeral=true))?")
 AUTO = "auto"
 ADVERTISE_ROUTES = ConfigField(
     module=MODULE, name="advertise_routes", kind="str_list", default=[AUTO],
