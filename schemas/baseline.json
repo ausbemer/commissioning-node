@@ -31,6 +31,74 @@
     "title": "ModuleInfo",
     "type": "object"
   },
+  "$defs/SiteHost": {
+    "description": "One address on a site network that answered a scan. Site data: never persisted.",
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "axis_maker": {
+        "default": false,
+        "title": "Axis Maker",
+        "type": "boolean"
+      },
+      "found_by": {
+        "default": "tcp",
+        "title": "Found By",
+        "type": "string"
+      },
+      "hostname": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Hostname"
+      },
+      "mac": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mac"
+      },
+      "maker": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Maker"
+      },
+      "open_ports": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Open Ports",
+        "type": "array"
+      }
+    },
+    "required": [
+      "address"
+    ],
+    "title": "SiteHost",
+    "type": "object"
+  },
   "$defs/StreamEndpoint": {
     "description": "One place a relayed stream can be pulled from. The URL never carries credentials.",
     "properties": {
@@ -48,6 +116,60 @@
       "url"
     ],
     "title": "StreamEndpoint",
+    "type": "object"
+  },
+  "$defs/TailnetPeer": {
+    "description": "One other node on this node's tailnet, as the overlay last reported it.",
+    "properties": {
+      "addresses": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Addresses",
+        "type": "array"
+      },
+      "endpoint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Endpoint"
+      },
+      "login": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Login"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "tags": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "TailnetPeer",
     "type": "object"
   },
   "CameraAnnouncement": {
@@ -115,6 +237,71 @@
     "title": "CameraAnnouncement",
     "type": "object"
   },
+  "CameraIdentification": {
+    "description": "What a device at a site address said it is, over the vendor's unauthenticated\nidentification read (ADR-0007). Not a registration: nothing is adopted by it.",
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "firmware": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Firmware"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Model"
+      },
+      "observed_at": {
+        "title": "Observed At",
+        "type": "number"
+      },
+      "origin": {
+        "title": "Origin",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "serial": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Serial"
+      }
+    },
+    "required": [
+      "schema_version",
+      "address",
+      "observed_at",
+      "origin"
+    ],
+    "title": "CameraIdentification",
+    "type": "object"
+  },
   "CameraRegistration": {
     "description": "Command: take this camera on. Produced by an operator surface.",
     "properties": {
@@ -149,6 +336,146 @@
       "address"
     ],
     "title": "CameraRegistration",
+    "type": "object"
+  },
+  "ConfigField": {
+    "description": "One operator-settable config field, as its owning module declares it (ADR-0004).\n\nA declaration, not a value: config is not a message (\u00a76), and no value ever rides in\nthis shape. It crosses a module boundary because the owner declares it and the operator\nsurface renders it. The action manifest (\u00a75) and Stage 1 graduation reuse it as-is.",
+    "properties": {
+      "default": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Default"
+      },
+      "help": {
+        "default": "",
+        "title": "Help",
+        "type": "string"
+      },
+      "kind": {
+        "title": "Kind",
+        "type": "string"
+      },
+      "label": {
+        "default": "",
+        "title": "Label",
+        "type": "string"
+      },
+      "max_items": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Max Items"
+      },
+      "max_len": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Max Len"
+      },
+      "maximum": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Maximum"
+      },
+      "may_disturb": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "May Disturb"
+      },
+      "minimum": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Minimum"
+      },
+      "module": {
+        "title": "Module",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "pattern": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Pattern"
+      },
+      "scope": {
+        "default": "site",
+        "title": "Scope",
+        "type": "string"
+      },
+      "secret": {
+        "default": false,
+        "title": "Secret",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "module",
+      "name",
+      "kind"
+    ],
+    "title": "ConfigField",
     "type": "object"
   },
   "Envelope": {
@@ -235,6 +562,210 @@
     "title": "Shape",
     "type": "object"
   },
+  "SiteHost": {
+    "description": "One address on a site network that answered a scan. Site data: never persisted.",
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "axis_maker": {
+        "default": false,
+        "title": "Axis Maker",
+        "type": "boolean"
+      },
+      "found_by": {
+        "default": "tcp",
+        "title": "Found By",
+        "type": "string"
+      },
+      "hostname": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Hostname"
+      },
+      "mac": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mac"
+      },
+      "maker": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Maker"
+      },
+      "open_ports": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Open Ports",
+        "type": "array"
+      }
+    },
+    "required": [
+      "address"
+    ],
+    "title": "SiteHost",
+    "type": "object"
+  },
+  "SiteHosts": {
+    "description": "Everything one completed scan found (ADR-0007). A snapshot, not a delta, and not\nliveness: a host listed here answered at `scanned_at`, nothing more.",
+    "properties": {
+      "hosts": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/SiteHost"
+        },
+        "title": "Hosts",
+        "type": "array"
+      },
+      "networks": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Networks",
+        "type": "array"
+      },
+      "origin": {
+        "title": "Origin",
+        "type": "string"
+      },
+      "request_id": {
+        "default": "",
+        "title": "Request Id",
+        "type": "string"
+      },
+      "requested_by": {
+        "default": "",
+        "title": "Requested By",
+        "type": "string"
+      },
+      "scanned_at": {
+        "title": "Scanned At",
+        "type": "number"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "self_addresses": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Self Addresses",
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema_version",
+      "scanned_at",
+      "origin"
+    ],
+    "title": "SiteHosts",
+    "type": "object"
+  },
+  "SiteScan": {
+    "description": "Command: scan the site networks once (ADR-0007). Produced by the operator surface\nthrough `invoke()`; consumed by site-survey.\n\nCarries no targets and no options: the scanner scans the networks the node is on now,\nso nothing here can point it anywhere else.",
+    "properties": {
+      "door": {
+        "title": "Door",
+        "type": "string"
+      },
+      "request_id": {
+        "title": "Request Id",
+        "type": "string"
+      },
+      "requested_by": {
+        "title": "Requested By",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "request_id",
+      "requested_by",
+      "door"
+    ],
+    "title": "SiteScan",
+    "type": "object"
+  },
+  "SiteScanResult": {
+    "description": "The outcome of one `SiteScan`. A failed scan leaves the last `SiteHosts` standing.",
+    "properties": {
+      "door": {
+        "default": "",
+        "title": "Door",
+        "type": "string"
+      },
+      "finished_at": {
+        "title": "Finished At",
+        "type": "number"
+      },
+      "host_count": {
+        "default": 0,
+        "title": "Host Count",
+        "type": "integer"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "ok": {
+        "title": "Ok",
+        "type": "boolean"
+      },
+      "request_id": {
+        "title": "Request Id",
+        "type": "string"
+      },
+      "requested_by": {
+        "default": "",
+        "title": "Requested By",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "request_id",
+      "ok",
+      "message",
+      "finished_at"
+    ],
+    "title": "SiteScanResult",
+    "type": "object"
+  },
   "StreamAnnouncement": {
     "description": "A relay path for one camera's stream (\u00a76: announce over reliable, stream over fast).\n\nThe bytes never touch the bus; this message only says where they are.",
     "properties": {
@@ -296,6 +827,175 @@
     "title": "StreamEndpoint",
     "type": "object"
   },
+  "TailnetApply": {
+    "description": "Command: apply the saved Tailscale config to this node (ADR-0005). Produced by the\noperator surface through `invoke()`; consumed by tailnet-gateway's writer.\n\nCarries no values: the writer reads the hostname, tags and auth key from its own config\n(ADR-0004), so nothing here can bypass validation, and no secret is ever on the bus.",
+    "properties": {
+      "door": {
+        "title": "Door",
+        "type": "string"
+      },
+      "operation": {
+        "title": "Operation",
+        "type": "string"
+      },
+      "request_id": {
+        "title": "Request Id",
+        "type": "string"
+      },
+      "requested_by": {
+        "title": "Requested By",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "request_id",
+      "operation",
+      "requested_by",
+      "door"
+    ],
+    "title": "TailnetApply",
+    "type": "object"
+  },
+  "TailnetApplyResult": {
+    "description": "The outcome of one `TailnetApply`. Never contains a secret (\u00a78.9).",
+    "properties": {
+      "door": {
+        "default": "",
+        "title": "Door",
+        "type": "string"
+      },
+      "finished_at": {
+        "title": "Finished At",
+        "type": "number"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "ok": {
+        "title": "Ok",
+        "type": "boolean"
+      },
+      "operation": {
+        "title": "Operation",
+        "type": "string"
+      },
+      "request_id": {
+        "title": "Request Id",
+        "type": "string"
+      },
+      "requested_by": {
+        "default": "",
+        "title": "Requested By",
+        "type": "string"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "request_id",
+      "operation",
+      "ok",
+      "message",
+      "finished_at"
+    ],
+    "title": "TailnetApplyResult",
+    "type": "object"
+  },
+  "TailnetPeer": {
+    "description": "One other node on this node's tailnet, as the overlay last reported it.",
+    "properties": {
+      "addresses": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Addresses",
+        "type": "array"
+      },
+      "endpoint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Endpoint"
+      },
+      "login": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Login"
+      },
+      "node_name": {
+        "title": "Node Name",
+        "type": "string"
+      },
+      "tags": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      }
+    },
+    "required": [
+      "node_name"
+    ],
+    "title": "TailnetPeer",
+    "type": "object"
+  },
+  "TailnetPeers": {
+    "description": "The complete set of peers this node can see on its tailnet (ADR-0003 \u00a72).\n\nA snapshot, not a delta: a peer absent from the latest message is not on the tailnet.\nConsumers use it to resolve a tailnet address to an identity, and must treat it as a\nrenewed level (\u00a75): once older than their bound, derived from `period_s` (\u00a711 rung 11),\nit no longer resolves anyone.",
+    "properties": {
+      "observed_at": {
+        "title": "Observed At",
+        "type": "number"
+      },
+      "peers": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/TailnetPeer"
+        },
+        "title": "Peers",
+        "type": "array"
+      },
+      "period_s": {
+        "title": "Period S",
+        "type": "number"
+      },
+      "schema_version": {
+        "title": "Schema Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "observed_at",
+      "period_s"
+    ],
+    "title": "TailnetPeers",
+    "type": "object"
+  },
   "TailnetStatus": {
     "description": "This node's tailnet status, as last read from the overlay.",
     "properties": {
@@ -305,6 +1005,14 @@
           "type": "string"
         },
         "title": "Addresses",
+        "type": "array"
+      },
+      "advertised_routes": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Advertised Routes",
         "type": "array"
       },
       "connected": {
@@ -325,6 +1033,35 @@
           "type": "string"
         },
         "title": "Served Routes",
+        "type": "array"
+      },
+      "site_networks": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Site Networks",
+        "type": "array"
+      },
+      "state": {
+        "default": "",
+        "title": "State",
+        "type": "string"
+      },
+      "tags": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      },
+      "wanted_routes": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Wanted Routes",
         "type": "array"
       }
     },
