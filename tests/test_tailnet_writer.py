@@ -368,11 +368,26 @@ def test_no_value_or_secret_ever_rides_the_bus(tmp_path) -> None:
     assert "site-a-gw" not in command                          # values come from the registry
 
 
+def test_auth_key_accepts_an_oauth_secret_with_its_options(tmp_path) -> None:
+    node, _ = node_with(tmp_path)
+    surface = node.config.operator_surface()
+    for ok in ("tskey-client-kAbC123-DEF456?preauthorized=true",
+               "tskey-client-kAbC123-DEF456?ephemeral=true&preauthorized=true", KEY):
+        assert surface.set("tailnet-gateway.auth_key", ok, "test").ok, ok
+    for bad in ("tskey-client-k1-X?baseURL=https://evil.example",      # no control-plane swap
+                "tskey-client-k1-X?preauthorized=true&preauthorized=false",
+                "tskey-client-k1-X?preauthorized=yes", "tskey-client-k1-X?"):
+        assert not surface.set("tailnet-gateway.auth_key", bad, "test").ok, bad
+
+
 def test_env_switch(monkeypatch, caplog) -> None:
-    for raw, on in (("", False), ("0", False), ("1", True), ("yes", False)):
+    monkeypatch.delenv("CN_TAILNET_WRITER", raising=False)
+    assert main._writer_from_env() is True                     # on by default (rehearsed)
+    for raw, on in (("", True), ("1", True), ("0", False), ("yes", False), ("off", False)):
         monkeypatch.setenv("CN_TAILNET_WRITER", raw)
         assert main._writer_from_env() is on
-    assert "stays disabled" in caplog.text
+    assert "is not 0 or 1; the tailnet writer is disabled" in caplog.text
+    assert "CN_TAILNET_WRITER=0: the tailnet writer is disabled" in caplog.text
 
 
 # -- the dashboard: Join/Rename/Leave through the doors ------------------------------------

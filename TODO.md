@@ -14,11 +14,13 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       3. ~~Ephemeral removal~~ — done 2026-10-13 by an unplanned power cut (~2 h): booted
          `NeedsLogin`, auto-rejoined in 5 s (quirks Q-005, ADR-0005 amendment). Still to
          do: a short power cycle (should come back `Running`, no rejoin).
-      4. Then make the writer enabled by default (drop `CN_TAILNET_WRITER`), and remove the
-         drop-in at `/etc/systemd/system/commissioning-node.service.d/tailnet-writer.conf`.
+      4. ~~Make the writer enabled by default~~ — done 2026-10-13; `CN_TAILNET_WRITER=0` stays
+         as the off-switch. On the node, remove the drop-in at
+         `/etc/systemd/system/commissioning-node.service.d/tailnet-writer.conf`.
       5. The key is an OAuth client secret (ADR-0005 amendment). Verify that a rejoin with it
-         needs no device approval (`?preauthorized=true`; the `auth_key` pattern refuses
-         that suffix today) and that it joins ephemeral; record both in quirks.md.
+         needs no device approval (save it with `?preauthorized=true`, accepted since
+         2026-10-13), that `--auth-key=file:` honours the suffix, and that it joins
+         ephemeral; record all three in quirks.md.
 - [x] **ADR-0003 steps 5 and 6: config registry + tailnet-gateway writer** (ADR-0004,
       ADR-0005 with amendments A1–A3). Merged to `dev` 2026-10-13 after four review rounds
       (rulings in ADR-0005); routes rehearsed and approved on the node.

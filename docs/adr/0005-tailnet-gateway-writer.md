@@ -249,7 +249,8 @@ dashboard ◀──bus── tailnet/apply-result ◀── drained on the next 
 3. ~~`OverlayWriter` seam and the CLI adapter.~~ Done 2026-10-13. Tests use a fake runner and check the argv golden
    per operation, the key scrubbing, both timeouts, and the re-check refusals.
 4. ~~The `tailnet-writer` feature and core's worker~~ (done 2026-10-13; enabled by
-   `CN_TAILNET_WRITER=1` in the daemon's environment) (one at a time, queue and drain), plus the
+   `CN_TAILNET_WRITER=1` in the daemon's environment; on by default since 2026-10-13, see the
+   last amendment) (one at a time, queue and drain), plus the
    injected `ConfigView`. Registered **disabled**.
 5. ~~Dashboard: the `Invoker` seam~~ (done 2026-10-13), the Apply panel, three may-disturb actions, and the last
    result.
@@ -426,5 +427,16 @@ to site instead of minting an auth key per visit. Consequences for A1:
 - Not measured, from Tailscale's documentation (verify, then record in quirks.md): an OAuth
   secret used as an auth key needs `--advertise-tags`, joins ephemeral by default, and is
   *not* pre-authorised by default. On a tailnet with device approval, a rejoin would wait
-  for approval unless the key carries `?preauthorized=true`. The `auth_key` field's pattern
-  (`tskey-[A-Za-z0-9-]+`, matched whole) refuses such a suffix today.
+  for approval unless the key carries `?preauthorized=true`.
+- **The `auth_key` field accepts the options:** a key may end in `?ephemeral=` and/or
+  `?preauthorized=` (`true`/`false`, each once). `baseURL` is refused: it would point the
+  join at another control plane. The suffix is part of the secret file, so it is in the
+  recorded `key_sha256`; changing it is a key change, and auto-rejoin refuses it until a
+  confirmed Join.
+
+**The writer is on by default.** The rehearsal joins, the routes and this rejoin passed, so
+step 6's "then enable the capability" is done: the daemon enables the writer unless its
+environment says `CN_TAILNET_WRITER=0`. The switch is kept as the node's off-switch (no
+operator join, leave or rejoin), and a malformed value turns the writer off with a
+warning. The rehearsal drop-in (`…/commissioning-node.service.d/tailnet-writer.conf`) is
+removed on the node. `auto_rejoin` on `/config` still turns off only the automatic rejoin.
