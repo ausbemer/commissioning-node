@@ -92,6 +92,31 @@ fwd="$(sysctl -n net.ipv4.ip_forward 2>/dev/null)"
 check_warn "IPv4 forwarding on (subnet routes can be served, ADR-0005)" \
   "IPv4 forwarding is off — advertised routes will not carry traffic; check commissioning-node-firewall" \
   test "$fwd" == 1
+if active firewalld.service; then
+  # The RevPi image's firewalld rejects what it doesn't list, after our table accepts it
+  # (docs/quirks.md Q-009). The loopback probes below never pass through it, so check it here.
+  ts_zone() { firewall-cmd "$@" --get-zone-of-interface=tailscale0 2>/dev/null || echo none; }
+  check "tailscale0 in firewalld's trusted zone" \
+    "tailscale0 is in firewalld zone '$(ts_zone)', not trusted — it rejects the tailnet door, MediaMTX and forwarded routes; re-run sudo ops/install.sh" \
+    test "$(ts_zone)" == trusted
+  if ((EUID == 0)); then
+    site_zones="$({ firewall-cmd --get-default-zone; firewall-cmd --get-active-zones | awk '!/^[[:space:]]/ {print $1}'; } \
+      | grep -vx trusted | sort -u)"
+    port_open() { firewall-cmd -q --zone="$1" --query-port="$FALLBACK_PORT/tcp" && firewall-cmd -q --permanent --zone="$1" --query-port="$FALLBACK_PORT/tcp"; }
+    check "tailscale0 in firewalld's trusted zone after reboot (permanent)" \
+      "tailscale0 is in permanent firewalld zone '$(ts_zone --permanent)', not trusted — lost at the next reboot; re-run sudo ops/install.sh" \
+      test "$(ts_zone --permanent)" == trusted
+    for zone in $site_zones; do
+      check "firewalld zone $zone accepts $FALLBACK_PORT/tcp (runtime + permanent)" \
+        "firewalld zone $zone rejects $FALLBACK_PORT/tcp (runtime or after reboot) — the admin fallback is unreachable from the site LAN; re-run sudo ops/install.sh" \
+        port_open "$zone"
+    done
+  else
+    skip "firewalld permanent config and the admin fallback's port need root (sudo ops/doctor.sh)"
+  fi
+else
+  pass "firewalld not running (only our table filters)"
+fi
 check "no sysctl drop-in forwards at boot before the fence" \
   "$LEGACY_SYSCTL_FILE exists: it enables forwarding at boot before the firewall loads — re-run sudo ops/install.sh" \
   test ! -e "$LEGACY_SYSCTL_FILE"

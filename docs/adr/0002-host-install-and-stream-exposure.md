@@ -104,4 +104,32 @@ publish the site's camera streams to that LAN.
 
 ## Amendments
 
-None yet.
+### A1 — 2026-10-14: firewalld is on, and the installer makes two entries in it
+
+- **Correction to Context.** "No firewall rules are loaded" was wrong. The RevPi image
+  enables firewalld, and it has run on every boot. Its default zone rejects everything on
+  the site LAN except the stock services, and it rejects `tailscale0`, which is in no zone.
+  An `accept` in our table does not override its rejects (docs/quirks.md Q-009). So the admin
+  fallback (ADR-0003) was unreachable from the site LAN, its one intended audience. Every
+  loopback check passed, because loopback skips firewalld.
+- **Decision.** We leave firewalld running and add exactly two entries to it, in both its
+  runtime and permanent config, from `ops/install.sh`:
+  1. `FALLBACK_PORT/tcp` (8443, `ops/paths.sh`) in every zone a site interface can land in:
+     the default zone plus the active zones, but not `trusted`. That's the exposure ADR-0003
+     already chose, so this changes nothing about what is reachable by design.
+  2. `tailscale0` in the `trusted` zone. The tailnet is the boundary (ADR-0001), and our own
+     table is what scopes the tailnet ports. Without this entry, firewalld would also reject
+     the tailnet door on 8080, MediaMTX, and traffic forwarded through the subnet routes
+     (ADR-0005).
+  The installer never reloads, disables or replaces firewalld, and touches nothing else in
+  it. Decision 4's "it touches nothing else" still holds for our own table.
+- **Why not disable firewalld.** It is the RevPi image's own protection for its stock
+  services, and Cockpit manages it (`cockpit-revpi-redirect-firewalld`). Turning it off would
+  open everything else on the host to the site LAN. That's a wider decision than this fix,
+  and it belongs with the stock-services question under Consequences.
+- **Checks.** `ops/doctor.sh` FAILs if `tailscale0` is not in `trusted` (runtime, and
+  permanent with root), or if a site zone doesn't accept the fallback's port (runtime +
+  permanent, needs root). `tests/test_ops_paths.py` checks that `FALLBACK_PORT` matches
+  `main.py`.
+- **Unverified.** That `trusted` carries the tailnet door, MediaMTX and the forwarded routes
+  hasn't been seen on a joined node yet (docs/quirks.md, "Unverified assumptions").

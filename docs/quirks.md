@@ -11,6 +11,7 @@ Pinned dependencies covered here:
 | tailscale / tailscaled | 1.102.5 (`ops/pins.sh`, apt-held) | `tailnet-gateway` (`modules/tailnet_gateway/core/tailscale_cli.py`) |
 | MediaMTX | v1.21.1 linux_arm64 (`ops/pins.sh`, sha256-pinned) | `stream-relay` (adapter not yet written); host install `ops/` (ADR-0002) |
 | Axis VAPIX (camera firmware) | per camera; record model + firmware seen on site | `camera-config` (adapter not yet written) |
+| firewalld | 2.3.1-1+deb13u1, not pinned: the RevPi image enables it | host install `ops/` (ADR-0002 A1) |
 
 ## Entries
 
@@ -149,6 +150,35 @@ Pinned dependencies covered here:
   host.
 - **Last verified:** 1.102.5, 2026-10-13.
 
+### Q-009: the RevPi image's firewalld rejects what our table accepts
+
+- **Dependency / version:** firewalld 2.3.1-1+deb13u1, from the RevPi Debian 13 image
+  (enabled since the image was built; pulled in again by `cockpit-revpi-redirect-firewalld`).
+- **Behaviour:** firewalld runs with `lan0` in its default `public` zone, which accepts only
+  22, 80, 443, 41443, mDNS and DHCPv6, and answers everything else on `lan0` with `reject with
+  icmpx admin-prohibited`. An interface in no zone (`tailscale0`) falls through to the
+  default zone and is rejected the same way, and its forward chain rejects forwarded traffic
+  that isn't in a zone. Its `inet firewalld` table is a separate base chain at priority
+  `filter + 10`, so an `accept` in our table (`filter - 10`) does not stop it: the packet is
+  still rejected. Connections from the node to itself go through `lo` and are accepted, so
+  every loopback check passes while the site LAN is refused.
+- **How measured:** 2026-10-14. `https://<lan0 address>:8443/login` answered from the node,
+  but the operator could not reach it from the site LAN. `sudo nft list ruleset` showed `table inet
+  firewalld`, and `nft list chain inet firewalld filter_IN_public_allow` listed only the ports
+  above. `systemctl is-enabled firewalld` gave `enabled`, and its journal showed it running on
+  every boot. ADR-0002 had recorded "no firewall rules are loaded" (2026-10-12), probably
+  from a `nft list ruleset` run without root, which prints nothing.
+- **Detection signature:** `firewall-cmd --get-zone-of-interface=tailscale0` is not
+  `trusted`, or `sudo firewall-cmd --zone=public --query-port=8443/tcp` prints `no`. `sudo
+  ops/doctor.sh` FAILs on either.
+- **Our accommodation:** `ops/install.sh` adds exactly two entries to firewalld's runtime
+  and permanent config: `8443/tcp` in every zone a site interface can land in (the default
+  zone and the active ones, but not `trusted`), and `tailscale0` in `trusted` (ADR-0002 A1).
+  It never reloads, disables or replaces firewalld.
+- **Last verified:** 2.3.1-1+deb13u1, 2026-10-14 (the 8443 rejection). That `tailscale0` in
+  `trusted` lets the tailnet door, MediaMTX and the subnet routes through is not yet seen on
+  a joined node: see "Unverified assumptions".
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
@@ -188,3 +218,9 @@ Pinned dependencies covered here:
   `tailscale debug prefs` when unset.
 - MediaMTX's RTSP port 8554 (`relay_planner.MEDIAMTX_RTSP_PORT`) must match `rtspAddress`
   in `ops/mediamtx/mediamtx.conf.yml`. They match today, but nothing checks it yet.
+- With `tailscale0` in firewalld's `trusted` zone (Q-009), tailnet traffic to 8080 and to
+  MediaMTX's RTSP port is accepted, and so is traffic forwarded from the tailnet to the site
+  LAN for the subnet routes (`trusted` has target `ACCEPT`). Not yet seen: the node was logged
+  out when Q-009 was measured. Verify after the next join with the dashboard over the tailnet
+  and a camera reached through an advertised route. Also check that NetworkManager does not
+  move `tailscale0` into another zone.

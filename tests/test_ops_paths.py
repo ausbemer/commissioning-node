@@ -29,6 +29,15 @@ def test_config_state_directory_matches_paths_sh() -> None:
     assert unit_setting("StateDirectoryMode") == "0700"
 
 
+def test_fallback_port_matches_main() -> None:
+    """ADR-0002 A1: the installer opens paths.sh's FALLBACK_PORT in firewalld; it must be the
+    port the daemon actually serves the fallback on, or the site LAN still can't reach it."""
+    main = (OPS.parent / "main.py").read_text()
+    match = re.search(r"^FALLBACK_PORT = (\d+)$", main, re.MULTILINE)
+    assert match, "FALLBACK_PORT not set in main.py"
+    assert shell_var("FALLBACK_PORT") == match.group(1)
+
+
 def test_forwarding_is_fenced_before_it_is_enabled() -> None:
     """ADR-0005 A3, review 2026-10-13: the forward chain lets only the tailnet open forwarded
     connections, and the firewall unit owns forwarding: on only after that chain loads, off

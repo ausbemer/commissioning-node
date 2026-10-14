@@ -8,6 +8,8 @@
 #   3. the commissioning-node firewall table + unit (MediaMTX + dashboard ports: tailnet +
 #      loopback; forwarding only from the tailnet). The firewall unit also owns IPv4
 #      forwarding for the subnet router (ADR-0005): on only after its forward chain loads
+#   3b. if firewalld runs (the RevPi image enables it), the admin fallback's port opened in
+#      its site zones and tailscale0 in its trusted zone (ADR-0002 A1, docs/quirks.md Q-009)
 #   4. MediaMTX from the sha256-pinned release tarball, its system user, config and unit
 #   5. the admin fallback's TLS key pair, generated on the node once (ADR-0003)
 #   6. the commissioning-node daemon unit (runs main.py); systemd creates its state
@@ -17,7 +19,8 @@
 #
 # It does NOT log Tailscale in and does NOT set the admin password (both are secrets, spec
 # §8.9: use `tailscale up` and ops/set-admin-password.sh), and touches no firewall rules but
-# its own table. Re-running is safe: each step checks before changing.
+# its own table and the two firewalld entries in 3b. Re-running is safe: each step checks
+# before changing.
 #
 # Usage:  sudo ops/install.sh        apply
 #         ops/install.sh --dry-run   show what would change; needs no root and no network
@@ -34,7 +37,7 @@ DRY_RUN=0
 case "${1:-}" in
   "") ;;
   --dry-run) DRY_RUN=1 ;;
-  -h | --help) sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
 esac
 
@@ -197,6 +200,40 @@ if [[ -e "$LEGACY_SYSCTL_FILE" ]]; then
   act "remove $LEGACY_SYSCTL_FILE (forwarding is the firewall unit's now)" rm -f "$LEGACY_SYSCTL_FILE"
 else
   ok "no sysctl drop-in enabling forwarding at boot"
+fi
+
+# ---------------------------------------------------------------------------------------
+step "firewalld (the RevPi image's own firewall; docs/quirks.md Q-009)"
+# firewalld rejects everything on the site LAN but the RevPi's stock services, and treats an
+# interface in no zone (tailscale0) the same way. Its table is a separate base chain, so our
+# table's accepts never override its rejects. Two entries, and nothing else of firewalld's:
+# the fallback's port in every zone a site interface can land in (the default zone and the
+# active ones, but trusted), and tailscale0 in trusted. Each goes into the runtime and the
+# permanent config, so no --reload is needed and no one else's runtime change is lost.
+if ! systemctl is-active --quiet firewalld.service 2>/dev/null; then
+  ok "firewalld not running"
+elif ((EUID != 0)); then
+  echo "    would: open $FALLBACK_PORT/tcp in firewalld's site zones, put tailscale0 in its trusted zone (queries need root)"
+else
+  fw() { firewall-cmd -q "$@"; }
+  fw_both() { fw "$@" && fw --permanent "$@"; }
+  site_zones="$({ firewall-cmd --get-default-zone; firewall-cmd --get-active-zones | awk '!/^[[:space:]]/ {print $1}'; } \
+    | grep -vx trusted | sort -u)"
+  for zone in $site_zones; do
+    if fw --zone="$zone" --query-port="$FALLBACK_PORT/tcp" && fw --permanent --zone="$zone" --query-port="$FALLBACK_PORT/tcp"; then
+      ok "firewalld zone $zone accepts $FALLBACK_PORT/tcp (admin fallback)"
+    else
+      act "open $FALLBACK_PORT/tcp in firewalld zone $zone (admin fallback, ADR-0003)" fw_both --zone="$zone" --add-port="$FALLBACK_PORT/tcp"
+    fi
+  done
+  if [[ "$(firewall-cmd --get-zone-of-interface=tailscale0 2>/dev/null)" == trusted \
+    && "$(firewall-cmd --permanent --get-zone-of-interface=tailscale0 2>/dev/null)" == trusted ]]; then
+    ok "tailscale0 in firewalld's trusted zone"
+  else
+    # --change-interface, not --add-interface: it also moves the interface out of another zone.
+    act "put tailscale0 in firewalld's trusted zone (the tailnet is the boundary, ADR-0001)" \
+      fw_both --zone=trusted --change-interface=tailscale0
+  fi
 fi
 
 # ---------------------------------------------------------------------------------------
