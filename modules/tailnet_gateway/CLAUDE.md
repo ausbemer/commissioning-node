@@ -20,7 +20,7 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Produces — inward (features → core):** `WritePlan`s into the `WriterSlot` (`tailnet-writer` → `core/writer_worker.py`); core routes finished `WriteOutcome`s back on `tailnet-gateway/write-outcome` at the next tick
 - **Config (ADR-0004):** declares `CONFIG_FIELDS` in `interface/config.py`: `hostname`, `tags`, `auth_key` (secret), `advertise_routes` (default `auto`), `auto_rejoin` (default on), all site-scoped. The writer reads them through the injected `ConfigView`. The key is kept (A1); the worker keeps a join record (`site/tailnet-gateway.join.json`, `core/join_record.py`) that auto-rejoin acts on.
 - **Versions (spec §4 dual versioning):** release `VERSION` 0.6.0; inward
-  contract `__version__` 0.6.0 (0.5.1: the auth key accepts an OAuth secret's options; 0.6.0: `ROUTES_OFF`). Both live in `interface/__init__.py`; see
+  contract `__version__` 0.7.0 (0.5.1: the auth key accepts an OAuth secret's options; 0.6.0: `ROUTES_OFF`; 0.7.0: `OverlayPeer.endpoint`). Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 

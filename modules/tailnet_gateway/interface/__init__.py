@@ -8,7 +8,7 @@ MODULE = "tailnet-gateway"
 #: Release version — bumps with features/implementation (§4 dual versioning).
 VERSION = "0.6.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 from .config import (ADVERTISE_ROUTES, AUTH_KEY, AUTO, AUTO_REJOIN, CONFIG_FIELDS,  # noqa: E402
                      HOSTNAME, TAGS, ConfigView, resolve_routes, route_problem)

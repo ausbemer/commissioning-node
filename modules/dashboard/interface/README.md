@@ -1,4 +1,4 @@
-# dashboard Inward Interface — v0.9.0
+# dashboard Inward Interface — v0.10.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
@@ -67,6 +67,7 @@ interface objects").
 ## Changelog
 
 - v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme`, and `query` (the page URL's query, first value per key: display state a page keeps across its own auto-refresh); `SCRIPT` and `STATIC_PATH` for the module's own scripts (ADR-0006) (additive).
+- v0.10.0 — `PeerDirectory.endpoints()`: fresh peers by their direct address, for the site map only, never for identity (ADR-0007 step 4) (additive).
 - v0.9.0 — `SITE_SCANNER`, `SITE_OPERATIONS`; `op_form` takes a site operation, and `marker` (the outcome marker a confirmed slide waits on); state kinds `site_hosts`, `site_scan`, `site_request` (the last `site/scan` seen, with `received_at`) (additive, ADR-0007).
 - v0.8.0 — `chrome.op_form`: a tailnet operation's may-disturb form, shared by the overview (Join/Leave as a slider) and `/config` (Rename and Routes beside their fields) (additive).
 - v0.6.0 — `TAILNET_OPERATIONS` gains `routes`; the Join warning now says the key is kept (additive).

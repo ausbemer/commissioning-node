@@ -17,6 +17,9 @@ class OverlayPeer(Shape):
     #: Owning user's login; None for a tagged (non-user-owned) node.
     login: str | None = None
     tags: list[str] = []
+    #: The address (no port) this node reaches the peer at directly right now, e.g. a site-LAN
+    #: address; None when the peer is relayed or the overlay doesn't say (0.7.0, ADR-0007).
+    endpoint: str | None = None
 
 
 class OverlaySnapshot(Shape):

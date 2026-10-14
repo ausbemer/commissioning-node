@@ -21,7 +21,7 @@ MODULE = "dashboard"
 #: Release version — bumps with features/implementation (§4 dual versioning).
 VERSION = "0.9.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
            "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",

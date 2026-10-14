@@ -57,11 +57,17 @@ class PeerDirectory:
         self._by_addr: dict[ipaddress.IPv4Address | ipaddress.IPv6Address, PeerIdentity | None] = {}
         self._received_at: float | None = None
         self._period_s: float | None = None
+        self._by_endpoint: dict[str, PeerIdentity | None] = {}
 
     def update(self, snapshot: TailnetPeers) -> None:
         by_addr: dict[ipaddress.IPv4Address | ipaddress.IPv6Address, PeerIdentity | None] = {}
+        by_endpoint: dict[str, PeerIdentity | None] = {}
         for peer in snapshot.peers:
             who = PeerIdentity(node_name=peer.node_name, login=peer.login, tags=tuple(peer.tags))
+            endpoint = parse_address(peer.endpoint) if peer.endpoint else None
+            if endpoint is not None:
+                key = str(endpoint)
+                by_endpoint[key] = who if key not in by_endpoint else None
             for raw in peer.addresses:
                 addr = parse_address(raw)
                 if addr is None:
@@ -70,6 +76,7 @@ class PeerDirectory:
                 by_addr[addr] = who if addr not in by_addr else None
         with self._lock:
             self._by_addr = by_addr
+            self._by_endpoint = by_endpoint
             self._received_at = self._clock()
             self._period_s = snapshot.period_s
 
@@ -88,6 +95,17 @@ class PeerDirectory:
         if who is None:
             return Unresolved("ambiguous", f"{addr} is claimed by more than one tailnet peer")
         return who
+
+
+    def endpoints(self) -> dict[str, PeerIdentity]:
+        """Peers by the address this node reaches them at directly (`TailnetPeer.endpoint`, 0.10.0),
+        for display only (ADR-0007: a tailnet node on the site map). Never an identity for a
+        request: a site-LAN address proves nothing about who sends from it. Empty unless the
+        table is fresh; an endpoint two peers share is left out."""
+        with self._lock:
+            if not is_fresh(self._received_at, self._period_s, self._clock()):
+                return {}
+            return {a: who for a, who in self._by_endpoint.items() if who is not None}
 
 
 def parse_address(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
