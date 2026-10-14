@@ -140,6 +140,9 @@ class TailnetPeer(Shape):
     login: str | None = None
     #: ACL tags the peer carries, e.g. "tag:ops". Empty for a user-owned peer.
     tags: list[str] = []
+    #: The address (no port) this node reaches the peer at directly, e.g. a site-LAN address,
+    #: as the overlay last reported it (ADR-0007). None when the peer is relayed or unknown.
+    endpoint: str | None = None
 
 
 class TailnetPeers(Envelope):
@@ -229,3 +232,80 @@ class ConfigField(Shape):
     maximum: int | None = None
     #: §11 rung-4 warning if *editing* the field disturbs something; else None.
     may_disturb: str | None = None
+
+
+class SiteScan(Envelope):
+    """Command: scan the site networks once (ADR-0007). Produced by the operator surface
+    through `invoke()`; consumed by site-survey.
+
+    Carries no targets and no options: the scanner scans the networks the node is on now,
+    so nothing here can point it anywhere else.
+    """
+    #: Correlates the result with this request.
+    request_id: str
+    #: Who asked, as the operator surface recorded them.
+    requested_by: str
+    #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
+    door: str
+
+
+class SiteHost(Shape):
+    """One address on a site network that answered a scan. Site data: never persisted."""
+    address: str
+    #: Hardware address, lower-case "aa:bb:cc:dd:ee:ff", when the kernel resolved one.
+    mac: str | None = None
+    #: Maker from the MAC prefix, "private MAC" for a locally administered one, else None.
+    maker: str | None = None
+    #: Name from reverse DNS, when the site resolver has one.
+    hostname: str | None = None
+    #: Ports from the scanner's fixed list that accepted a connection.
+    open_ports: list[int] = []
+    #: True when the MAC prefix belongs to Axis. A hint, not an identification.
+    axis_maker: bool = False
+    #: How the host was found: "tcp" (answered a probe) or "arp" (only in the neighbour table,
+    #: quirks Q-006). Open vocabulary.
+    found_by: str = "tcp"
+
+
+class SiteHosts(Envelope):
+    """Everything one completed scan found (ADR-0007). A snapshot, not a delta, and not
+    liveness: a host listed here answered at `scanned_at`, nothing more.
+    """
+    #: Wall-clock time the scan finished (Unix seconds).
+    scanned_at: float
+    #: The networks (CIDR) scanned.
+    networks: list[str] = []
+    hosts: list[SiteHost] = []
+    #: The request that ran this scan, and who asked.
+    request_id: str = ""
+    requested_by: str = ""
+    #: Discriminator (§3): which producer made this snapshot, "module/feature".
+    origin: str
+
+
+class SiteScanResult(Envelope):
+    """The outcome of one `SiteScan`. A failed scan leaves the last `SiteHosts` standing."""
+    request_id: str
+    ok: bool
+    #: For people: what happened, or why not (§11 rung 7).
+    message: str
+    requested_by: str = ""
+    door: str = ""
+    #: Wall-clock time the scan finished or was refused (Unix seconds).
+    finished_at: float
+    #: Hosts found; 0 when not ok.
+    host_count: int = 0
+
+
+class CameraIdentification(Envelope):
+    """What a device at a site address said it is, over the vendor's unauthenticated
+    identification read (ADR-0007). Not a registration: nothing is adopted by it.
+    """
+    address: str
+    serial: str | None = None
+    model: str | None = None
+    firmware: str | None = None
+    #: Wall-clock time of the read (Unix seconds).
+    observed_at: float
+    #: Discriminator (§3): which producer made this identification, "module/feature".
+    origin: str

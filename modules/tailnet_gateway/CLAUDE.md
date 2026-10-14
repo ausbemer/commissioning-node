@@ -16,7 +16,7 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Consumes — outward (from the bus):** `system/tick` (`Tick`), `tailnet/apply` (`TailnetApply`, command; ADR-0005)
 - **Consumes — inward (core → features):** `tailnet-gateway/overlay-snapshot` → `OverlaySnapshot`, stamped by core with `observed_at` and the tick's `period_s`, produced from the `OverlayStatusSource` adapter (`core/tailscale_cli.py`, read-only `tailscale status --json`)
 - **Produces — outward (to the bus):** `tailnet/status` (`TailnetStatus`), `tailnet/peers` (`TailnetPeers`), `tailnet/apply-result` (`TailnetApplyResult`) — conforms to the ecosystem
-  contract (`interfaces/` v0.5.0)
+  contract (`interfaces/` v0.6.0)
 - **Produces — inward (features → core):** `WritePlan`s into the `WriterSlot` (`tailnet-writer` → `core/writer_worker.py`); core routes finished `WriteOutcome`s back on `tailnet-gateway/write-outcome` at the next tick
 - **Config (ADR-0004):** declares `CONFIG_FIELDS` in `interface/config.py`: `hostname`, `tags`, `auth_key` (secret), `advertise_routes` (default `auto`), `auto_rejoin` (default on), all site-scoped. The writer reads them through the injected `ConfigView`. The key is kept (A1); the worker keeps a join record (`site/tailnet-gateway.join.json`, `core/join_record.py`) that auto-rejoin acts on.
 - **Versions (spec §4 dual versioning):** release `VERSION` 0.6.0; inward

@@ -29,3 +29,13 @@ TAILNET_PEERS = "tailnet/peers"
 TAILNET_APPLY = "tailnet/apply"
 #: The outcome of one `tailnet/apply`. Payload: `TailnetApplyResult`.
 TAILNET_APPLY_RESULT = "tailnet/apply-result"
+
+#: Command: operator asks site-survey to scan the site networks once (ADR-0007).
+#: Payload: `SiteScan`. Carries no targets.
+SITE_SCAN = "site/scan"
+#: Everything the last completed scan found. Payload: `SiteHosts`.
+SITE_HOSTS = "site/hosts"
+#: The outcome of one `site/scan`. Payload: `SiteScanResult`.
+SITE_SCAN_RESULT = "site/scan-result"
+#: What a device on the site said it is (an Axis camera over VAPIX). Payload: `CameraIdentification`.
+CAMERA_IDENTIFIED = "camera/identified"

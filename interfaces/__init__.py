@@ -6,10 +6,15 @@ Pure data shapes and constants — no logic, imports nothing internal (spec §3,
 from .envelope import Envelope, Shape
 from .models import (
     CameraAnnouncement,
+    CameraIdentification,
     CameraRegistration,
     ConfigField,
     ModuleInfo,
     NodeCard,
+    SiteHost,
+    SiteHosts,
+    SiteScan,
+    SiteScanResult,
     StreamAnnouncement,
     StreamEndpoint,
     TailnetApply,
@@ -21,7 +26,11 @@ from .models import (
 )
 from .topics import (
     CAMERA_ANNOUNCED,
+    CAMERA_IDENTIFIED,
     CAMERA_REGISTER,
+    SITE_HOSTS,
+    SITE_SCAN,
+    SITE_SCAN_RESULT,
     STREAM_ANNOUNCED,
     SYSTEM_CARD,
     SYSTEM_TICK,
@@ -31,7 +40,7 @@ from .topics import (
     TAILNET_STATUS,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "__version__",
@@ -50,6 +59,11 @@ __all__ = [
     "ConfigField",
     "TailnetApply",
     "TailnetApplyResult",
+    "SiteScan",
+    "SiteHost",
+    "SiteHosts",
+    "SiteScanResult",
+    "CameraIdentification",
     "SYSTEM_TICK",
     "SYSTEM_CARD",
     "CAMERA_REGISTER",
@@ -59,4 +73,8 @@ __all__ = [
     "TAILNET_PEERS",
     "TAILNET_APPLY",
     "TAILNET_APPLY_RESULT",
+    "SITE_SCAN",
+    "SITE_HOSTS",
+    "SITE_SCAN_RESULT",
+    "CAMERA_IDENTIFIED",
 ]

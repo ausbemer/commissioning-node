@@ -16,7 +16,7 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Consumes — outward (from the bus):** `system/card` (`NodeCard`), `tailnet/status` (kept under one key, `self`), `tailnet/peers` (`TailnetPeers`), `tailnet/apply-result` (`TailnetApplyResult`, latest under `self`), `camera/announced`, `stream/announced`
 - **Consumes — inward (core → features):** `DashboardState` (shared live-state object, written by `state-collector`, read by `core/http_surface.py`); `PeerDirectory` (tailnet caller resolver, written by `peer-directory`, held by `core/http_surface.py` for the tailnet door, ADR-0003)
 - **Produces — outward (to the bus):** `tailnet/apply` (`TailnetApply`, command, via the injected `Invoker`) — conforms to the ecosystem
-  contract (`interfaces/` v0.5.0)
+  contract (`interfaces/` v0.6.0)
 - **Produces — inward (features → core):** `View` renderings served by core (`overview-page` at `/`, `login-page` on the fallback, `config-page` at `/config`); `Action`s (`config-editor`: set + clear per config field; `tailnet-apply`: join, rename, leave)
 - **Consumes — inward (core):** `ConfigSurface` (the config registry's operator surface, injected by `main.py`; ADR-0004); `AdminAuth` (fallback credential, sessions, login limits) and the pure door functions in `interface/doors.py`
 - **Versions (spec §4 dual versioning):** release `VERSION` 0.8.0; inward
