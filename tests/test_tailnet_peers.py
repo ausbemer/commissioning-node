@@ -4,7 +4,8 @@ Identity is a renewed level that fails toward deny: every way the table can be m
 malformed or contradictory must resolve to nobody, with a reason.
 
 NOTE: the adapter sample follows the documented `tailscale status --json` shape for Peer and
-User entries; the Peer/User entry shape is NOT yet verified against 1.102.5 on a logged-in
+User entries; of the Peer entry, only CurAddr/Relay are verified on a logged-in 1.102.5
+(quirks Q-008); the rest of the Peer/User entry shape is NOT yet verified on a logged-in
 node (docs/quirks.md). The top-level keys were verified logged out.
 """
 from __future__ import annotations
@@ -120,6 +121,7 @@ def test_adapter_maps_peers_and_tagged_peers_get_no_login() -> None:
 
 @pytest.mark.parametrize("cur, endpoint", [("192.168.10.38:41641", "192.168.10.38"),
                                            ("[fd00::5]:41641", "fd00::5"), ("", None), (None, None),
+                                           ("[::ffff:10.20.30.38]:41641", "::ffff:10.20.30.38"),
                                            ("garbage:1", None), (7, None)])
 def test_cur_addr_becomes_the_endpoint(cur, endpoint) -> None:
     sample = {**SAMPLE, "Peer": {"nodekey:a": {**SAMPLE["Peer"]["nodekey:a"], "CurAddr": cur}}}
@@ -261,6 +263,11 @@ def test_an_endpoint_two_peers_share_is_left_out() -> None:
                                   "endpoint": "garbage"})
     d, _ = directory(a, b, c)
     assert d.endpoints() == {}
+
+
+def test_an_ipv4_mapped_endpoint_matches_its_ipv4_address() -> None:
+    d, _ = directory(ALICE.model_copy(update={"endpoint": "::ffff:10.20.30.38"}))
+    assert list(d.endpoints()) == ["10.20.30.38"]
 
 
 def test_an_endpoint_never_resolves_a_caller() -> None:

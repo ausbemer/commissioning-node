@@ -11,7 +11,7 @@ Field mapping, against tailscale 1.102.5 on this node (2026-10-12, logged out):
   the peer has an active direct path, else "" (idle or relayed); Relay is only the peer's home
   DERP region (quirks Q-008).
 - NOT YET VERIFIED (needs a logged-in node): Self.PrimaryRoutes, Self.Tags and per-peer Tags (all
-  omitted when empty), the shape of Peer entries, and User[str(UserID)].LoginName.
+  omitted when empty), the rest of the Peer entries' shape, and User[str(UserID)].LoginName.
   docs/quirks.md tracks this.
 """
 from __future__ import annotations

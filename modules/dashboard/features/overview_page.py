@@ -13,7 +13,8 @@ The site map draws the tailnet, this gateway, and each site network as a bus wit
 the last operator-run scan found hanging off it. It claims only what the scan saw and when
 ("Scanned 4 min ago"), never that a device is up. Flags come from their authorities: a
 registered camera from camera-config, "Axis by maker" from site-survey's MAC prefix, a
-tailnet node from tailnet-gateway (a fresh peer whose direct endpoint is that address). The
+tailnet peer's traffic from tailnet-gateway (a fresh peer whose direct endpoint is that address:
+the peer, or a NAT in front of it). The
 Scan slider beside the age is a may-disturb action; nothing scans on its own.
 
 The gateway column holds one tailnet control (ADR-0005 §3): Leave the Tailnet when joined,
@@ -293,10 +294,6 @@ def _tile(host: dict, camera: dict | None, peer: dict | None = None) -> tuple[bo
     """One host as a tile: (flagged, html). Flagged hosts are never folded away."""
     address = host.get("address", "")
     classes, tags = ["tile"], []
-    if peer is not None:
-        classes.append("tail")
-        node = peer.get("node_name", "")
-        tags.append(f'<span class="chip ok">Tailnet: {escape(node.split(".")[0])}</span>')
     if camera is not None:
         classes.append("cam")
         label = camera.get("label") or camera.get("camera_id", "")
@@ -305,6 +302,13 @@ def _tile(host: dict, camera: dict | None, peer: dict | None = None) -> tuple[bo
         if camera is None:
             classes.append("cam")
         tags.append('<span class="chip plan">Axis by maker</span>')
+    if peer is not None:
+        # Where the peer's tailnet traffic comes from now: the peer itself, or a NAT in front
+        # of it (quirks Q-008). Not proof of what the device is, so it never outranks a camera.
+        if camera is None and not host.get("axis_maker"):
+            classes.append("tail")
+        node = peer.get("node_name", "")
+        tags.append(f'<span class="chip ok">Tailnet traffic: {escape(node.split(".")[0])}</span>')
     if host.get("missing"):
         classes.append("missing")
         tags.append('<span class="chip warn">Did not answer</span>')
@@ -315,9 +319,8 @@ def _tile(host: dict, camera: dict | None, peer: dict | None = None) -> tuple[bo
     if ports:
         tags.append(f'<span class="mono muted">{escape(" ".join(str(p) for p in ports))}</span>')
     what = host.get("hostname") or host.get("maker") or ("Registered camera" if camera else "Unknown device")
-    who = (peer or {}).get("login") or ", ".join((peer or {}).get("tags") or [])
     detail = " · ".join(x for x in (host.get("hostname"), host.get("maker"), host.get("mac"),
-                                    (peer or {}).get("node_name"), who) if x)
+                                    (peer or {}).get("node_name")) if x)
     title = f' title="{escape(detail)}"' if detail else ""
     return (camera is not None or peer is not None or bool(host.get("axis_maker")),
             f'<li class="{" ".join(classes)}"{title}><span class="addr mono">{escape(address)}</span>'
@@ -429,7 +432,7 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
             f'<div class="node gw"><span class="k">This gateway</span><strong>{escape(name)}</strong>{gw_addr}</div>'
             f'{"".join(lans)}</div>'
             '<ul class="maplegend"><li><i class="cam"></i>Camera: registered, or Axis by maker</li>'
-            '<li><i class="tail"></i>Tailnet node, reached directly now</li>'
+            '<li><i class="tail"></i>Tailnet traffic comes from here now (the peer, or a NAT in front of it)</li>'
             '<li><i class="arp"></i>Answered ARP only</li><li><i class="missing"></i>Registered, did not answer</li>'
             f'<li>A scan shows who answered then, not who is up now.</li></ul>{table}</section>')
 

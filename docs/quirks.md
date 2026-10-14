@@ -143,8 +143,10 @@ Pinned dependencies covered here:
   traffic gave `""` and `Active: false`, with `Relay: "nyc"` on both.
 - **Detection signature:** `CurAddr == ""` with `Online: true`.
 - **Our accommodation:** `TailnetPeer.endpoint` is the address in `CurAddr`, or None. The site
-  map flags a tailnet node only when its endpoint is a scanned address, and its legend says
-  "reached directly now". An idle tailnet device on the site LAN shows as an ordinary host.
+  map marks a scanned address "Tailnet traffic: <peer>" only while it is a fresh peer's
+  endpoint, and the legend says it is where the traffic comes from (the peer, or a NAT in front
+  of it), not proof of the device. An idle tailnet device on the site LAN shows as an ordinary
+  host.
 - **Last verified:** 1.102.5, 2026-10-13.
 
 ## Unverified assumptions (verify, then turn into entries or delete)
@@ -153,7 +155,8 @@ Pinned dependencies covered here:
   on 1.102.5, logged out (2026-10-12): the top-level keys `BackendState` (`NeedsLogin` when
   logged out), `Self`, `Peer` and `User` exist, and `Peer`/`User` are `null` when logged out.
   `Self` has `HostName`, `DNSName`, `TailscaleIPs` and `UserID`. `Tags` and `PrimaryRoutes`
-  are omitted when empty. **Still unverified**, because it needs a logged-in node:
+  are omitted when empty. Logged in (2026-10-13): `Peer[*].CurAddr` and `Relay` (Q-008).
+  **Still unverified**, because it needs a logged-in node:
   - that `BackendState == "Running"` means connected;
   - `Self.PrimaryRoutes` (routes this node is currently primary for, which is not the same
     as the routes it *advertises*);
