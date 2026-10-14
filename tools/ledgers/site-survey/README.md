@@ -20,6 +20,7 @@ hostnames are site data and are never committed (ADR-0007 Safety 6).
 |------|---------|------------------|---------|--------------|----------------|
 | 2026-10-13 | /24 (255 addresses), home lab | 30 s | 30.73 s | 10 | 4 |
 | 2026-10-13 | same | 15 s | 23.62 s | 11 | 4 |
+| 2026-10-13 | same, through `NmapScanner` (incl. `ip` reads) | 15 s | 27.6 s | 10 | 4 |
 
 Halving the host timeout cut 7 s, not half: the host timeout is part of the time, not most of
 it. At `MAX_RATE` the probes alone take about 8 s for a /24 (255 addresses × ~3 discovery

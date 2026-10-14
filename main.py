@@ -28,6 +28,8 @@ import modules.camera_config as camera_config
 import modules.camera_config.interface as camera_config_if
 import modules.dashboard as dashboard
 import modules.dashboard.interface as dashboard_if
+import modules.site_survey as site_survey
+import modules.site_survey.interface as site_survey_if
 import modules.stream_relay as stream_relay
 import modules.stream_relay.interface as stream_relay_if
 import modules.tailnet_gateway as tailnet_gateway
@@ -62,6 +64,7 @@ CONFIG_ROOT = "/var/lib/commissioning-node"
 INTERFACES = {
     "camera-config": camera_config_if,
     "dashboard": dashboard_if,
+    "site-survey": site_survey_if,
     "stream-relay": stream_relay_if,
     "tailnet-gateway": tailnet_gateway_if,
 }
@@ -102,7 +105,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
             fallback: dashboard.FallbackConfig | None = None, admin_cred: str | None = None,
             actions: list | None = None, config_root: str | None = None,
             tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None,
-            site_networks=None, restart: Callable[[], None] | None = None) -> Node:
+            site_networks=None, restart: Callable[[], None] | None = None,
+            site_scanner=None, scan_spawn=None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
@@ -112,7 +116,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
     `restart` (serve's) lets the dashboard restart the service.
 
     `tailnet_writer` enables tailnet-gateway's writer (ADR-0005; registered disabled
-    otherwise). Tests pass a fake `overlay_writer` and an inline `writer_spawn`."""
+    otherwise). Tests pass a fake `overlay_writer` and an inline `writer_spawn`, and a fake
+    `site_scanner` with an inline `scan_spawn` (ADR-0007)."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
     if config_root is not None:
@@ -132,6 +137,7 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
                               state_dir=os.path.join(config_root, "site") if config_root else None),
         camera_config.build(sub, pub),
         stream_relay.build(sub, pub, clock),
+        site_survey.build(sub, pub, site_scanner, clock, scan_spawn),
         dash_registry,
     ]
     return node

@@ -107,10 +107,14 @@ Pinned dependencies covered here:
   nmap reported 10 hosts up; the neighbour table held 14 live entries on `eth0`, including
   the operator's PC (a tailnet peer) and 3 IoT devices nmap missed. Before the scan it held 3.
 - **Detection signature:** a live neighbour entry for an address absent from nmap's XML.
-- **Our accommodation:** site-survey's host list is nmap's hosts ∪ live neighbour entries on
-  the scanned interface; a neighbour-only host is marked "answered ARP only" (ADR-0007 D2).
-  An entry that existed before the scan may be older than it (`STALE` from earlier traffic),
-  so the map says "seen on the link", never "up".
+- **Our accommodation:** site-survey's host list is nmap's hosts ∪ neighbour entries on the
+  scanned networks **confirmed during the scan** (`ip -s -j -4 neigh`, `confirmed` ≤ the scan's
+  duration + 5 s); a neighbour-only host is marked "answered ARP only" (ADR-0007 D2). The state
+  word alone is not enough: Linux does not garbage-collect `STALE` entries while the table is
+  below `gc_thresh1` (128), and a connect probe to a long-gone device moves its old entry to
+  `DELAY`/`PROBE` with the old MAC still in it. Measured 2026-10-13: 12 of 14 entries were
+  `STALE`, last confirmed ~966 s earlier, after the scans; only 2 were confirmed within 30 s
+  (pre-merge review finding).
 - **Last verified:** nmap 7.95+dfsg-3, 2026-10-13.
 
 ### Q-007: random (locally administered) MACs have no maker

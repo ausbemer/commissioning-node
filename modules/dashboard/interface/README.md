@@ -1,4 +1,4 @@
-# dashboard Inward Interface — v0.8.0
+# dashboard Inward Interface — v0.9.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
@@ -46,7 +46,8 @@ Every feature implements `feature.py`'s protocol:
 | `ConfigSurface`, `ConfigFieldState`, `ConfigWriteResult` (protocols, `config.py`) | 0.4.0 | Seam to the config registry's operator surface (ADR-0004): list fields, read state (a secret has no value), set from operator text, clear. Injected by `main.py`; the dashboard never imports the registry |
 | `config_key`, `set_path`, `clear_path`, `config_rows`, `CONFIG_ACTIONS` (`config.py`) | 0.4.0 | Pure helpers: a field's key and action paths, and its rows for a View's snapshot (`snapshot["config"]`, present only when a registry is wired) |
 | `Invoker` (protocol), `TAILNET_WRITER`, `TAILNET_OPERATIONS` (`config.py`) | 0.5.0 | The §5 invoke seam (`main.invoke`, injected), and the tailnet operations' paths and may-disturb warnings (ADR-0005), shared by `tailnet-apply` and `config-page` |
-| `page`, `banner`, `slider`, `STYLE`, `NAV`, `tailnet_badge`, `THEME_PATH`, `THEME_COOKIE`, `THEMES`, `theme_choice`, `theme_return`, `SCRIPT`, `STATIC_PATH`, `op_form` (`chrome.py`) | 0.7.0; `op_form` 0.8.0 | The frame every HTML view shares: day/night colour tokens, base type, the banner (node, page links, signed-in caller and door, day/night slider) and common components. Pure; no script, no outside resource (CSP); values escaped. The slider links to `THEME_PATH`; core keeps the choice in `THEME_COOKIE` (ADR-0003 amendment) and HTML views receive it as `snapshot["theme"]`. Every page loads `SCRIPT` (ADR-0006: first-party, progressive enhancement); `refresh_s` reloads by script, or by a `<noscript>` meta refresh |
+| `SITE_SCANNER`, `SITE_OPERATIONS` (`config.py`) | 0.9.0 | The capability a site scan needs and the Scan's POST path and may-disturb warning (ADR-0007 D6), as `TAILNET_OPERATIONS`. `DashboardState` gains the kinds `site_hosts`, `site_scan` and `site_request`, one entry each, keyed `self` |
+| `page`, `banner`, `slider`, `STYLE`, `NAV`, `tailnet_badge`, `THEME_PATH`, `THEME_COOKIE`, `THEMES`, `theme_choice`, `theme_return`, `SCRIPT`, `STATIC_PATH`, `op_form` (`chrome.py`) | 0.7.0; `op_form` 0.8.0 (0.9.0: site operations, `marker`) | The frame every HTML view shares: day/night colour tokens, base type, the banner (node, page links, signed-in caller and door, day/night slider) and common components. Pure; no script, no outside resource (CSP); values escaped. The slider links to `THEME_PATH`; core keeps the choice in `THEME_COOKIE` (ADR-0003 amendment) and HTML views receive it as `snapshot["theme"]`. Every page loads `SCRIPT` (ADR-0006: first-party, progressive enhancement); `refresh_s` reloads by script, or by a `<noscript>` meta refresh |
 | `AdminAuth`, `Session` (`admin.py`) | 0.3.0 | Fallback login: scrypt credential (re-read on change; rotation ends sessions), in-memory sessions with idle/absolute expiry and a CSRF token; failures limited per IPv4 address or IPv6 /64; verifications run one at a time, first come first served (no global refusal, so an attacker cannot lock the operator out). Fails closed |
 
 All models tolerate unknown fields (`extra="ignore"`). Nested shapes are models too, never
@@ -66,6 +67,7 @@ interface objects").
 ## Changelog
 
 - v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme`, and `query` (the page URL's query, first value per key: display state a page keeps across its own auto-refresh); `SCRIPT` and `STATIC_PATH` for the module's own scripts (ADR-0006) (additive).
+- v0.9.0 — `SITE_SCANNER`, `SITE_OPERATIONS`; `op_form` takes a site operation, and `marker` (the outcome marker a confirmed slide waits on); state kinds `site_hosts`, `site_scan`, `site_request` (the last `site/scan` seen, with `received_at`) (additive, ADR-0007).
 - v0.8.0 — `chrome.op_form`: a tailnet operation's may-disturb form, shared by the overview (Join/Leave as a slider) and `/config` (Rename and Routes beside their fields) (additive).
 - v0.6.0 — `TAILNET_OPERATIONS` gains `routes`; the Join warning now says the key is kept (additive).
 - v0.5.0 — `Invoker`, `TAILNET_WRITER`, `TAILNET_OPERATIONS`; state kind `tailnet_apply` (additive). The `tailnet` kind is keyed `self`, not by hostname (a rename no longer leaves a stale row).

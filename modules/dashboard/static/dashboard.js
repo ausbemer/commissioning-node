@@ -9,7 +9,9 @@
 //    be dragged to the far end; let go anywhere short of it and the knob snaps back.
 //    A confirmed slide posts in the background and holds at "…" until the page shows the
 //    outcome: the write runs after the response, so the page the POST returns is stale.
-//    A refusal is shown on the slider, which then resets. A form marked data-await-restart
+//    The outcome is the page's data-last-apply marker changing (or the form going), for up
+//    to 30 s; a form may name another marker (data-marker), as the site scan does. A refusal
+//    is shown on the slider, which then resets. A form marked data-await-restart
 //    (the service restart) instead waits for the page to go away and come back, then reloads.
 // 2. Auto-refresh: <body data-refresh="N"> refreshes the page every N seconds (the
 //    <noscript> meta refresh covers no-script browsers). It fetches the same URL and swaps
@@ -176,14 +178,20 @@
     return true;
   }
 
-  // The page's marker of the last tailnet outcome (data-last-apply), "" when none.
-  function lastApply(doc) {
-    var el = doc.querySelector("[data-last-apply]");
-    return el ? el.getAttribute("data-last-apply") : "";
+  // The page's marker of the last outcome (data-last-apply unless the form names another),
+  // "" when none.
+  function lastApply(doc, marker) {
+    var el = doc.querySelector("[" + marker + "]");
+    return el ? el.getAttribute(marker) : "";
+  }
+
+  function markerOf(form) {
+    var m = form.getAttribute("data-marker") || "";
+    return /^data-[a-z-]+$/.test(m) ? m : "data-last-apply";
   }
 
   function submit(form, refused) {
-    var action = form.getAttribute("action"), before = lastApply(document);
+    var action = form.getAttribute("action"), marker = markerOf(form), before = lastApply(document, marker);
     fetch(form.action, { method: "POST", credentials: "same-origin",
                          body: new URLSearchParams(new FormData(form)) })
       .then(function (res) {
@@ -196,7 +204,7 @@
           return res.text().then(function (t) { refused(t.trim() || "Refused (" + res.status + ")"); });
         }
         if (form.hasAttribute("data-await-restart")) awaitRestart(false, Date.now() + 60000);
-        else watch(action, before, false, Date.now() + 30000);
+        else watch(action, marker, before, false, Date.now() + 30000);
       })
       .catch(function () { refused("The node did not answer"); });
   }
@@ -204,7 +212,7 @@
   // Poll until the outcome shows: the form for this action is gone (Leave became Join, Stop
   // became Advertise), or a new result arrived and one more poll has let the state catch up.
   // Only then swap, so a stale page never puts the old slider back.
-  function watch(action, before, seen, deadline) {
+  function watch(action, marker, before, seen, deadline) {
     setTimeout(function () {
       fetch(location.href, { credentials: "same-origin", headers: { "Accept": "text/html" } })
         .then(function (res) {
@@ -214,11 +222,11 @@
         .then(function (html) {
           var next = new DOMParser().parseFromString(html, "text/html");
           var gone = !next.querySelector('form[action="' + action + '"]');
-          var result = lastApply(next) !== before;
+          var result = lastApply(next, marker) !== before;
           if (gone || (result && seen) || Date.now() > deadline) {
             if (!swap(html)) location.reload();
           } else {
-            watch(action, before, result, deadline);
+            watch(action, marker, before, result, deadline);
           }
         })
         .catch(function () { location.reload(); });
