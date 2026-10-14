@@ -7,12 +7,16 @@ ADR, and this module stays its single writer (§11 rung 9).
 Field mapping, against tailscale 1.102.5 on this node (2026-10-12, logged out):
 - VERIFIED present: top-level BackendState, Self, Peer, User; Self.HostName, Self.DNSName,
   Self.TailscaleIPs, Self.UserID. Peer and User are null when logged out.
+- VERIFIED logged in (2026-10-13): Peer[*].CurAddr is "ip:port" ("[ip]:port" for IPv6) while
+  the peer has an active direct path, else "" (idle or relayed); Relay is only the peer's home
+  DERP region (quirks Q-008).
 - NOT YET VERIFIED (needs a logged-in node): Self.PrimaryRoutes, Self.Tags and per-peer Tags (all
   omitted when empty), the shape of Peer entries, and User[str(UserID)].LoginName.
   docs/quirks.md tracks this.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import shutil
@@ -75,9 +79,21 @@ class TailscaleCliStatusSource:
             if not name:
                 continue
             peers.append(OverlayPeer(addresses=[str(a) for a in p.get("TailscaleIPs") or []],
-                                     node_name=name, login=login, tags=tags))
+                                     node_name=name, login=login, tags=tags,
+                                     endpoint=_endpoint(p.get("CurAddr"))))
         return peers
 
     @staticmethod
     def _disconnected() -> OverlaySnapshot:
         return OverlaySnapshot(hostname=socket.gethostname(), connected=False)
+
+
+def _endpoint(cur: object) -> str | None:
+    """The address in a CurAddr ("ip:port" or "[ip]:port"); None when empty or malformed."""
+    if not isinstance(cur, str) or not cur:
+        return None
+    host = cur[1:cur.find("]")] if cur.startswith("[") and "]" in cur else cur.rsplit(":", 1)[0]
+    try:
+        return str(ipaddress.ip_address(host))
+    except ValueError:
+        return None

@@ -17,7 +17,7 @@ from bus import Bus
 from modules.dashboard.features import overview_page as ov
 from modules.dashboard.features.overview_page import OverviewPage
 from modules.site_survey.interface import ScanReply
-from modules.tailnet_gateway.interface import OverlaySnapshot
+from modules.tailnet_gateway.interface import OverlayPeer, OverlaySnapshot
 
 NOW = 1_800_000_000.0
 NET = "10.20.30.0/24"
@@ -139,6 +139,16 @@ def test_a_scan_with_no_result_stops_reading_as_running() -> None:
     assert "/actions/site/scan" in page
 
 
+def test_a_tailnet_node_is_flagged_by_its_direct_endpoint() -> None:
+    s = snap([host("10.20.30.9"), host("10.20.30.38", maker="private MAC", found_by="arp")])
+    s["tailnet_endpoints"] = {"10.20.30.38": {"node_name": "alice-laptop.tail1234.ts.net",
+                                              "login": "alice@example.com", "tags": []}}
+    t = tiles(render(s))
+    assert 'class="tile tail arp"' in t[0] and "Tailnet: alice-laptop</span>" in t[0]
+    assert "alice@example.com" in t[0]                    # in the title, for whoever hovers
+    assert "Tailnet:" not in t[1]
+
+
 def test_tiles_are_in_address_order_after_the_flagged() -> None:
     cams = {"A": {"camera_id": "X", "address": "10.20.30.5", "label": "Lobby"}}
     t = tiles(render(snap([host("10.20.30.9"), host("10.20.30.30")], cameras=cams)))
@@ -149,7 +159,9 @@ def test_tiles_are_in_address_order_after_the_flagged() -> None:
 
 class FakeOverlay:
     def read(self) -> OverlaySnapshot:
-        return OverlaySnapshot(hostname="cn-test", connected=True, addresses=["100.64.0.7"])
+        return OverlaySnapshot(hostname="cn-test", connected=True, addresses=["100.64.0.7"],
+                               peers=[OverlayPeer(addresses=["100.64.0.10"], node_name="alice-laptop.ts.net",
+                                                  login="alice@example.com", endpoint="10.20.30.21")])
 
 
 class FakeNetworks:
@@ -203,6 +215,7 @@ def test_scan_needs_confirmation_then_the_map_shows_the_result(served) -> None:
     page = call(conn, "GET", "/")[2]
     assert "by local: 1 host answered on 10.20.30.0/24." in page
     assert "Axis by maker" in page and "10.20.30.21" in page
+    assert "Tailnet: alice-laptop</span>" in page          # peer-report → peer-directory → the map
     assert re.search(r'data-last-scan="[0-9a-f]{12}:\d', page) and "Scanning since" not in page
 
 

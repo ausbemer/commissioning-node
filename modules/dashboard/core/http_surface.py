@@ -298,6 +298,10 @@ class HttpSurface:
                 snap["writes"] = sorted(surface._actions)
                 if surface._config is not None:
                     snap["config"] = config_rows(surface._config)   # secrets carry no value
+                # Fresh tailnet peers by direct address, for the site map (display only).
+                snap["tailnet_endpoints"] = {a: {"node_name": who.node_name, "login": who.login,
+                                                 "tags": list(who.tags)}
+                                             for a, who in surface._peers.endpoints().items()}
                 self._send(200, view.content_type, view.render(snap))
 
             # -- POST --------------------------------------------------------------------

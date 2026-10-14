@@ -25,7 +25,7 @@ class PeerReport:
             observed_at=snap.observed_at,
             period_s=snap.period_s,
             peers=[TailnetPeer(addresses=p.addresses, node_name=p.node_name, login=p.login,
-                               tags=p.tags)
+                               tags=p.tags, endpoint=p.endpoint)
                    for p in snap.peers],
         )
         return [(TAILNET_PEERS, peers.model_dump())]

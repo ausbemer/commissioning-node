@@ -131,6 +131,22 @@ Pinned dependencies covered here:
   never a guessed vendor. Axis cameras use global Axis OUIs, so the Axis flag is unaffected.
 - **Last verified:** nmap 7.95+dfsg-3, 2026-10-13.
 
+### Q-008: a peer's `CurAddr` is set only while it has an active direct path
+
+- **Dependency / version:** tailscale 1.102.5, `tailscale status --json`, logged in.
+- **Behaviour:** `Peer[*].CurAddr` is `"ip:port"` (`"[ip]:port"` for IPv6) for a peer this node
+  is talking to directly right now, and `""` otherwise. That includes a peer on the same LAN
+  that is merely idle (`Active: false`), with no error. `Relay` is always set: it names the
+  peer's home DERP region, not the path in use. `Addrs` was null for both peers.
+- **How measured:** 2026-10-13, two peers. The operator's PC, with an open dashboard session
+  over the tailnet, gave `CurAddr` = its site-LAN address with `Active: true`. A phone with no
+  traffic gave `""` and `Active: false`, with `Relay: "nyc"` on both.
+- **Detection signature:** `CurAddr == ""` with `Online: true`.
+- **Our accommodation:** `TailnetPeer.endpoint` is the address in `CurAddr`, or None. The site
+  map flags a tailnet node only when its endpoint is a scanned address, and its legend says
+  "reached directly now". An idle tailnet device on the site LAN shows as an ordinary host.
+- **Last verified:** 1.102.5, 2026-10-13.
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
