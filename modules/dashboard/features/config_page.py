@@ -5,10 +5,11 @@ being typed is never wiped. A secret is a write-only password input, never pre-f
 reads only as set or unset (§8.9). Each form posts to a config `Action`, behind
 `authorize()`; on success core sends the browser back here (`then`).
 
-Saving only stores a value. Two tailnet operations apply a saved value to a joined node and
-sit beside their field (ADR-0005 §3): Rename under the hostname, Routes under the advertised
-routes, which also show what `auto` means now and what is advertised and approved. Each is a
-may-disturb form with its warning inline. Join and Leave are the overview's slider.
+Saving only stores a value. Tailnet operations on a joined node sit beside their field
+(ADR-0005 §3): Rename under the hostname, a may-disturb form with its warning inline; and
+under the advertised routes (with what `auto` means now, what is advertised and approved) a
+slider like the overview's: Stop advertising routes while any are advertised, else Advertise
+the saved ones. Join and Leave are the overview's slider.
 
 Layout (mockup 3): dense, because this page grows with every module that declares config —
 a module index (a side list on wide screens, a strip on phones), one block per module, one
@@ -144,9 +145,12 @@ def _tailnet_extra(name: str, tailnet: dict | None, csrf: str | None) -> str:
                      f"Saved value means: {_mono(wanted)}.</p>")
         if joined:
             parts.append(f"<p>Advertised: {_mono(advertised)}. Approved by the tailnet: {_mono(approved)}.</p>")
-            if sorted(wanted) != sorted(advertised):
-                label = f"Advertise {', '.join(wanted)}" if wanted else "Advertise no routes"
-                parts.append(op_form("routes", label, csrf, PATH))
+            # One slider, a toggle: off while anything is advertised, else advertise the saved
+            # routes. Moving from one set to another goes through off.
+            if advertised:
+                parts.append(op_form("routes-off", "Stop advertising routes", csrf, PATH, slide=True))
+            elif wanted:
+                parts.append(op_form("routes", f"Advertise {', '.join(wanted)}", csrf, PATH, slide=True))
         else:
             parts.append("<p>Applied when the node joins.</p>")
     elif name == "hostname" and joined:

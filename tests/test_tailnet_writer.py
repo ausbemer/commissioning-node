@@ -625,25 +625,56 @@ def test_teardown_wipes_the_join_record(tmp_path) -> None:
     assert writer.calls == []                                  # no record, no key: never joins
 
 
-def test_config_offers_routes_beside_the_field_and_flags_unapproved(served) -> None:
+def test_config_routes_slider_toggles_off_and_back_on(served) -> None:
     node, writer, conn, origin = served
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
     main.tick(node)
     page = call(conn, "GET", "/")[2]
     assert '<dt>Advertised</dt><dd><span class="mono">192.168.137.0/24</span>' in page
-    assert "1 awaiting approval" in page
-    assert "/actions/tailnet/routes" not in page              # never on the overview
+    assert "1 awaiting approval" in page and "/actions/tailnet/routes" not in page
     config = call(conn, "GET", "/config")[2]
     assert "Approved by the tailnet: none" in config
-    assert 'action="/actions/tailnet/routes"' not in config    # nothing to change
+    # Advertising: the slider is the off switch, drawn like Leave; nothing to advertise.
+    off = config.split('action="/actions/tailnet/routes-off"', 1)[1].split("</form>", 1)[0]
+    assert off.startswith(" data-slide>") and ">Stop advertising routes</button>" in off
+    assert '<input type="hidden" name="then" value="/config">' in off
+    assert 'class="op danger bare"' in config and 'action="/actions/tailnet/routes"' not in config
+    status, headers, _ = call(conn, "POST", "/actions/tailnet/routes-off",
+                              {"confirm": "yes", "then": "/config"}, origin)
+    assert status == 303 and headers["location"] == "/config"
+    main.tick(node)
+    assert writer.calls[-1] == ("routes", ())
+    # Off: the slider advertises the saved routes again (a custom CIDR here).
     call(conn, "POST", "/actions/config/tailnet-gateway/advertise_routes", {"value": "10.20.0.0/16"}, origin)
     main.tick(node)
     config = call(conn, "GET", "/config")[2]
-    routes = config.split('action="/actions/tailnet/routes"', 1)[1].split("</form>", 1)[0]
-    assert '<input type="hidden" name="then" value="/config">' in routes
-    assert "tailnet users lose access" in routes and ">Advertise 10.20.0.0/16</button>" in routes
+    assert "Advertised: none" in config and "/actions/tailnet/routes-off" not in config
+    on = config.split('action="/actions/tailnet/routes"', 1)[1].split("</form>", 1)[0]
+    assert on.startswith(" data-slide>") and ">Advertise 10.20.0.0/16</button>" in on
+    call(conn, "POST", "/actions/tailnet/routes", {"confirm": "yes", "then": "/config"}, origin)
+    main.tick(node)
+    assert writer.calls[-1] == ("routes", ("10.20.0.0/16",))
     assert "/actions/tailnet/routes" not in call(conn, "GET", "/")[2]
+
+
+def test_routes_off_is_what_a_rejoin_restores(tmp_path) -> None:
+    clock = Clock()
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, results = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    apply(node, "routes-off")
+    main.tick(node)
+    assert results[-1]["operation"] == "routes-off" and results[-1]["ok"]
+    writer.calls.clear()
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+    clock.now += 61
+    main.tick(node)
+    assert writer.calls and writer.calls[0][0] == "join" and writer.calls[0][3] == ()
 
 
 def test_rename_sits_beside_the_hostname_on_config(served) -> None:

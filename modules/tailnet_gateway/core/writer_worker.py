@@ -20,7 +20,7 @@ import threading
 import time
 from typing import Callable
 
-from ..interface import (AUTH_KEY, JOIN, LEAVE, MODULE, RENAME, ROUTES, ConfigView, JoinRecord,
+from ..interface import (AUTH_KEY, JOIN, LEAVE, MODULE, RENAME, ROUTES, ROUTES_OFF, ConfigView, JoinRecord,
                          OverlayWriter, WriteOutcome, WritePlan, WriterReply, WriterSlot)
 from .join_record import JoinRecordStore
 
@@ -77,7 +77,7 @@ class WriterWorker:
             if reply.ok and current is not None:
                 reply = self._recorded(reply, current.model_copy(update={"hostname": plan.hostname}))
             return reply
-        if plan.operation == ROUTES:
+        if plan.operation in (ROUTES, ROUTES_OFF):
             reply = self._writer.set_routes(plan.routes)
             current = self._record.read() if self._record is not None else None
             if reply.ok and current is not None:

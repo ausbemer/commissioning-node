@@ -19,8 +19,8 @@ topics/types are local to this module and defined by its own `interface/`.
   contract (`interfaces/` v0.5.0)
 - **Produces — inward (features → core):** `WritePlan`s into the `WriterSlot` (`tailnet-writer` → `core/writer_worker.py`); core routes finished `WriteOutcome`s back on `tailnet-gateway/write-outcome` at the next tick
 - **Config (ADR-0004):** declares `CONFIG_FIELDS` in `interface/config.py`: `hostname`, `tags`, `auth_key` (secret), `advertise_routes` (default `auto`), `auto_rejoin` (default on), all site-scoped. The writer reads them through the injected `ConfigView`. The key is kept (A1); the worker keeps a join record (`site/tailnet-gateway.join.json`, `core/join_record.py`) that auto-rejoin acts on.
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.5.1; inward
-  contract `__version__` 0.5.1 (0.5.1: the auth key accepts an OAuth secret's options). Both live in `interface/__init__.py`; see
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.6.0; inward
+  contract `__version__` 0.6.0 (0.5.1: the auth key accepts an OAuth secret's options; 0.6.0: `ROUTES_OFF`). Both live in `interface/__init__.py`; see
   `interface/README.md`. The inward contract follows the same additive rules as the ecosystem
   contract, with a one-repo blast radius.
 
@@ -29,7 +29,7 @@ topics/types are local to this module and defined by its own `interface/`.
 | Feature | Status | Built on interface | Notes |
 |---------|--------|--------------------|-------|
 | `status-report` | enabled | 0.1.0 | Overlay snapshot → `TailnetStatus`. Read-only. |
-| `tailnet-writer` | enabled (`CN_TAILNET_WRITER=0` disables) | 0.5.0 | Decides join / rename / routes / leave against a fresh overlay reading and the saved config (routes via `resolve_routes`), auto-rejoins a recorded join on `NeedsLogin` with backoff, hands one `WritePlan` at a time to core's worker, publishes every refusal and outcome as `TailnetApplyResult`. Never retries an operator request (ADR-0005). |
+| `tailnet-writer` | enabled (`CN_TAILNET_WRITER=0` disables) | 0.5.0 | Decides join / rename / routes / routes-off / leave against a fresh overlay reading and the saved config (routes via `resolve_routes`), auto-rejoins a recorded join on `NeedsLogin` with backoff, hands one `WritePlan` at a time to core's worker, publishes every refusal and outcome as `TailnetApplyResult`. Never retries an operator request (ADR-0005). |
 | `peer-report` | enabled | 0.2.0 | Overlay snapshot → `TailnetPeers`, every tick, connected or not (an empty table when disconnected). Feeds the dashboard's caller identity (ADR-0003). Read-only. |
 
 ## Rules for agents working here

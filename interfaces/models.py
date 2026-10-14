@@ -169,7 +169,8 @@ class TailnetApply(Envelope):
 
     #: Correlates the result with this request.
     request_id: str
-    #: "join", "rename" or "leave". Open vocabulary: a writer refuses one it doesn't know.
+    #: "join", "rename", "routes", "routes-off" or "leave". Open vocabulary: a writer refuses
+    #: one it doesn't know.
     operation: str
     #: Who asked, as the operator surface recorded them (e.g. "alice@example.com").
     requested_by: str

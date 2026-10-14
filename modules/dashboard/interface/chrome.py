@@ -254,13 +254,17 @@ def page(*, title: str, body: str, banner_html: str, style: str = "",
 """
 
 
+#: Operations that take something away from tailnet users: drawn in the danger colour.
+DANGER_OPERATIONS = {"leave", "routes-off"}
+
+
 def op_form(operation: str, label: str, csrf: str | None, then: str, *, slide: bool = False) -> str:
     """One tailnet operation (`TAILNET_OPERATIONS`) as a may-disturb form posting back to
     `then`: its warning as the required confirm, and a submit button named `label`. With
     `slide`, script swaps the confirm and button for a slider reading `label` (ADR-0006), on
     a bare form; the warning then shows only without script, where it is the confirm."""
     path, warning = TAILNET_OPERATIONS[operation]
-    danger = operation == "leave"
+    danger = operation in DANGER_OPERATIONS
     classes = "op" + (" danger" if danger else "") + (" bare" if slide else "")
     token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
     return (f'<form class="{classes}" method="post" action="{escape(path)}"{" data-slide" if slide else ""}>'

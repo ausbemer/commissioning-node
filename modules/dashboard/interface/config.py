@@ -88,6 +88,9 @@ TAILNET_OPERATIONS = {
     "routes": ("/actions/tailnet/routes",
                "Changes the site networks this node offers the tailnet; tailnet users lose "
                "access to any network it stops advertising."),
+    "routes-off": ("/actions/tailnet/routes-off",
+                   "Stops offering the site networks to the tailnet; tailnet users lose access "
+                   "to them. The saved routes are kept."),
     "leave": ("/actions/tailnet/leave",
               "Disconnects this node from the tailnet. Tailnet sessions to it end; recovery is "
               "the LAN fallback on :8443."),
