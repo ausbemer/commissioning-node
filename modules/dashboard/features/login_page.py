@@ -37,5 +37,8 @@ class LoginPage:
 </form>
 </section>"""
         theme = snapshot.get("theme")
+        # No script: before a login the fallback door serves no static file, and nothing here
+        # needs one (the day/night links work without it).
         return page(title="Admin login · commissioning-node", body=body, style=STYLE, theme=theme,
+                    script=False,
                     banner_html=banner(name="commissioning-node", theme=theme, back=self.path))

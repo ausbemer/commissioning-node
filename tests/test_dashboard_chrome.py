@@ -209,3 +209,8 @@ def test_restart_exit_status_matches_the_unit() -> None:
     unit = (Path(__file__).resolve().parent.parent / "ops/systemd/commissioning-node.service").read_text()
     assert f"RestartForceExitStatus={main.RESTART_EXIT}" in unit
     assert f"SuccessExitStatus={main.RESTART_EXIT}" in unit
+
+
+def test_login_page_loads_no_script() -> None:
+    # The fallback serves /static/ only after a login, so the login page must not ask for it.
+    assert "<script" not in LoginPage().render({"message": "", "theme": None})
