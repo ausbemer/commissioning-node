@@ -4,7 +4,8 @@ Identity is a renewed level that fails toward deny: every way the table can be m
 malformed or contradictory must resolve to nobody, with a reason.
 
 NOTE: the adapter sample follows the documented `tailscale status --json` shape for Peer and
-User entries; the Peer/User entry shape is NOT yet verified against 1.102.5 on a logged-in
+User entries; of the Peer entry, only CurAddr/Relay are verified on a logged-in 1.102.5
+(quirks Q-008); the rest of the Peer/User entry shape is NOT yet verified on a logged-in
 node (docs/quirks.md). The top-level keys were verified logged out.
 """
 from __future__ import annotations
@@ -89,9 +90,11 @@ SAMPLE = {
              "UserID": 1},
     "Peer": {
         "nodekey:a": {"HostName": "alice-laptop", "DNSName": "alice-laptop.tail1234.ts.net.",
-                      "TailscaleIPs": ["100.64.0.10", "fd7a:115c:a1e0::10"], "UserID": 1},
+                      "TailscaleIPs": ["100.64.0.10", "fd7a:115c:a1e0::10"], "UserID": 1,
+                      "CurAddr": "192.168.10.38:41641", "Relay": "nyc"},
         "nodekey:b": {"HostName": "ci", "DNSName": "ci.tail1234.ts.net.",
-                      "TailscaleIPs": ["100.64.0.20"], "UserID": 99, "Tags": ["tag:ci"]},
+                      "TailscaleIPs": ["100.64.0.20"], "UserID": 99, "Tags": ["tag:ci"],
+                      "CurAddr": "", "Relay": "nyc"},
         "nodekey:c": {"HostName": "", "DNSName": "", "TailscaleIPs": ["100.64.0.30"], "UserID": 1},
     },
     "User": {"1": {"ID": 1, "LoginName": "alice@example.com"},
@@ -113,6 +116,16 @@ def test_adapter_maps_peers_and_tagged_peers_get_no_login() -> None:
     assert alice.login == "alice@example.com" and alice.tags == []
     assert alice.addresses == ["100.64.0.10", "fd7a:115c:a1e0::10"]
     assert ci.login is None and ci.tags == ["tag:ci"]   # never the "tagged-devices" pseudo-user
+    assert alice.endpoint == "192.168.10.38" and ci.endpoint is None   # CurAddr, verified 1.102.5 (Q-008)
+
+
+@pytest.mark.parametrize("cur, endpoint", [("192.168.10.38:41641", "192.168.10.38"),
+                                           ("[fd00::5]:41641", "fd00::5"), ("", None), (None, None),
+                                           ("[::ffff:10.20.30.38]:41641", "::ffff:10.20.30.38"),
+                                           ("garbage:1", None), (7, None)])
+def test_cur_addr_becomes_the_endpoint(cur, endpoint) -> None:
+    sample = {**SAMPLE, "Peer": {"nodekey:a": {**SAMPLE["Peer"]["nodekey:a"], "CurAddr": cur}}}
+    assert read(sample).peers[0].endpoint == endpoint
 
 
 def test_logged_out_status_has_no_peers() -> None:
@@ -132,6 +145,9 @@ def test_peer_report_needs_a_cadence_and_publishes_a_snapshot() -> None:
     assert topic == interfaces.TAILNET_PEERS and msg.schema_version == V
     assert (msg.observed_at, msg.period_s) == (12.0, 5.0)
     assert [p.login for p in msg.peers] == ["a@x"]
+    with_endpoint = stamped.model_copy(update={"peers": [peer.model_copy(update={"endpoint": "192.168.10.38"})]})
+    [(_, payload)] = PeerReport().handle("x", with_endpoint.model_dump())
+    assert payload["peers"][0]["endpoint"] == "192.168.10.38"
 
 
 # --- dashboard: PeerDirectory -----------------------------------------------------------
@@ -228,3 +244,32 @@ def test_malformed_tick_skips_the_reading_without_raising() -> None:
     node.bus.publish(interfaces.SYSTEM_TICK, {"schema_version": V, "at": 0.0})   # no period_s
     assert seen == []
     assert isinstance(node.dashboard._peers.resolve("100.64.0.10"), Unresolved)
+
+
+# --- dashboard: peers by endpoint (ADR-0007 step 4, display only) -------------------------
+
+def test_endpoints_are_fresh_peers_by_direct_address() -> None:
+    alice = ALICE.model_copy(update={"endpoint": "192.168.10.38"})
+    d, clock = directory(alice, CI_BOX)
+    assert {a: w.node_name for a, w in d.endpoints().items()} == {"192.168.10.38": "alice-laptop.tail1234.ts.net"}
+    clock.now += 60                                       # past 3 × 5 s: the table has lapsed
+    assert d.endpoints() == {}
+
+
+def test_an_endpoint_two_peers_share_is_left_out() -> None:
+    a = ALICE.model_copy(update={"endpoint": "192.168.10.38"})
+    b = CI_BOX.model_copy(update={"endpoint": "192.168.10.38"})
+    c = CI_BOX.model_copy(update={"node_name": "cam-box.ts.net", "addresses": ["100.64.0.40"],
+                                  "endpoint": "garbage"})
+    d, _ = directory(a, b, c)
+    assert d.endpoints() == {}
+
+
+def test_an_ipv4_mapped_endpoint_matches_its_ipv4_address() -> None:
+    d, _ = directory(ALICE.model_copy(update={"endpoint": "::ffff:10.20.30.38"}))
+    assert list(d.endpoints()) == ["10.20.30.38"]
+
+
+def test_an_endpoint_never_resolves_a_caller() -> None:
+    d, _ = directory(ALICE.model_copy(update={"endpoint": "192.168.10.38"}))
+    assert isinstance(d.resolve("192.168.10.38"), Unresolved)

@@ -39,7 +39,7 @@ Every feature implements `feature.py`'s protocol:
 |-------|-------|---------|
 | `DashboardState` | 0.1.0 | Thread-safe bounded latest-value store shared by collector and HTTP core (§4 "features meet in interface objects"). 0.5.0 adds the kind `tailnet_apply`; `tailnet` and `tailnet_apply` hold one entry, keyed `self` |
 | `PeerDirectory`, `PeerIdentity`, `Unresolved` (`identity.py`) | 0.2.0 | The one tailnet caller resolver (ADR-0003 §2): latest peer table, fresh by the producer's cadence, fails toward deny with a reason (`stale`, `unknown`, `ambiguous`, `invalid`) |
-| `View` (protocol, `views.py`) | 0.1.0 | A feature-supplied page: `path`, `content_type`, pure `render(snapshot)`. Since 0.3.0 the snapshot passed to an HTML view may carry `viewer` (`label`, `door`, `csrf`) |
+| `View` (protocol, `views.py`) | 0.1.0 | A feature-supplied page: `path`, `content_type`, pure `render(snapshot)`. Since 0.3.0 the snapshot passed to an HTML view may carry `viewer` (`label`, `door`, `csrf`); since 0.10.0 also `tailnet_endpoints` (address → `{node_name}`, from `PeerDirectory.endpoints()`; node names only, no logins) |
 | `parse_address` (`identity.py`) | 0.3.0 | Socket address → IP (zone stripped, IPv4-mapped unwrapped); the one parser every door check uses |
 | `Action`, `ActionResult` (protocol, `actions.py`) | 0.3.0 | A feature-supplied write: `name`, POST `path`, `may_disturb` (rung-4 warning or None), `run(form, caller)`. Core calls `run` only after `authorize()` |
 | `classify`, `host_allowed`, `same_origin`, `authorize`, `Caller`, `Refusal`, `Decision`, door names (`doors.py`) | 0.3.0 | The three doors and the one ownership check (ADR-0003 §1, §4). Pure functions. `host_allowed` accepts the arrival address, `localhost` on loopback, and only exact `node_names` (rebinding) |
@@ -66,10 +66,10 @@ interface objects").
 
 ## Changelog
 
-- v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme`, and `query` (the page URL's query, first value per key: display state a page keeps across its own auto-refresh); `SCRIPT` and `STATIC_PATH` for the module's own scripts (ADR-0006) (additive).
 - v0.10.0 — `PeerDirectory.endpoints()`: fresh peers by their direct address, for the site map only, never for identity (ADR-0007 step 4) (additive).
 - v0.9.0 — `SITE_SCANNER`, `SITE_OPERATIONS`; `op_form` takes a site operation, and `marker` (the outcome marker a confirmed slide waits on); state kinds `site_hosts`, `site_scan`, `site_request` (the last `site/scan` seen, with `received_at`) (additive, ADR-0007).
 - v0.8.0 — `chrome.op_form`: a tailnet operation's may-disturb form, shared by the overview (Join/Leave as a slider) and `/config` (Rename and Routes beside their fields) (additive).
+- v0.7.0 — `chrome.py`: the shared page frame (`page`, `banner`) for the dashboard redesign, and the day/night choice (`THEME_PATH`, `THEME_COOKIE`, `theme_choice`, `theme_return`); HTML views may receive `theme`, and `query` (the page URL's query, first value per key: display state a page keeps across its own auto-refresh); `SCRIPT` and `STATIC_PATH` for the module's own scripts (ADR-0006) (additive).
 - v0.6.0 — `TAILNET_OPERATIONS` gains `routes`; the Join warning now says the key is kept (additive).
 - v0.5.0 — `Invoker`, `TAILNET_WRITER`, `TAILNET_OPERATIONS`; state kind `tailnet_apply` (additive). The `tailnet` kind is keyed `self`, not by hostname (a rename no longer leaves a stale row).
 - v0.4.0 — `ConfigSurface` and its helpers (`config.py`); HTML views may receive `config` (additive).

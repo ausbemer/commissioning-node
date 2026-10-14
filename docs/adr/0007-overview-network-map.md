@@ -193,6 +193,12 @@ and sends `site/scan` through `invoke()` with `requires=site-survey:scanner`.
    scan runs the map reads "Scanning since …" in place of the slider (and says so if no result
    came within 320 s, the scan's timeout plus a tick); the page keeps refreshing meanwhile.
 4. **tailnet-gateway:** `TailnetPeer.endpoint`; the map flags tailnet nodes.
+   *Done 2026-10-13* (`feature/tailnet-endpoints`): `CurAddr` → `TailnetPeer.endpoint`;
+   `PeerDirectory.endpoints()` gives fresh peers by endpoint, for display only, never for a
+   caller's identity, and a stale peer table flags nobody. One limit, measured (quirks Q-008):
+   `CurAddr` is empty for an idle peer, so only a peer talking to this node directly right now
+   is flagged. Pre-merge review: the flag reads "Tailnet traffic: <peer>", since the endpoint may
+   be a NAT in front of the peer; views get node names only, never other operators' logins.
 5. **camera-config:** VAPIX identification (read-only) and `camera/identified`; the map flags
    cameras.
 6. **Separately:** the `TailnetStatus` freshness fix (Options, first bullet).

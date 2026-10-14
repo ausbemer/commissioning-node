@@ -12,7 +12,9 @@ under "System".
 The site map draws the tailnet, this gateway, and each site network as a bus with every host
 the last operator-run scan found hanging off it. It claims only what the scan saw and when
 ("Scanned 4 min ago"), never that a device is up. Flags come from their authorities: a
-registered camera from camera-config, "Axis by maker" from site-survey's MAC prefix. The
+registered camera from camera-config, "Axis by maker" from site-survey's MAC prefix, a
+tailnet peer's traffic from tailnet-gateway (a fresh peer whose direct endpoint is that address:
+the peer, or a NAT in front of it). The
 Scan slider beside the age is a may-disturb action; nothing scans on its own.
 
 The gateway column holds one tailnet control (ADR-0005 §3): Leave the Tailnet when joined,
@@ -113,6 +115,7 @@ STYLE = """
 .tile .tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
 .tile .tags .chip { font-size:11px; }
 .tile.cam { border:2px solid var(--accent); }
+.tile.tail { border:2px solid var(--ok); }
 .tile.arp { border-style:dashed; }
 .tile.missing { border-style:dotted; color:var(--muted); }
 .tile.fold { justify-content:center; align-items:center; color:var(--muted); border-style:dashed; }
@@ -122,6 +125,7 @@ STYLE = """
 .maplegend i { display:inline-block; width:22px; height:12px; border:1px solid var(--line-strong);
   border-radius:3px; vertical-align:-2px; margin-right:6px; }
 .maplegend i.cam { border:2px solid var(--accent); }
+.maplegend i.tail { border:2px solid var(--ok); }
 .maplegend i.arp { border-style:dashed; }
 .maplegend i.missing { border-style:dotted; }
 """
@@ -286,7 +290,7 @@ def _in(address: str, network: str) -> bool:
         return False
 
 
-def _tile(host: dict, camera: dict | None) -> tuple[bool, str]:
+def _tile(host: dict, camera: dict | None, peer: dict | None = None) -> tuple[bool, str]:
     """One host as a tile: (flagged, html). Flagged hosts are never folded away."""
     address = host.get("address", "")
     classes, tags = ["tile"], []
@@ -298,6 +302,13 @@ def _tile(host: dict, camera: dict | None) -> tuple[bool, str]:
         if camera is None:
             classes.append("cam")
         tags.append('<span class="chip plan">Axis by maker</span>')
+    if peer is not None:
+        # Where the peer's tailnet traffic comes from now: the peer itself, or a NAT in front
+        # of it (quirks Q-008). Not proof of what the device is, so it never outranks a camera.
+        if camera is None and not host.get("axis_maker"):
+            classes.append("tail")
+        node = peer.get("node_name", "")
+        tags.append(f'<span class="chip ok">Tailnet traffic: {escape(node.split(".")[0])}</span>')
     if host.get("missing"):
         classes.append("missing")
         tags.append('<span class="chip warn">Did not answer</span>')
@@ -308,21 +319,23 @@ def _tile(host: dict, camera: dict | None) -> tuple[bool, str]:
     if ports:
         tags.append(f'<span class="mono muted">{escape(" ".join(str(p) for p in ports))}</span>')
     what = host.get("hostname") or host.get("maker") or ("Registered camera" if camera else "Unknown device")
-    detail = " · ".join(x for x in (host.get("hostname"), host.get("maker"), host.get("mac")) if x)
+    detail = " · ".join(x for x in (host.get("hostname"), host.get("maker"), host.get("mac"),
+                                    (peer or {}).get("node_name")) if x)
     title = f' title="{escape(detail)}"' if detail else ""
-    return (camera is not None or bool(host.get("axis_maker")),
+    return (camera is not None or peer is not None or bool(host.get("axis_maker")),
             f'<li class="{" ".join(classes)}"{title}><span class="addr mono">{escape(address)}</span>'
             f'<span class="what">{escape(what)}</span><span class="tags">{"".join(tags)}</span></li>')
 
 
-def _network(network: str, hosts: list[dict], cameras: dict[str, dict], scanned: bool) -> tuple[str, list[dict]]:
+def _network(network: str, hosts: list[dict], cameras: dict[str, dict], scanned: bool,
+             peers: dict[str, dict] | None = None) -> tuple[str, list[dict]]:
     """One site network: its bus and tiles. Returns the html and the hosts folded away."""
     mine = [h for h in hosts if _in(h.get("address", ""), network)]
     seen = {h.get("address") for h in mine}
     # A registered camera the scan didn't find still belongs on its network, marked as such.
     mine += [{"address": a, "missing": scanned} for a in cameras if _in(a, network) and a not in seen]
     mine.sort(key=lambda h: ipaddress.ip_address(h.get("address", "0.0.0.0")))
-    tiles = [_tile(h, cameras.get(h.get("address", ""))) for h in mine]
+    tiles = [_tile(h, cameras.get(h.get("address", "")), (peers or {}).get(h.get("address", ""))) for h in mine]
     flagged = [t for f, t in tiles if f]
     rest = [(h, t) for h, (f, t) in zip(mine, tiles) if not f]
     folded: list[dict] = []
@@ -394,7 +407,7 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
         wire, tail = "warn", f'<span>{escape(status.get("state") or "not connected")}</span>'
     lans, folded = [], []
     for network in networks:
-        html, more = _network(network, hosts, by_address, bool(scan))
+        html, more = _network(network, hosts, by_address, bool(scan), snapshot.get("tailnet_endpoints") or {})
         lans.append(f'<div class="wire ok" aria-hidden="true"></div>{html}')
         folded += more
     if not networks:
@@ -419,6 +432,7 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
             f'<div class="node gw"><span class="k">This gateway</span><strong>{escape(name)}</strong>{gw_addr}</div>'
             f'{"".join(lans)}</div>'
             '<ul class="maplegend"><li><i class="cam"></i>Camera: registered, or Axis by maker</li>'
+            '<li><i class="tail"></i>Tailnet traffic comes from here now (the peer, or a NAT in front of it)</li>'
             '<li><i class="arp"></i>Answered ARP only</li><li><i class="missing"></i>Registered, did not answer</li>'
             f'<li>A scan shows who answered then, not who is up now.</li></ul>{table}</section>')
 

@@ -17,7 +17,7 @@ from bus import Bus
 from modules.dashboard.features import overview_page as ov
 from modules.dashboard.features.overview_page import OverviewPage
 from modules.site_survey.interface import ScanReply
-from modules.tailnet_gateway.interface import OverlaySnapshot
+from modules.tailnet_gateway.interface import OverlayPeer, OverlaySnapshot
 
 NOW = 1_800_000_000.0
 NET = "10.20.30.0/24"
@@ -139,6 +139,32 @@ def test_a_scan_with_no_result_stops_reading_as_running() -> None:
     assert "/actions/site/scan" in page
 
 
+def test_tailnet_traffic_is_flagged_by_the_peer_endpoint() -> None:
+    s = snap([host("10.20.30.9"), host("10.20.30.38", maker="private MAC", found_by="arp")])
+    s["tailnet_endpoints"] = {"10.20.30.38": {"node_name": "alice-laptop.tail1234.ts.net"}}
+    page = render(s)
+    t = tiles(page)
+    assert 'class="tile tail arp"' in t[0] and "Tailnet traffic: alice-laptop</span>" in t[0]
+    assert "alice-laptop.tail1234.ts.net" in t[0]          # full name in the title
+    assert "Tailnet traffic:" not in t[1]
+    assert "the peer, or a NAT in front of it" in page
+
+
+def test_a_camera_keeps_its_look_when_tailnet_traffic_comes_from_it() -> None:
+    cams = {"A": {"camera_id": "X", "address": "10.20.30.21", "label": "Gate 3"}}
+    s = snap([host("10.20.30.21", axis_maker=True)], cameras=cams)
+    s["tailnet_endpoints"] = {"10.20.30.21": {"node_name": "nat-box.ts.net"}}
+    [t] = tiles(render(s))
+    assert 'class="tile cam"' in t and t.index("Registered: Gate 3") < t.index("Tailnet traffic: nat-box")
+
+
+def test_a_hostile_peer_name_is_escaped() -> None:
+    s = snap([host("10.20.30.38")])
+    s["tailnet_endpoints"] = {"10.20.30.38": {"node_name": '"><script>x</script>.ts.net'}}
+    page = render(s)
+    assert "<script>x" not in page and "&lt;script&gt;x" in page
+
+
 def test_tiles_are_in_address_order_after_the_flagged() -> None:
     cams = {"A": {"camera_id": "X", "address": "10.20.30.5", "label": "Lobby"}}
     t = tiles(render(snap([host("10.20.30.9"), host("10.20.30.30")], cameras=cams)))
@@ -149,7 +175,9 @@ def test_tiles_are_in_address_order_after_the_flagged() -> None:
 
 class FakeOverlay:
     def read(self) -> OverlaySnapshot:
-        return OverlaySnapshot(hostname="cn-test", connected=True, addresses=["100.64.0.7"])
+        return OverlaySnapshot(hostname="cn-test", connected=True, addresses=["100.64.0.7"],
+                               peers=[OverlayPeer(addresses=["100.64.0.10"], node_name="alice-laptop.ts.net",
+                                                  login="alice@example.com", endpoint="10.20.30.21")])
 
 
 class FakeNetworks:
@@ -203,6 +231,10 @@ def test_scan_needs_confirmation_then_the_map_shows_the_result(served) -> None:
     page = call(conn, "GET", "/")[2]
     assert "by local: 1 host answered on 10.20.30.0/24." in page
     assert "Axis by maker" in page and "10.20.30.21" in page
+    assert "Tailnet traffic: alice-laptop</span>" in page  # peer-report → peer-directory → the map
+    assert "alice@example.com" not in page                 # another operator's login is not shown
+    api = call(conn, "GET", "/api/state")[2]
+    assert "tailnet_endpoints" not in api and "alice@example.com" not in api
     assert re.search(r'data-last-scan="[0-9a-f]{12}:\d', page) and "Scanning since" not in page
 
 
