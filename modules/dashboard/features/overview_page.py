@@ -185,8 +185,8 @@ def _apply(snapshot: dict, status: dict) -> str:
                     for m in n.get("modules", []) for c in m.get("capabilities", [])}
     notes, ops = [], []
     if TAILNET_WRITER not in capabilities:
-        notes.append(("off", "The tailnet writer is installed but not enabled yet (ADR-0005: it is "
-                             "enabled after a rehearsal join). Join manually for now; these buttons will refuse."))
+        notes.append(("off", "The tailnet writer is switched off on this node (CN_TAILNET_WRITER=0, "
+                             "ADR-0005): it will not join, leave or rejoin. These buttons will refuse."))
     if not joined:
         if key_saved:
             ops.append(_operation("join", "Join the tailnet", csrf))

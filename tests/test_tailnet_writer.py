@@ -421,7 +421,7 @@ def test_overview_offers_join_only_with_a_key(served) -> None:
     node, _, conn, origin = served
     page = call(conn, "GET", "/")[2]
     assert "not connected" in page and 'action="/actions/tailnet/join"' not in page
-    assert "save a reusable ephemeral auth key" in page and "not enabled yet" not in page
+    assert "save a reusable ephemeral auth key" in page and "writer is switched off" not in page
     call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
     page = call(conn, "GET", "/")[2]
     assert 'action="/actions/tailnet/join"' in page and 'name="confirm"' in page
@@ -452,7 +452,7 @@ def test_disabled_writer_is_said_on_the_page_and_refused(tmp_path) -> None:
     try:
         main.tick(node)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        assert "not enabled yet" in call(conn, "GET", "/")[2]
+        assert "writer is switched off" in call(conn, "GET", "/")[2]
         status, _, body = call(conn, "POST", "/actions/tailnet/leave", {"confirm": "yes"},
                                {"Origin": f"http://127.0.0.1:{port}"})
         assert status == 400 and "not available" in body
