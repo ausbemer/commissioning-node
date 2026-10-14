@@ -276,6 +276,8 @@ class SiteHosts(Envelope):
     #: The networks (CIDR) scanned.
     networks: list[str] = []
     hosts: list[SiteHost] = []
+    #: This node's own addresses on the scanned networks. Never scanned, never in `hosts`.
+    self_addresses: list[str] = []
     #: The request that ran this scan, and who asked.
     request_id: str = ""
     requested_by: str = ""
