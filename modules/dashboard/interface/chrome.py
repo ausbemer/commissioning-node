@@ -153,7 +153,8 @@ input:focus-visible, select:focus-visible {{ outline:2px solid var(--accent); ou
 .slide-fill {{ position:absolute; inset:0 auto 0 0; width:22px; background:var(--accent-soft); }}
 .op.danger .slide-fill {{ background:var(--crit-soft); }}
 .slide-text {{ position:absolute; inset:0; display:grid; place-items:center; font-size:13px;
-  font-weight:600; color:var(--muted); padding-left:40px; pointer-events:none; }}
+  font-weight:600; color:var(--muted); padding:0 12px 0 40px; pointer-events:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .slide-knob {{ position:absolute; top:2px; left:2px; width:38px; height:38px; border-radius:19px;
   display:grid; place-items:center; background:var(--accent); color:var(--accent-ink); font-weight:700;
   cursor:grab; touch-action:none; }}
@@ -161,6 +162,7 @@ input:focus-visible, select:focus-visible {{ outline:2px solid var(--accent); ou
 .slide-knob:active {{ cursor:grabbing; }}
 .slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:transform .2s ease, width .2s ease; }}
 .slide.done .slide-text {{ color:var(--accent); }}
+.slide.failed .slide-text, .op.danger .slide.failed .slide-text {{ color:var(--crit); }}
 .op.danger .slide.done .slide-text {{ color:var(--crit); }}
 .slide:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px; }}
 @media (prefers-reduced-motion: reduce) {{ .slide.snap .slide-knob, .slide.snap .slide-fill {{ transition:none; }} }}

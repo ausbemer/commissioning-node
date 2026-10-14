@@ -658,6 +658,33 @@ def test_config_routes_slider_toggles_off_and_back_on(served) -> None:
     assert "/actions/tailnet/routes" not in call(conn, "GET", "/")[2]
 
 
+def test_pages_mark_the_last_outcome_and_config_shows_a_failure_in_place(served) -> None:
+    import re
+    node, writer, conn, origin = served
+    call(conn, "POST", "/actions/config/tailnet-gateway/auth_key", {"value": KEY}, origin)
+    call(conn, "POST", "/actions/tailnet/join", {"confirm": "yes"}, origin)
+    main.tick(node)
+
+    def marker(page: str) -> str:
+        return re.search(r'data-last-apply="([^"]*)"', page).group(1)
+
+    config = call(conn, "GET", "/config")[2]
+    before = marker(config)
+    assert before and before == marker(call(conn, "GET", "/")[2])
+    # Swappable regions, so the script refreshes them without touching typed input.
+    for name in ("hostname", "tags", "advertise_routes"):
+        assert f'<div class="extra" data-live id="live-{name}">' in config
+    assert '<div data-live id="live-last" hidden' in config
+    writer.ok = False
+    call(conn, "POST", "/actions/tailnet/routes-off", {"confirm": "yes", "then": "/config"}, origin)
+    main.tick(node)
+    config = call(conn, "GET", "/config")[2]
+    assert marker(config) != before
+    region = config.split('id="live-advertise_routes">', 1)[1].split("</div>", 1)[0]
+    assert '<p class="fail">Routes-off failed:' in region
+    assert ">Stop advertising routes</button>" in region           # still advertising
+
+
 def test_routes_off_is_what_a_rejoin_restores(tmp_path) -> None:
     clock = Clock()
     overlay = FakeOverlay()

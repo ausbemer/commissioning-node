@@ -7,6 +7,9 @@
 // 1. Slide to confirm: a form marked data-slide keeps its required confirm checkbox and
 //    submit button for no-script browsers. Here they are replaced by a track whose knob must
 //    be dragged to the far end; let go anywhere short of it and the knob snaps back.
+//    A confirmed slide posts in the background and holds at "…" until the page shows the
+//    outcome: the write runs after the response, so the page the POST returns is stale.
+//    A refusal is shown on the slider, which then resets.
 // 2. Auto-refresh: <body data-refresh="N"> refreshes the page every N seconds (the
 //    <noscript> meta refresh covers no-script browsers). It fetches the same URL and swaps
 //    in the new banner and <main>, so scroll and focus stay put (ADR-0006 amendment). It
@@ -63,6 +66,19 @@
       fill.style.width = (pos * room() + knob.offsetWidth / 2) + "px";
       track.setAttribute("aria-valuenow", String(Math.round(pos * 100)));
     }
+    function refused(message) {
+      track.classList.remove("done");
+      track.classList.add("failed");
+      text.textContent = track.title = message;
+      box.checked = false;
+      setTimeout(function () {
+        sent = false;
+        track.classList.remove("failed");
+        text.textContent = label;
+        track.title = "";
+        show(0, true);
+      }, 6000);
+    }
     function confirm() {
       if (sent) return;
       sent = true;
@@ -70,7 +86,7 @@
       track.classList.add("done");
       text.textContent = label + "…";
       box.checked = true;
-      form.requestSubmit ? form.requestSubmit(button) : form.submit();
+      submit(form, refused);
     }
     function release() {
       if (!dragging) return;
@@ -129,10 +145,20 @@
                                       "main button, main input, main [tabindex]");
   }
 
+  // What a swap replaces: the banner, and <main>; or, on a page holding typed input
+  // (/config), only its [data-live] regions, matched by id, so nothing typed is lost.
   function swap(html) {
     var next = new DOMParser().parseFromString(html, "text/html");
-    var pairs = [["header.banner", next.querySelector("header.banner")],
-                 ["main", next.querySelector("main")]];
+    var pairs = [["header.banner", next.querySelector("header.banner")]];
+    var live = document.querySelectorAll("[data-live][id]");
+    if (live.length) {
+      Array.prototype.forEach.call(live, function (el) {
+        var fresh = next.getElementById(el.id);
+        if (fresh) pairs.push(["#" + CSS.escape(el.id), fresh]);
+      });
+    } else {
+      pairs.push(["main", next.querySelector("main")]);
+    }
     if (pairs.some(function (p) { return !p[1] || !document.querySelector(p[0]); })) {
       return false;
     }
@@ -147,6 +173,54 @@
     if (theme) markTheme(theme);
     if (at >= 0 && focusables()[at]) focusables()[at].focus({ preventScroll: true });
     return true;
+  }
+
+  // The page's marker of the last tailnet outcome (data-last-apply), "" when none.
+  function lastApply(doc) {
+    var el = doc.querySelector("[data-last-apply]");
+    return el ? el.getAttribute("data-last-apply") : "";
+  }
+
+  function submit(form, refused) {
+    var action = form.getAttribute("action"), before = lastApply(document);
+    fetch(form.action, { method: "POST", credentials: "same-origin",
+                         body: new URLSearchParams(new FormData(form)) })
+      .then(function (res) {
+        // Sent somewhere else (an expired fallback session goes to the login page): follow.
+        if (res.redirected && new URL(res.url).pathname !== location.pathname) {
+          location.href = res.url;
+          return;
+        }
+        if (!res.ok) {
+          return res.text().then(function (t) { refused(t.trim() || "Refused (" + res.status + ")"); });
+        }
+        watch(action, before, false, Date.now() + 30000);
+      })
+      .catch(function () { refused("The node did not answer"); });
+  }
+
+  // Poll until the outcome shows: the form for this action is gone (Leave became Join, Stop
+  // became Advertise), or a new result arrived and one more poll has let the state catch up.
+  // Only then swap, so a stale page never puts the old slider back.
+  function watch(action, before, seen, deadline) {
+    setTimeout(function () {
+      fetch(location.href, { credentials: "same-origin", headers: { "Accept": "text/html" } })
+        .then(function (res) {
+          if (!res.ok || res.redirected) throw new Error("watch: " + res.status);
+          return res.text();
+        })
+        .then(function (html) {
+          var next = new DOMParser().parseFromString(html, "text/html");
+          var gone = !next.querySelector('form[action="' + action + '"]');
+          var result = lastApply(next) !== before;
+          if (gone || (result && seen) || Date.now() > deadline) {
+            if (!swap(html)) location.reload();
+          } else {
+            watch(action, before, result, deadline);
+          }
+        })
+        .catch(function () { location.reload(); });
+    }, 1000);
   }
 
   function autoRefresh() {

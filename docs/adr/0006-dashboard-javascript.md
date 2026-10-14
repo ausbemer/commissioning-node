@@ -124,3 +124,18 @@ shows only without script, where it is the required confirm. Rename and Routes m
 `/config`, beside the hostname and the advertised routes, as ordinary may-disturb forms
 with the warning inline. The last result stays visible as the gateway's *Last action* fact
 (ADR-0005 A2: every outcome is visible).
+
+### 2026-10-13 — a confirmed slide waits for its outcome
+
+A tailnet write runs on tailnet-gateway's worker after the POST has been answered, and its
+result arrives on a later tick. So the page the POST redirects to was drawn before the change,
+and `/config` (no auto-refresh) kept showing the old slider ("Stop advertising routes" after
+the routes were gone). Now a confirmed slide posts in the background and holds at
+"<action>…". It polls the page once a second until the outcome shows, then swaps. The outcome
+shows when the form for that action is gone, or when a new result
+(`data-last-apply`, the finished time of the last outcome) has been seen on two polls in a
+row. It gives up after 30 s and swaps anyway. A refusal (the POST's text answer) shows on the
+slider for 6 s, then the slider resets. On `/config` only the `[data-live]` regions (the
+tailnet rows and the marker) are swapped, never a field being typed. A failed Rename, Routes
+or Routes off shows its reason under its field. Without script nothing changes: the form
+posts and the page reloads.

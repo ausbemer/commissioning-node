@@ -72,7 +72,13 @@ STYLE = """
 .aside .btn.del { color:var(--crit); }
 .field .extra { grid-column:1 / -1; display:grid; gap:8px; font-size:13px; }
 .field .extra p { margin:0; color:var(--muted); }
-.field .extra .op { max-width:640px; }
+.field .extra:empty { display:none; }
+.field .extra p.fail { color:var(--crit); }
+/* A compact slider: it sits in a dense row, under the field it applies. */
+.field .extra .op.bare { max-width:300px; }
+.field .extra .slide { height:32px; border-radius:16px; }
+.field .extra .slide-knob { width:26px; height:26px; border-radius:13px; font-size:12px; }
+.field .extra .slide-text { font-size:12.5px; padding-left:30px; }
 @media (max-width: 1000px) {
   .field { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
   .field .about { grid-column:1 / -1; }
@@ -128,14 +134,23 @@ def _mono(values: list[str]) -> str:
     return " ".join(f'<span class="mono">{escape(v)}</span>' for v in values) if values else "none"
 
 
+#: Which field shows a failed operation's reason.
+_FAILS_UNDER = {"routes": "advertise_routes", "routes-off": "advertise_routes", "rename": "hostname"}
+
+
 def _tailnet_extra(name: str, tailnet: dict | None, csrf: str | None) -> str:
     """Beside a tailnet-gateway field: the node's live value and the operation that applies
-    the saved one, when there is a difference to apply. `tailnet` is None without a writer."""
+    the saved one, when there is a difference to apply. `tailnet` is None without a writer.
+    Always a [data-live] region (possibly empty), so the script can swap it in place."""
     if tailnet is None:
         return ""
     status, saved = tailnet["status"], tailnet["saved"]
     joined = bool(status.get("connected"))
     parts = []
+    last = tailnet.get("last") or {}
+    if not last.get("ok", True) and _FAILS_UNDER.get(last.get("operation", "")) == name:
+        parts.append(f'<p class="fail">{escape(last.get("operation", "").capitalize())} failed: '
+                     f'{escape(last.get("message", ""))}</p>')
     if name == "advertise_routes":
         # Resolved by tailnet-gateway, the one authority for what "auto" means.
         wanted = list(status.get("wanted_routes") or [])
@@ -162,7 +177,7 @@ def _tailnet_extra(name: str, tailnet: dict | None, csrf: str | None) -> str:
         if want != sorted(status.get("tags") or []):
             parts.append(f"<p>The node has {_mono(list(status.get('tags') or []))}. Tags change only on "
                          "a join: Leave, then Join (the saved key is reused).</p>")
-    return f'<div class="extra">{"".join(parts)}</div>' if parts else ""
+    return f'<div class="extra" data-live id="live-{escape(name)}">{"".join(parts)}</div>'
 
 
 def _field(row: dict, csrf: str | None, extra: str = "") -> str:
@@ -213,7 +228,8 @@ def _tailnet(snapshot: dict, rows: list[dict]) -> dict | None:
     if not rows or TAILNET_WRITER not in capabilities:
         return None
     return {"status": (snapshot.get("tailnet") or {}).get("self") or {},
-            "saved": {r.get("field", {}).get("name"): r for r in rows}}
+            "saved": {r.get("field", {}).get("name"): r for r in rows},
+            "last": (snapshot.get("tailnet_apply") or {}).get("self")}
 
 
 def _extra(module: str, row: dict, tailnet: dict | None, csrf: str | None) -> str:
@@ -246,8 +262,12 @@ class ConfigPage:
                 f'<ul class="fields">{"".join(_field(r, csrf, _extra(m, r, tailnet, csrf)) for r in g)}'
                 '</ul></section>'
                 for m, g in modules.items())
+            # The last tailnet outcome, for the script: a confirmed slide holds until it changes.
+            marker = "" if tailnet is None else (
+                '<div data-live id="live-last" hidden data-last-apply="'
+                f'{escape(str((tailnet.get("last") or {}).get("finished_at", "")))}"></div>')
             content = (f'<div class="cfg"><nav class="index" aria-label="Config sections"><ol>'
-                       f'{"".join(index)}</ol></nav><div>{blocks}'
+                       f'{"".join(index)}</ol></nav><div>{blocks}{marker}'
                        '<p class="keyline"><span class="tag site">site</span> wiped when the node leaves '
                        'a site. <span class="tag node">node</span> kept between sites.</p></div></div>')
         body = ('<div class="cfg-head"><h1>Config</h1><p>Saving only stores a value. A tailnet change '

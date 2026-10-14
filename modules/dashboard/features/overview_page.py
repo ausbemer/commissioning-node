@@ -156,6 +156,13 @@ def _gateway(status: dict, machine: str, last: dict | None = None) -> str:
     return ('<dl class="facts">' + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts) + "</dl>")
 
 
+def last_marker(snapshot: dict) -> str:
+    """When the last tailnet outcome finished: the script holds a confirmed slide until it
+    changes (or the form goes), so a stale page never shows the old slider again."""
+    last = (snapshot.get("tailnet_apply") or {}).get("self") or {}
+    return f'<span hidden data-last-apply="{escape(str(last.get("finished_at", "")))}"></span>'
+
+
 def _apply(snapshot: dict, status: dict) -> str:
     """The one tailnet control that makes sense now: Leave when joined, Join when not."""
     saved = {r.get("field", {}).get("name"): r for r in snapshot.get("config") or []
@@ -261,7 +268,7 @@ class OverviewPage:
 </div>
 <div class="zones">
 <section class="zone lan"><h2>Cameras <small>on the site network</small></h2>{_cameras(cameras)}</section>
-<section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine, (snapshot.get("tailnet_apply") or {}).get("self"))}{_apply(snapshot, status)}</section>
+<section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine, (snapshot.get("tailnet_apply") or {}).get("self"))}{_apply(snapshot, status)}{last_marker(snapshot)}</section>
 <section class="zone tail"><h2>Streams <small>tailnet endpoints</small></h2>{_streams(streams)}</section>
 </div>
 {_system(nodes, snapshot.get("wire", {}), system_open)}"""
