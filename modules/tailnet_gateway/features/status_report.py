@@ -1,7 +1,7 @@
 """status-report — publishes this node's tailnet status from each overlay snapshot.
 
-Read-only (§11 rung 1). Auto-configuration (detect the site subnet, propose routes for
-operator confirmation, rung 2) is a later feature in this module.
+Read-only (§11 rung 1). It also reports the detected site networks and the routes the saved
+config wants (`auto` expanded, ADR-0005 A3), which the operator confirms through the writer.
 """
 from __future__ import annotations
 

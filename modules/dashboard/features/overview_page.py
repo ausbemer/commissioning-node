@@ -366,6 +366,7 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
     scan = (snapshot.get("site_hosts") or {}).get("self")
     result = (snapshot.get("site_scan") or {}).get("self")
     by_address = {c.get("address", ""): c for c in cameras if c.get("address")}
+    moved = False
     if scan:
         age = now - (scan.get("scanned_at") or 0)
         n, nets = len(scan.get("hosts") or []), ", ".join(scan.get("networks") or [])
@@ -374,6 +375,13 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
                 f'answered on {escape(nets)}.')
         networks, hosts = list(scan.get("networks") or []), list(scan.get("hosts") or [])
         own = list(scan.get("self_addresses") or [])
+        now_on = list(status.get("site_networks") or [])
+        if status and sorted(now_on) != sorted(networks):
+            # The node is somewhere else now (a move, a DHCP change): the scan is history, and
+            # today's peer endpoints must not be pinned onto its hosts.
+            line += (f'<span class="fail">The node is on {escape(", ".join(now_on) or "no site network")} '
+                     'now; this scan is from before. Scan again.</span>')
+            moved = True
     else:
         age, line = 0.0, "Not scanned yet. A scan probes the site network once, when you ask."
         networks, hosts, own = list(status.get("site_networks") or []), [], []
@@ -407,7 +415,8 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
         wire, tail = "warn", f'<span>{escape(status.get("state") or "not connected")}</span>'
     lans, folded = [], []
     for network in networks:
-        html, more = _network(network, hosts, by_address, bool(scan), snapshot.get("tailnet_endpoints") or {})
+        html, more = _network(network, hosts, by_address, bool(scan),
+                              {} if moved else snapshot.get("tailnet_endpoints") or {})
         lans.append(f'<div class="wire ok" aria-hidden="true"></div>{html}')
         folded += more
     if not networks:
@@ -423,7 +432,7 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
         table = ('<div id="site-hosts">' + _table("Other hosts", ["Address", "Hostname", "Maker", "MAC",
                                                                   "Open ports", "Found by"], rows, "none")
                  + "</div>")
-    old = " old" if scan and age > SCAN_OLD_S else ""
+    old = " old" if scan and (age > SCAN_OLD_S or moved) else ""
     return (f'<section class="site{old}" aria-labelledby="site-h"><div class="site-head">'
             f'<h2 id="site-h">Site network <small>last scan</small></h2><p class="age">{line}</p>'
             f'<div class="scan">{control}</div></div>{scan_marker(snapshot)}'

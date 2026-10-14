@@ -165,6 +165,15 @@ def test_a_hostile_peer_name_is_escaped() -> None:
     assert "<script>x" not in page and "&lt;script&gt;x" in page
 
 
+def test_a_scan_from_another_network_says_so_and_flags_no_tailnet_traffic() -> None:
+    s = snap([host("10.20.30.38")], status={"hostname": "cn", "connected": True, "addresses": ["100.64.0.7"],
+                                             "site_networks": ["192.168.50.0/24"]})
+    s["tailnet_endpoints"] = {"10.20.30.38": {"node_name": "alice-laptop.ts.net"}}
+    page = render(s)
+    assert "The node is on 192.168.50.0/24 now; this scan is from before. Scan again." in page
+    assert "Tailnet traffic:" not in tiles(page)[0] and '<section class="site old"' in page
+
+
 def test_tiles_are_in_address_order_after_the_flagged() -> None:
     cams = {"A": {"camera_id": "X", "address": "10.20.30.5", "label": "Lobby"}}
     t = tiles(render(snap([host("10.20.30.9"), host("10.20.30.30")], cameras=cams)))

@@ -476,7 +476,7 @@ def test_site_networks_adapter_skips_loopback_tailnet_link_local_and_hosts() -> 
                                          {"local": "169.254.1.2", "prefixlen": 16},
                                          {"local": "10.9.9.9", "prefixlen": 32}]},
         {"ifname": "wwan0", "addr_info": [{"local": "100.70.1.2", "prefixlen": 30}]},   # CGNAT
-        {"ifname": "tailscale0", "addr_info": [{"local": "100.95.50.113", "prefixlen": 32}]},
+        {"ifname": "tailscale0", "addr_info": [{"local": "100.64.50.113", "prefixlen": 32}]},
     ]
 
     def run(argv, **kw):
@@ -756,6 +756,55 @@ def test_a_new_interface_is_not_advertised_by_a_rejoin(tmp_path) -> None:
     clock.now += 61
     main.tick(node)
     assert writer.calls[0][3] == ("192.168.137.0/24",)
+
+
+def test_a_node_that_moved_site_does_not_rejoin_with_the_old_routes(tmp_path) -> None:
+    # Release review 2026-10-13: powered off at site A, booted at site B with the same reusable
+    # key; the ephemeral node was removed meanwhile, so it boots needing a login.
+    clock = Clock()
+    networks = FakeNetworks()                                  # site A: 192.168.137.0/24
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, results = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock, networks=networks)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    writer.calls.clear()
+    networks.networks = ["10.20.30.0/24"]                      # site B
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+    clock.now += 61
+    main.tick(node)
+    main.tick(node)
+    assert writer.calls == []                                  # tailscale never called
+    refusals = [r for r in results if not r["ok"] and "may have moved site" in r["message"]]
+    assert len(refusals) == 1 and "192.168.137.0/24" in refusals[0]["message"]   # said once
+    assert refusals[0]["requested_by"] == "auto-rejoin" and refusals[0]["operation"] == "join"
+    # The operator's Join applies the routes of where the node is now.
+    apply(node, "join")
+    main.tick(node)
+    assert writer.calls[0][0] == "join" and writer.calls[0][3] == ("10.20.30.0/24",)
+
+
+def test_a_network_that_comes_up_late_still_rejoins(tmp_path) -> None:
+    clock = Clock()
+    networks = FakeNetworks()
+    overlay = FakeOverlay()
+    writer = FakeWriter(overlay=overlay)
+    node, results = node_with(tmp_path, overlay=overlay, writer=writer, clock=clock, networks=networks)
+    save(node, auth_key=KEY)
+    main.tick(node)
+    apply(node, "join")
+    main.tick(node)
+    writer.calls.clear()
+    networks.networks = []                                     # booted; DHCP not answered yet
+    overlay.snapshot = overlay.snapshot.model_copy(update={"connected": False, "state": "NeedsLogin"})
+    clock.now += 61
+    main.tick(node)
+    assert writer.calls == []
+    networks.networks = ["192.168.137.0/24"]                   # the site network came up
+    main.tick(node)
+    assert writer.calls and writer.calls[0][0] == "join" and writer.calls[0][3] == ("192.168.137.0/24",)
 
 
 @pytest.mark.parametrize("failure", ["record delete fails", "logout times out"])

@@ -38,6 +38,12 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       pinned, two measured scans) and step 2 (contract 0.6.0 + `site-survey`, on
       `feature/site-survey`) step 3 (the Scan slider and the map, dashboard 0.9.0) and step 4
       (tailnet nodes on the map) done 2026-10-13; step 5 (VAPIX identification) next. Separately: the overview never judges `TailnetStatus` freshness (ADR-0007, Options).
+- [ ] **Restart vs. an operation in flight** (release review, 2026-10-13). A service restart
+      from `/config` while a Join, Rename or Routes is still running loses its outcome (no
+      Last action), and the join record misses what tailscaled did, so a later rejoin may
+      apply old values. Refuse the restart while a tailnet apply or a scan has no result yet
+      (observe `tailnet/apply` as the dashboard already observes `site/scan`), or have main
+      wait for both worker slots to drain before exiting. Say so in `RESTART_WARNING`.
 - [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:

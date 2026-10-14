@@ -299,7 +299,7 @@ class HttpSurface:
                 if surface._config is not None:
                     snap["config"] = config_rows(surface._config)   # secrets carry no value
                 # Fresh tailnet peers by direct address, for the site map (display only). Node
-                # names only: another operator's login is not every viewer's business.
+                # names only: the map has no use for peers' logins.
                 snap["tailnet_endpoints"] = {a: {"node_name": who.node_name}
                                              for a, who in surface._peers.endpoints().items()}
                 self._send(200, view.content_type, view.render(snap))
