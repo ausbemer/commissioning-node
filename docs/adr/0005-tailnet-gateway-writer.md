@@ -428,9 +428,10 @@ to site instead of minting an auth key per visit. Consequences for A1:
   secret used as an auth key needs `--advertise-tags`, joins ephemeral by default, and is
   *not* pre-authorised by default. On a tailnet with device approval, a rejoin would wait
   for approval unless the key carries `?preauthorized=true`.
-- **The `auth_key` field accepts the options:** a key may end in `?ephemeral=` and/or
-  `?preauthorized=` (`true`/`false`, each once). `baseURL` is refused: it would point the
-  join at another control plane. The suffix is part of the secret file, so it is in the
+- **The `auth_key` field accepts the options:** a key may end in `?ephemeral=true` and/or
+  `preauthorized=true|false`, each once. `ephemeral=false` is refused (D4: the node is
+  ephemeral on every site), and so is `baseURL`, which would point the join at another
+  control plane. The suffix is part of the secret file, so it is in the
   recorded `key_sha256`; changing it is a key change, and auto-rejoin refuses it until a
   confirmed Join.
 
