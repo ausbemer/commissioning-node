@@ -36,7 +36,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       An operator-run gentle nmap scan of the site networks (new module `site-survey`),
       drawn as a map; VAPIX flags Axis cameras, Tailscale flags tailnet nodes. Step 1 (nmap
       pinned, two measured scans) and step 2 (contract 0.6.0 + `site-survey`, on
-      `feature/site-survey`) done 2026-10-13; step 3 (the Scan action and the map) next. Separately: the overview never judges `TailnetStatus` freshness (ADR-0007, Options).
+      `feature/site-survey`) and step 3 (the Scan slider and the map, dashboard 0.9.0) done
+      2026-10-13; step 4 (tailnet nodes on the map) next. Separately: the overview never judges `TailnetStatus` freshness (ADR-0007, Options).
 - [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:

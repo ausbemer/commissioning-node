@@ -101,3 +101,15 @@ TAILNET_OPERATIONS = {
               "Disconnects this node from the tailnet. Tailnet sessions to it end; recovery is "
               "the LAN fallback on :8443."),
 }
+
+#: The capability a site scan needs (§5, ADR-0007).
+SITE_SCANNER = "site-survey:scanner"
+
+#: Site operations (ADR-0007 D6): operation -> (POST path, may-disturb warning), as
+#: `TAILNET_OPERATIONS`. The warning names the probed ports (site-survey's `PORTS`): a change
+#: there changes what the operator confirms, so it changes here too.
+SITE_OPERATIONS = {
+    "scan": ("/actions/site/scan",
+             "Probes every address on the site network (ports 80, 443, 554). Some site "
+             "security tools report scans; check with site IT first."),
+}

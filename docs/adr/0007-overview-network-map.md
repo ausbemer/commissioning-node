@@ -184,6 +184,11 @@ and sends `site/scan` through `invoke()` with `requires=site-survey:scanner`.
    of the real adapter on this site (14 hosts, 27.6 s, ledger).
 3. **Dashboard:** the Scan action and result row, then the map from `site/hosts` alone (gateway
    and maker flags).
+   *Done 2026-10-13* (dashboard 0.9.0): the Scan slider and its result, the map. One change from
+   D5: the map is HTML tiles on CSS "wires", not two SVG drawings. It reflows from phone to wide
+   screen without a second drawing, its text stays selectable and readable by screen readers,
+   and it needs no script either. The slider waits on its own marker (`data-last-scan`) for up
+   to 320 s, the scan's timeout plus a tick.
 4. **tailnet-gateway:** `TailnetPeer.endpoint`; the map flags tailnet nodes.
 5. **camera-config:** VAPIX identification (read-only) and `camera/identified`; the map flags
    cameras.

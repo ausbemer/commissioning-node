@@ -7,7 +7,7 @@ from .chrome import (SCRIPT, STATIC_PATH, THEME_COOKIE, THEME_PATH, banner, op_f
                      theme_choice, theme_return)
 from .admin import AdminAuth, Session
 from .config import (CONFIG_ACTIONS, ConfigFieldState, ConfigSurface, ConfigWriteResult,
-                     RESTART_PATH, RESTART_WARNING, TAILNET_OPERATIONS, TAILNET_WRITER, Invoker, clear_path, config_key,
+                     RESTART_PATH, RESTART_WARNING, SITE_OPERATIONS, SITE_SCANNER, TAILNET_OPERATIONS, TAILNET_WRITER, Invoker, clear_path, config_key,
                      config_rows, set_path)
 from .doors import (DOORS, FALLBACK, LOCAL, TAILNET, Caller, Decision, Refusal, authorize,
                     classify, host_allowed, same_origin)
@@ -19,9 +19,9 @@ from .views import View
 #: Module identity (kebab-case) for capability flags and logging. Lives here, not in core.
 MODULE = "dashboard"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 #: Inward contract version — bumps only when this interface/ package changes.
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "View",
            "PeerDirectory", "PeerIdentity", "Unresolved", "parse_address",
@@ -30,4 +30,5 @@ __all__ = ["MODULE", "VERSION", "__version__", "Feature", "DashboardState", "Vie
            "authorize", "classify", "host_allowed", "same_origin",
            "ConfigSurface", "ConfigFieldState", "ConfigWriteResult", "CONFIG_ACTIONS",
            "config_key", "config_rows", "set_path", "clear_path", "Invoker",
-           "TAILNET_WRITER", "TAILNET_OPERATIONS", "RESTART_PATH", "RESTART_WARNING"]
+           "TAILNET_WRITER", "TAILNET_OPERATIONS", "RESTART_PATH", "RESTART_WARNING",
+           "SITE_SCANNER", "SITE_OPERATIONS"]

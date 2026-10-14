@@ -5,9 +5,15 @@ HTML-escaped. The only form is "log out" on the fallback door (in the banner). C
 edited on its own page (`/config`, config-page), which does not auto-refresh under a
 half-typed value.
 
-Layout (mockup 3, without its map): a one-line summary, then three columns — the site's
-cameras, this gateway, the tailnet streams — and the modules and wire versions folded
+Layout (mockup 3): a one-line summary, the site map (ADR-0007), then three columns — the
+site's cameras, this gateway, the tailnet streams — and the modules and wire versions folded
 under "System".
+
+The site map draws the tailnet, this gateway, and each site network as a bus with every host
+the last operator-run scan found hanging off it. It claims only what the scan saw and when
+("Scanned 4 min ago"), never that a device is up. Flags come from their authorities: a
+registered camera from camera-config, "Axis by maker" from site-survey's MAC prefix. The
+Scan slider beside the age is a may-disturb action; nothing scans on its own.
 
 The gateway column holds one tailnet control (ADR-0005 §3): Leave the Tailnet when joined,
 Join the Tailnet when not (with a saved key). Each is a may-disturb `Action`, a
@@ -17,16 +23,24 @@ the last result is one row of the gateway's facts.
 """
 from __future__ import annotations
 
+import ipaddress
 import time
 from html import escape
 
 from interfaces import __version__ as CONTRACT_VERSION
 
-from ..interface import TAILNET_WRITER, banner, op_form, page
+from ..interface import SITE_SCANNER, TAILNET_WRITER, banner, op_form, page
 
 GATEWAY = "tailnet-gateway"
 #: Browser auto-refresh, seconds. A display preference, not a behaviour constant.
 REFRESH_S = 5
+#: Site map display preferences (ADR-0007 D5), not behaviour constants: tiles drawn per
+#: network before unflagged hosts fold into one, and the age past which a scan reads as old.
+MAP_TILES = 24
+SCAN_OLD_S = 3600
+#: How long a confirmed Scan slide waits for its result: site-survey's total timeout (300 s)
+#: and kill margin (10 s), plus a tick to publish it.
+SCAN_AWAIT_S = 320
 
 STYLE = """
 .headline { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:6px 24px; }
@@ -65,6 +79,50 @@ STYLE = """
 .ver { font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; font-size:12px; }
 .ver.ok { color:var(--ok); }
 .ver.skew { color:var(--crit); background:var(--crit-soft); padding:0 6px; border-radius:3px; font-weight:600; }
+.site { margin-top:28px; }
+.site-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; padding-bottom:8px;
+  border-bottom:2px solid var(--line-strong); }
+.site-head h2 { font-size:20px; display:flex; align-items:baseline; gap:10px; }
+.site-head h2 small { font:13px system-ui, sans-serif; color:var(--muted); }
+.site-head .age { margin:0; color:var(--muted); font-size:14px; flex:1 1 280px; }
+.site-head .age .fail { display:block; color:var(--crit); }
+.site-head .scan { flex:0 1 320px; min-width:240px; }
+.map { display:flex; flex-direction:column; align-items:center; margin-top:18px; }
+.node { border:2px solid var(--line-strong); border-radius:10px; padding:8px 16px; background:var(--surface);
+  text-align:center; display:flex; flex-direction:column; gap:1px; min-width:220px; max-width:100%; }
+.node .k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+.node.tailnet { border-color:var(--accent); background:var(--accent-soft); border-radius:999px; }
+.node.gw { border-color:var(--ink); }
+.wire { width:3px; height:22px; background:var(--line-strong); flex:none; }
+.wire.ok { background:var(--ok); }
+.wire.warn { background:repeating-linear-gradient(var(--warn) 0 5px, transparent 5px 9px); }
+.wire.none { background:repeating-linear-gradient(var(--line-strong) 0 2px, transparent 2px 6px); }
+.lan { align-self:stretch; }
+.bus { display:flex; align-items:center; gap:10px; }
+.bus::before, .bus::after { content:""; height:4px; background:var(--ink); border-radius:2px; flex:1; }
+.bus .cidr { font-size:13px; font-weight:600; }
+.tiles { list-style:none; margin:0; padding:14px 12px 4px; display:grid; gap:12px;
+  grid-template-columns:repeat(auto-fill, minmax(168px, 1fr)); border:1px solid var(--line);
+  border-top:0; border-radius:0 0 10px 10px; background:var(--surface-2); }
+.tiles .empty { grid-column:1 / -1; padding:6px 2px 10px; margin:0; }
+.tile { border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); padding:8px 10px;
+  min-width:0; display:flex; flex-direction:column; gap:2px; }
+.tile .addr { font-size:13px; }
+.tile .what { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tile .tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
+.tile .tags .chip { font-size:11px; }
+.tile.cam { border:2px solid var(--accent); }
+.tile.arp { border-style:dashed; }
+.tile.missing { border-style:dotted; color:var(--muted); }
+.tile.fold { justify-content:center; align-items:center; color:var(--muted); border-style:dashed; }
+.site.old .tiles, .site.old .node { opacity:.6; }
+.maplegend { list-style:none; display:flex; flex-wrap:wrap; gap:4px 18px; margin:10px 2px 0; padding:0;
+  font-size:12px; color:var(--muted); }
+.maplegend i { display:inline-block; width:22px; height:12px; border:1px solid var(--line-strong);
+  border-radius:3px; vertical-align:-2px; margin-right:6px; }
+.maplegend i.cam { border:2px solid var(--accent); }
+.maplegend i.arp { border-style:dashed; }
+.maplegend i.missing { border-style:dotted; }
 """
 
 
@@ -163,15 +221,18 @@ def last_marker(snapshot: dict) -> str:
     return f'<span hidden data-last-apply="{escape(str(last.get("finished_at", "")))}"></span>'
 
 
+def _capabilities(snapshot: dict) -> set[str]:
+    return {c for n in (snapshot.get("nodes") or {}).values()
+            for m in n.get("modules", []) for c in m.get("capabilities", [])}
+
+
 def _apply(snapshot: dict, status: dict) -> str:
     """The one tailnet control that makes sense now: Leave when joined, Join when not."""
     saved = {r.get("field", {}).get("name"): r for r in snapshot.get("config") or []
              if r.get("field", {}).get("module") == GATEWAY}
     if not saved:
         return ""
-    capabilities = {c for n in (snapshot.get("nodes") or {}).values()
-                    for m in n.get("modules", []) for c in m.get("capabilities", [])}
-    if TAILNET_WRITER not in capabilities:
+    if TAILNET_WRITER not in _capabilities(snapshot):
         return '<p class="apply"><span class="chip none">Tailnet writer off</span></p>'
     csrf = (snapshot.get("viewer") or {}).get("csrf")
     if status.get("connected"):
@@ -201,6 +262,150 @@ def _streams(streams: list[dict]) -> str:
             'yet. A stream only gets an endpoint while the node\'s tailnet address is fresh.</p>'
             if planned else "")
     return f'<ul class="rows">{"".join(items)}</ul>{note}'
+
+
+# -- the site map (ADR-0007 D5) ---------------------------------------------------------------
+
+def _ago(seconds: float) -> str:
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min ago"
+    return f"{int(seconds // 3600)} h ago"
+
+
+def _clock(at: float) -> str:
+    return time.strftime("%H:%M", time.localtime(at))
+
+
+def _in(address: str, network: str) -> bool:
+    try:
+        return ipaddress.ip_address(address) in ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return False
+
+
+def _tile(host: dict, camera: dict | None) -> tuple[bool, str]:
+    """One host as a tile: (flagged, html). Flagged hosts are never folded away."""
+    address = host.get("address", "")
+    classes, tags = ["tile"], []
+    if camera is not None:
+        classes.append("cam")
+        label = camera.get("label") or camera.get("camera_id", "")
+        tags.append(f'<span class="chip ok">Registered: {escape(label)}</span>')
+    if host.get("axis_maker"):
+        if camera is None:
+            classes.append("cam")
+        tags.append('<span class="chip plan">Axis by maker</span>')
+    if host.get("missing"):
+        classes.append("missing")
+        tags.append('<span class="chip warn">Did not answer</span>')
+    elif host.get("found_by") == "arp":
+        classes.append("arp")
+        tags.append('<span class="chip none">ARP only</span>')
+    ports = host.get("open_ports") or []
+    if ports:
+        tags.append(f'<span class="mono muted">{escape(" ".join(str(p) for p in ports))}</span>')
+    what = host.get("hostname") or host.get("maker") or ("Registered camera" if camera else "Unknown device")
+    detail = " · ".join(x for x in (host.get("hostname"), host.get("maker"), host.get("mac")) if x)
+    title = f' title="{escape(detail)}"' if detail else ""
+    return (camera is not None or bool(host.get("axis_maker")),
+            f'<li class="{" ".join(classes)}"{title}><span class="addr mono">{escape(address)}</span>'
+            f'<span class="what">{escape(what)}</span><span class="tags">{"".join(tags)}</span></li>')
+
+
+def _network(network: str, hosts: list[dict], cameras: dict[str, dict], scanned: bool) -> tuple[str, list[dict]]:
+    """One site network: its bus and tiles. Returns the html and the hosts folded away."""
+    mine = [h for h in hosts if _in(h.get("address", ""), network)]
+    seen = {h.get("address") for h in mine}
+    # A registered camera the scan didn't find still belongs on its network, marked as such.
+    mine += [{"address": a, "missing": scanned} for a in cameras if _in(a, network) and a not in seen]
+    tiles = [_tile(h, cameras.get(h.get("address", ""))) for h in mine]
+    flagged = [t for f, t in tiles if f]
+    rest = [(h, t) for h, (f, t) in zip(mine, tiles) if not f]
+    folded: list[dict] = []
+    if len(flagged) + len(rest) > MAP_TILES:
+        keep = max(0, MAP_TILES - 1 - len(flagged))
+        folded = [h for h, _ in rest[keep:]]
+        rest = rest[:keep]
+    items = flagged + [t for _, t in rest]
+    if folded:
+        items.append(f'<li class="tile fold"><a href="#site-hosts">{len(folded)} other '
+                     f'host{"s" if len(folded) != 1 else ""}</a></li>')
+    if not items:
+        items = [f'<li class="empty muted">{"No host answered on this network." if scanned else "Not scanned yet."}</li>']
+    return (f'<div class="lan"><div class="bus"><span class="cidr mono">{escape(network)}</span></div>'
+            f'<ul class="tiles">{"".join(items)}</ul></div>'), folded
+
+
+def scan_marker(snapshot: dict) -> str:
+    """When the last scan result finished: a confirmed Scan slide holds until it changes."""
+    last = (snapshot.get("site_scan") or {}).get("self") or {}
+    return f'<span hidden data-last-scan="{escape(str(last.get("finished_at", "")))}"></span>'
+
+
+def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now: float) -> str:
+    scan = (snapshot.get("site_hosts") or {}).get("self")
+    result = (snapshot.get("site_scan") or {}).get("self")
+    by_address = {c.get("address", ""): c for c in cameras if c.get("address")}
+    if scan:
+        age = now - (scan.get("scanned_at") or 0)
+        n, nets = len(scan.get("hosts") or []), ", ".join(scan.get("networks") or [])
+        line = (f'Scanned {_ago(age)} ({_clock(scan.get("scanned_at") or 0)}) by '
+                f'{escape(scan.get("requested_by") or "unknown")}: {n} host{"s" if n != 1 else ""} '
+                f'answered on {escape(nets)}.')
+        networks, hosts = list(scan.get("networks") or []), list(scan.get("hosts") or [])
+        own = list(scan.get("self_addresses") or [])
+    else:
+        age, line = 0.0, "Not scanned yet. A scan probes the site network once, when you ask."
+        networks, hosts, own = list(status.get("site_networks") or []), [], []
+    if result and not result.get("ok") and (result.get("finished_at") or 0) >= ((scan or {}).get("scanned_at") or 0):
+        line += (f'<span class="fail">Last scan at {_clock(result.get("finished_at") or 0)}, by '
+                 f'{escape(result.get("requested_by", ""))}: {escape(result.get("message", ""))}</span>')
+    control = ""
+    if SITE_SCANNER in _capabilities(snapshot):
+        csrf = (snapshot.get("viewer") or {}).get("csrf")
+        control = op_form("scan", "Scan the site network", csrf, "/", slide=True,
+                          marker="data-last-scan", await_s=SCAN_AWAIT_S)
+    elif snapshot.get("nodes"):
+        control = '<span class="chip none">Scanner off</span>'
+
+    if not status:
+        wire, tail = "none", '<span class="muted">no status yet</span>'
+    elif status.get("connected"):
+        addrs = list(status.get("addresses") or [])
+        wire, tail = "ok", f'<span class="mono">{escape(addrs[0]) if addrs else "connected"}</span>'
+    else:
+        wire, tail = "warn", f'<span>{escape(status.get("state") or "not connected")}</span>'
+    lans, folded = [], []
+    for network in networks:
+        html, more = _network(network, hosts, by_address, bool(scan))
+        lans.append(f'<div class="wire ok" aria-hidden="true"></div>{html}')
+        folded += more
+    if not networks:
+        lans.append('<div class="wire none" aria-hidden="true"></div>'
+                    '<p class="muted">The node is on no site network.</p>')
+    gw_addr = f'<span class="mono">{escape(", ".join(own))}</span>' if own else ""
+    table = ""
+    if folded:
+        rows = [f'<tr><td class="mono">{escape(h.get("address", ""))}</td><td>{escape(h.get("hostname") or "")}</td>'
+                f'<td>{escape(h.get("maker") or "")}</td><td class="mono">{escape(h.get("mac") or "")}</td>'
+                f'<td class="mono">{escape(" ".join(str(p) for p in h.get("open_ports") or []))}</td>'
+                f'<td>{escape(h.get("found_by", ""))}</td></tr>' for h in folded]
+        table = ('<div id="site-hosts">' + _table("Other hosts", ["Address", "Hostname", "Maker", "MAC",
+                                                                  "Open ports", "Found by"], rows, "none")
+                 + "</div>")
+    old = " old" if scan and age > SCAN_OLD_S else ""
+    return (f'<section class="site{old}" aria-labelledby="site-h"><div class="site-head">'
+            f'<h2 id="site-h">Site network <small>last scan</small></h2><p class="age">{line}</p>'
+            f'<div class="scan">{control}</div></div>{scan_marker(snapshot)}'
+            f'<div class="map"><div class="node tailnet"><span class="k">Tailnet</span>{tail}</div>'
+            f'<div class="wire {wire}" aria-hidden="true"></div>'
+            f'<div class="node gw"><span class="k">This gateway</span><strong>{escape(name)}</strong>{gw_addr}</div>'
+            f'{"".join(lans)}</div>'
+            '<ul class="maplegend"><li><i class="cam"></i>Camera: registered, or Axis by maker</li>'
+            '<li><i class="arp"></i>Answered ARP only</li><li><i class="missing"></i>Registered, did not answer</li>'
+            f'<li>A scan shows who answered then, not who is up now.</li></ul>{table}</section>')
 
 
 #: The query that keeps System open across the auto-refresh (a reload resets <details>).
@@ -266,6 +471,7 @@ class OverviewPage:
 <div><h1>{escape(name)}</h1><p>{escape(_summary(status, cameras, streams))}</p></div>
 <span class="tick">Refreshes every {REFRESH_S} s</span>
 </div>
+{_site_map(snapshot, status, cameras, name, snapshot.get("now") or time.time())}
 <div class="zones">
 <section class="zone lan"><h2>Cameras <small>on the site network</small></h2>{_cameras(cameras)}</section>
 <section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine, (snapshot.get("tailnet_apply") or {}).get("self"))}{_apply(snapshot, status)}{last_marker(snapshot)}</section>
