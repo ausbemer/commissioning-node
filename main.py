@@ -174,12 +174,15 @@ def _port_from_env() -> int:
 
 
 def _writer_from_env() -> bool:
-    """CN_TAILNET_WRITER=1 enables the tailnet writer (ADR-0005), until the rehearsal join
-    makes it the default. Anything else, including a typo, leaves it off and says so."""
+    """The tailnet writer (ADR-0005) is on since its rehearsal; CN_TAILNET_WRITER=0 is the
+    off-switch. Anything but unset, 0 or 1, including a typo, turns it off and says so: a
+    mistyped switch fails toward not writing."""
     raw = os.environ.get("CN_TAILNET_WRITER", "")
     if raw not in ("", "0", "1"):
-        log.warning("CN_TAILNET_WRITER=%r is not 0 or 1; the tailnet writer stays disabled", raw)
-    return raw == "1"
+        log.warning("CN_TAILNET_WRITER=%r is not 0 or 1; the tailnet writer is disabled", raw)
+    elif raw == "0":
+        log.warning("CN_TAILNET_WRITER=0: the tailnet writer is disabled (no join, leave or rejoin)")
+    return raw in ("", "1")
 
 
 def serve() -> None:

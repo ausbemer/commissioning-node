@@ -26,9 +26,13 @@ TAGS = ConfigField(
     max_items=16, max_len=64, pattern=r"tag:[a-z0-9-]+")
 AUTH_KEY = ConfigField(
     module=MODULE, name="auth_key", kind="str", secret=True, label="Tailscale auth key",
-    help="Pasted from the site tailnet's admin console. Use a reusable, ephemeral, tagged "
-         "key: it is kept so the node can rejoin after a power cycle (ADR-0005 A1, A2).",
-    pattern=r"tskey-[A-Za-z0-9-]+")
+    help="A tag-locked OAuth client secret, or a reusable, ephemeral, tagged auth key. It is "
+         "kept so the node can rejoin after a power cycle (ADR-0005 A1, A2). An OAuth secret "
+         "may end in ?preauthorized=true (and &ephemeral=true) so a rejoin needs no approval.",
+    # Tailscale's OAuth-secret options, each at most once (ADR-0005 amendment); baseURL is
+    # not accepted.
+    pattern=r"tskey-[A-Za-z0-9-]+(\?(ephemeral|preauthorized)=(true|false)"
+            r"(&(?!\2)(ephemeral|preauthorized)=(true|false))?)?")
 AUTO = "auto"
 ADVERTISE_ROUTES = ConfigField(
     module=MODULE, name="advertise_routes", kind="str_list", default=[AUTO],

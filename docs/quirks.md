@@ -74,6 +74,24 @@ Pinned dependencies covered here:
   Join warning carry the requirement (ADR-0005 amendment).
 - **Last verified:** 1.102.5, 2026-10-13.
 
+### Q-005: an ephemeral node removed while offline boots into `NeedsLogin`
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** a node joined with an ephemeral key is removed by the control plane while it
+  is off. On the next boot tailscaled still has `WantRunning=true` but reports
+  `BackendState == "NeedsLogin"` (`NoState -> NeedsLogin`), with no error. It does not come
+  back `Running` on its own.
+- **How measured:** the node was unplugged for up to ~2 h (after 17:32, booted 19:41:47,
+  2026-10-13). tailscaled went `NeedsLogin` 30.4 s after boot; auto-rejoin started
+  `tailscale up` at 35.1 s and the node was `Running` at 36.6 s (request `32d632b22031`,
+  timed in `tools/ledgers/tailnet-writer/`).
+- **Detection signature:** journal `Switching ipn state NoState -> NeedsLogin
+  (WantRunning=true, ...)` on a node with a join record.
+- **Our accommodation:** this is auto-rejoin's trigger (ADR-0005 A2). A long outage always
+  means a rejoin; only a short one (inside the control plane's removal delay, not measured)
+  comes back `Running` with no rejoin.
+- **Last verified:** 1.102.5, 2026-10-13.
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
@@ -102,9 +120,6 @@ Pinned dependencies covered here:
 - `Self.Tags` lists the node's own tags: **seen** on the rehearsal join (`tag:mace4-comms`).
 - `tailscale logout` removes an ephemeral node from the tailnet at once. Verify on the
   rehearsal (ADR-0005 D4).
-- An ephemeral node the control plane removed while offline comes back as
-  `BackendState == "NeedsLogin"` (auto-rejoin's trigger, ADR-0005 A2). Verify: join, power
-  off long enough to be removed, power on, watch the panel.
 - `tailscale up` and `tailscale set` accept `--advertise-routes=` (empty) as "no routes"
   (from `--help`). The writer always passes it on `up`.
 - Once `install.sh` has run `tailscale set --operator=<daemon user>`, a later `tailscale up`
