@@ -179,6 +179,9 @@ and sends `site/scan` through `invoke()` with `requires=site-survey:scanner`.
    the address count: done, 23.6 s with a 15 s host timeout (ledger).
 2. **Contract 0.6.0** and the `site-survey` module: seam, nmap + neighbour adapter, the scanner
    feature, tests against recorded nmap XML. Capability `site-survey:scanner`.
+   *Done 2026-10-13* (`feature/site-survey`): contract 0.6.0 (with `SiteHosts.self_addresses`,
+   so the gateway is placed on the map without being scanned); the module, 33 tests; one run
+   of the real adapter on this site (14 hosts, 27.6 s, ledger).
 3. **Dashboard:** the Scan action and result row, then the map from `site/hosts` alone (gateway
    and maker flags).
 4. **tailnet-gateway:** `TailnetPeer.endpoint`; the map flags tailnet nodes.
