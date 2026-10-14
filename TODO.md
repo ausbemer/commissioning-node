@@ -32,12 +32,11 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 - [x] **Identity + admin fallback** (`docs/adr/0003-operator-doors-identity-and-admin-fallback.md`,
       Accepted). Steps 1–6 done (2026-10-12/13); step 6's rehearsal finishes under Up next.
-- [ ] **Overview network map.** Mockup 3 ("Network Map", 2026-10-13) opens the overview on a
-      map: site LAN and its cameras → this gateway → the tailnet, each link coloured by its
-      state. The style was adopted without the map. To decide first: which facts each link
-      shows and who is the authority for each (route approved, stream serving, endpoint fresh,
-      camera reachable — several don't exist on the bus yet), how stale links look, and how it
-      scales past a handful of cameras. Inline SVG, no JavaScript (CSP).
+- [ ] **Overview network map** (`docs/adr/0007-overview-network-map.md`, Accepted 2026-10-13).
+      An operator-run gentle nmap scan of the site networks (new module `site-survey`),
+      drawn as a map; VAPIX flags Axis cameras, Tailscale flags tailnet nodes. Step 1 (nmap
+      pinned, two measured scans) done 2026-10-13; step 2 (contract 0.6.0 + `site-survey`)
+      next. Separately: the overview never judges `TailnetStatus` freshness (ADR-0007, Options).
 - [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
       `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
       in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
@@ -101,6 +100,9 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] `tailscale_writer`: `UP_TIMEOUT_S = 60`, `SET_TIMEOUT_S = 15`, `LOGOUT_TIMEOUT_S = 15`,
       `KILL_MARGIN_S = 10`, `OUTPUT_CAP = 4096` (ADR-0005 §2). Ledger started:
       `tools/ledgers/tailnet-writer/` (2 joins, worst 5.2 s); needs a join from another site.
+- [ ] `site_survey` (ADR-0007): `MAX_RATE = 100`, `MAX_PREFIX = 22`, `HOST_TIMEOUT_S = 15`,
+      `SCAN_TIMEOUT_S = 300`, `KILL_MARGIN_S = 10`. Ledger: `tools/ledgers/site-survey/` (2 scans,
+      home lab); needs a scan from a real commissioning site.
 - [ ] `config_registry`: `MAX_VALUE_LEN = 256`, `MAX_LIST_ITEMS = 32`, `MAX_SECRET_LEN = 512`,
       `MAX_FILE_BYTES = 64 KiB` (ADR-0004 §3; measure a real auth key's length on 1.102.5).
 - [ ] Capture a real `tailscale status --json` sample and replace the documented-shape fixture

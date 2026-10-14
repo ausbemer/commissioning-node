@@ -30,3 +30,4 @@ produces a new interesting case. The corpus is versioned with the code it gates.
 |------|--------|----------|-------------|
 | Admin fallback auth | `tools/ledgers/admin-auth/` (scrypt cost) | — | — |
 | Tailnet writer | `tools/ledgers/tailnet-writer/` (join timeout) | — | — |
+| Site survey | `tools/ledgers/site-survey/` (scan bounds) | — | — |

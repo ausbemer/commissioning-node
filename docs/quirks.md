@@ -92,6 +92,41 @@ Pinned dependencies covered here:
   comes back `Running` with no rejoin.
 - **Last verified:** 1.102.5, 2026-10-13.
 
+### Q-006: unprivileged nmap misses hosts that drop TCP; the neighbour table still has them
+
+- **Dependency / version:** nmap 7.95+dfsg-3 (Debian trixie), Linux 6.18 (RevPi), run as the
+  daemon user without capabilities.
+- **Behaviour:** without raw sockets nmap cannot ARP-ping, so host discovery is a TCP connect
+  to the probe ports. A host whose firewall silently drops those ports (a Windows PC, some
+  IoT devices) is reported down, with no error. The kernel resolved its MAC for the connect
+  attempt anyway, so `ip -j neigh` on the scanned interface lists it (`REACHABLE`, `STALE` or
+  `DELAY`). Addresses that did not answer ARP show `FAILED`/`INCOMPLETE` and are
+  garbage-collected within seconds. The MAC in nmap's own XML is absent unprivileged.
+- **How measured:** one scan of a /24 home-lab site, 2026-10-13
+  (`-sT -PS80,443,554 -p 80,443,554 --max-rate 100 --max-retries 1 --host-timeout 30s`):
+  nmap reported 10 hosts up; the neighbour table held 14 live entries on `eth0`, including
+  the operator's PC (a tailnet peer) and 3 IoT devices nmap missed. Before the scan it held 3.
+- **Detection signature:** a live neighbour entry for an address absent from nmap's XML.
+- **Our accommodation:** site-survey's host list is nmap's hosts ∪ live neighbour entries on
+  the scanned interface; a neighbour-only host is marked "answered ARP only" (ADR-0007 D2).
+  An entry that existed before the scan may be older than it (`STALE` from earlier traffic),
+  so the map says "seen on the link", never "up".
+- **Last verified:** nmap 7.95+dfsg-3, 2026-10-13.
+
+### Q-007: random (locally administered) MACs have no maker
+
+- **Dependency / version:** nmap 7.95+dfsg-3, `/usr/share/nmap/nmap-mac-prefixes`.
+- **Behaviour:** phones, laptops and travel routers using private Wi-Fi addresses present a
+  MAC with the locally administered bit (`0x02` of the first octet) set. Its prefix is not an
+  OUI, so the lookup finds nothing, with no error. Some real (globally unique) MACs are also
+  missing from the shipped table (one on the measured site).
+- **How measured:** same scan as Q-006: 3 of 14 live hosts had locally administered MACs, 1
+  had a global MAC with no table entry.
+- **Detection signature:** `int(mac[:2], 16) & 2`.
+- **Our accommodation:** maker is optional; a locally administered MAC reads "private MAC",
+  never a guessed vendor. Axis cameras use global Axis OUIs, so the Axis flag is unaffected.
+- **Last verified:** nmap 7.95+dfsg-3, 2026-10-13.
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**

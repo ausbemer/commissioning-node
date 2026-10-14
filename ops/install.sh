@@ -12,6 +12,8 @@
 #   5. the admin fallback's TLS key pair, generated on the node once (ADR-0003)
 #   6. the commissioning-node daemon unit (runs main.py); systemd creates its state
 #      directory for the config registry (ADR-0004)
+#   7. nmap from Debian, exact version, held: site-survey's scanner runs it unprivileged
+#      (ADR-0007)
 #
 # It does NOT log Tailscale in and does NOT set the admin password (both are secrets, spec
 # §8.9: use `tailscale up` and ops/set-admin-password.sh), and touches no firewall rules but
@@ -162,6 +164,19 @@ set_operator() {
 }
 if [[ "$(operator)" == "$RUN_USER" ]]; then ok "tailscale operator is $RUN_USER"
 else act "tailscale set --operator=$RUN_USER" set_operator; fi
+
+# ---------------------------------------------------------------------------------------
+step "nmap $NMAP_VERSION"
+have="$(installed_version nmap)"
+if [[ "$have" == "$NMAP_VERSION" ]]; then
+  ok "nmap $have installed"
+else
+  act "apt-get update" apt_update_all
+  act "install nmap=$NMAP_VERSION (installed: ${have:-none})" \
+    apt-get install -y -qq --no-install-recommends --allow-downgrades --allow-change-held-packages "nmap=$NMAP_VERSION"
+fi
+if apt-mark showhold 2>/dev/null | grep -qx nmap; then ok "nmap held at its pin"
+else act "apt-mark hold nmap" apt-mark hold nmap; fi
 
 # ---------------------------------------------------------------------------------------
 step "Firewall (MediaMTX + dashboard ports: tailnet + loopback only)"

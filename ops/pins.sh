@@ -17,6 +17,10 @@ MEDIAMTX_ASSET="mediamtx_${MEDIAMTX_VERSION}_linux_arm64.tar.gz"
 MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/${MEDIAMTX_ASSET}"
 MEDIAMTX_SHA256="6a3aa635fb60ea9b8d566ec306f0a42ff1b6b52a3942bc2baffbe55880d4c3dd"
 
+# nmap — Debian's own package (trixie main), exact version, apt-mark hold. Used unprivileged
+# by site-survey's scanner (ADR-0007); the node never runs it as root.
+NMAP_VERSION="7.95+dfsg-3"
+
 # The host the pins are for. install.sh refuses anything else.
 TARGET_CODENAME="trixie"
 TARGET_ARCH="arm64"

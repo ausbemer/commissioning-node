@@ -24,7 +24,7 @@ active() { systemctl is-active --quiet "$1" 2>/dev/null; }
 check() { local ok="$1" bad="$2"; shift 2; if "$@"; then pass "$ok"; else fail "$bad"; fi; }
 # check_warn OK_MSG WARN_MSG COMMAND... — OK if COMMAND succeeds, else WARN.
 check_warn() { local ok="$1" bad="$2"; shift 2; if "$@"; then pass "$ok"; else warn "$bad"; fi; }
-held() { apt-mark showhold 2>/dev/null | grep -qx tailscale; }
+held() { apt-mark showhold 2>/dev/null | grep -qx "${1:-tailscale}"; }
 stock_nftables_disabled() { ! systemctl is-enabled --quiet nftables.service 2>/dev/null; }
 quiet() { "$@" > /dev/null 2>&1; }
 owner_mode() { stat -c '%U %a' "$1" 2>/dev/null; }
@@ -95,6 +95,13 @@ check_warn "IPv4 forwarding on (subnet routes can be served, ADR-0005)" \
 check "no sysctl drop-in forwards at boot before the fence" \
   "$LEGACY_SYSCTL_FILE exists: it enables forwarding at boot before the firewall loads — re-run sudo ops/install.sh" \
   test ! -e "$LEGACY_SYSCTL_FILE"
+
+section "nmap (pinned $NMAP_VERSION)"
+have="$(dpkg-query -W -f='${Version}' nmap 2>/dev/null || true)"
+if [[ -z "$have" ]]; then fail "nmap not installed — run sudo ops/install.sh"
+elif [[ "$have" == "$NMAP_VERSION" ]]; then pass "nmap $have"
+else fail "nmap $have installed, pinned $NMAP_VERSION"; fi
+[[ -z "$have" ]] || check_warn "held" "not held — apt upgrade may move it off the pin" held nmap
 
 section "MediaMTX (pinned $MEDIAMTX_VERSION)"
 bin=/opt/mediamtx/current/mediamtx
