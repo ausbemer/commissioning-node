@@ -1019,6 +1019,11 @@
         "title": "Connected",
         "type": "boolean"
       },
+      "dns_name": {
+        "default": "",
+        "title": "Dns Name",
+        "type": "string"
+      },
       "hostname": {
         "title": "Hostname",
         "type": "string"
