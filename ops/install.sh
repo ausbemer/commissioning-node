@@ -2,7 +2,8 @@
 # ops/install.sh — idempotent host installer for commissioning-node (spec §4 ops tier;
 # ADR-0002). Installs, at the versions pinned in ops/pins.sh:
 #
-#   1. apt prerequisites (ca-certificates, curl, gnupg, nftables)
+#   1. apt prerequisites (ca-certificates, curl, gnupg, nftables, openssl) and the daemon's
+#      Python runtime from Debian (python3, python3-pydantic; requirements.txt)
 #   2. Tailscale from its signed apt repo (key fingerprint pinned), exact version, held,
 #      with the daemon user as its operator (ADR-0003)
 #   3. the commissioning-node firewall table + unit (MediaMTX + dashboard ports: tailnet +
@@ -16,11 +17,15 @@
 #      directory for the config registry (ADR-0004)
 #   7. nmap from Debian, exact version, held: site-survey's scanner runs it unprivileged
 #      (ADR-0007)
+#   8. the admin password, when none is set and a terminal is attached: it offers to run
+#      ops/set-admin-password.sh (no-echo prompt; ADR-0002 A2). Without a terminal, or
+#      declined, the fallback stays off (fail closed) and the summary says how to set it
+#   9. ops/doctor.sh, read-only, whose verdict is the installer's exit status
 #
-# It does NOT log Tailscale in and does NOT set the admin password (both are secrets, spec
-# §8.9: use `tailscale up` and ops/set-admin-password.sh), and touches no firewall rules but
-# its own table and the two firewalld entries in 3b. Re-running is safe: each step checks
-# before changing.
+# It does NOT join the tailnet: the auth key is a site secret (spec §8.9), entered on the
+# dashboard's /config and applied by its Join (tailnet-gateway writer, ADR-0005). The summary
+# says where. It touches no firewall rules but its own table and the two firewalld entries
+# in 3b. Re-running is safe: each step checks before changing.
 #
 # Usage:  sudo ops/install.sh        apply
 #         ops/install.sh --dry-run   show what would change; needs no root and no network
@@ -37,7 +42,7 @@ DRY_RUN=0
 case "${1:-}" in
   "") ;;
   --dry-run) DRY_RUN=1 ;;
-  -h | --help) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
 esac
 
@@ -107,18 +112,29 @@ fi
 ((DRY_RUN)) || ((EUID == 0)) || refuse "run as root (sudo ops/install.sh), or use --dry-run"
 # The daemon runs as the checkout's owner. A checkout made with `sudo mkdir` / `sudo tar` is
 # root-owned (this happened on the first node), and the daemon must never run as root.
-[[ "$RUN_USER" != root ]] || refuse "$REPO_ROOT is owned by root, so the daemon would run as root; chown it to the operator user first"
+if [[ "$RUN_USER" == root ]]; then
+  refuse "$REPO_ROOT is owned by root, so the daemon would run as root; give it to the operator user first: chown -R ${SUDO_USER:-<user>}: $REPO_ROOT"
+fi
 ok "repo $REPO_ROOT, daemon will run as $RUN_USER"
 
 # ---------------------------------------------------------------------------------------
 step "apt prerequisites"
 missing=()
-for pkg in ca-certificates curl gnupg nftables; do is_installed "$pkg" || missing+=("$pkg"); done
+# python3-pydantic is the daemon's one runtime dependency (requirements.txt); Debian's
+# build, because Debian blocks system-wide pip (PEP 668).
+PREREQS=(ca-certificates curl gnupg nftables openssl python3 python3-pydantic)
+for pkg in "${PREREQS[@]}"; do is_installed "$pkg" || missing+=("$pkg"); done
 if ((${#missing[@]})); then
   act "apt-get update" apt_update_all
   act "apt-get install ${missing[*]}" apt-get install -y -qq --no-install-recommends "${missing[@]}"
 else
-  ok "ca-certificates curl gnupg nftables"
+  ok "${PREREQS[*]}"
+fi
+# requirements.txt says pydantic 2; refuse a Debian that ships another major.
+pydantic_major() { python3 -I -c 'import pydantic; print(pydantic.VERSION.split(".")[0])' 2>/dev/null; }
+if is_installed python3-pydantic; then
+  [[ "$(pydantic_major)" == 2 ]] || refuse "python3-pydantic is $(installed_version python3-pydantic); the daemon needs pydantic 2 (requirements.txt)"
+  ok "pydantic $(python3 -I -c 'import pydantic; print(pydantic.VERSION)')"
 fi
 
 # ---------------------------------------------------------------------------------------
@@ -307,12 +323,32 @@ fix_key() { chown "$RUN_USER" "$TLS_KEY" && chmod 0600 "$TLS_KEY"; }
 if [[ -f "$TLS_KEY" && "$(stat -c '%U %a' "$TLS_KEY")" != "$RUN_USER 600" ]]; then
   act "set $TLS_KEY to owner $RUN_USER, mode 0600" fix_key
 fi
-if [[ -f "$ADMIN_CRED" ]]; then ok "admin password set ($ADMIN_CRED)"
-else echo "    note: no admin password yet, so the LAN fallback stays off: sudo ops/set-admin-password.sh"; fi
+
+# ---------------------------------------------------------------------------------------
+step "Admin password (the LAN fallback's; ADR-0003, ADR-0002 A2)"
+# Asked only on a terminal, through the same script as a rotation, so the password only ever
+# meets a no-echo prompt (never argv, a pipe or this script). The daemon reads the credential
+# when it starts, so a password set here restarts it below.
+PASSWORD_SET=0
+if [[ -f "$ADMIN_CRED" ]]; then
+  ok "admin password set ($ADMIN_CRED)"
+elif ((DRY_RUN)); then
+  echo "    would: offer to set the admin password (sudo ops/set-admin-password.sh), on a terminal only"
+elif [[ -t 0 ]]; then
+  read -r -p "    No admin password, so the LAN fallback is off. Set it now? [Y/n] " answer
+  if [[ ! "$answer" =~ ^[Nn] ]]; then
+    "$OPS_DIR/set-admin-password.sh" || refuse "the admin password was not set; re-run the installer"
+    PASSWORD_SET=1
+  else
+    echo "    skipped: the LAN fallback stays off until: sudo ops/set-admin-password.sh"
+  fi
+else
+  echo "    note: no terminal, so no prompt; the LAN fallback stays off until: sudo ops/set-admin-password.sh"
+fi
 
 # ---------------------------------------------------------------------------------------
 step "commissioning-node daemon"
-CHANGED=0
+CHANGED=$PASSWORD_SET   # a new password: restart, so the fallback listener starts
 sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@RUN_USER@|$RUN_USER|g" \
   "$OPS_DIR/systemd/commissioning-node.service" > "$work/commissioning-node.service"
 sync_file "$work/commissioning-node.service" "$UNIT_DIR/commissioning-node.service" 0644
@@ -321,7 +357,34 @@ if [[ -d "$CN_STATE" ]]; then ok "$CN_STATE (config registry, created by systemd
 else echo "    note: systemd creates $CN_STATE when commissioning-node starts (StateDirectory=)"; fi
 
 # ---------------------------------------------------------------------------------------
-step "Done$( ((DRY_RUN)) && echo ' (dry run — nothing was changed)')"
-echo "    Next: tailscale up --operator=$RUN_USER   (joins the tailnet; manual until the tailnet-gateway writer exists)"
-echo "          sudo ops/set-admin-password.sh   (enables the LAN fallback, ADR-0003)"
-echo "          sudo ops/doctor.sh               (read-only health check)"
+if ((DRY_RUN)); then
+  step "Done (dry run — nothing was changed)"
+  exit 0
+fi
+
+step "Doctor (read-only)"
+# A daemon (re)started above needs a moment before its dashboard answers.
+for _ in $(seq 1 15); do curl -sf -o /dev/null http://127.0.0.1:8080/api/state && break; sleep 1; done
+set +e
+"$OPS_DIR/doctor.sh" | sed 's/^/    /'
+doctor_rc="${PIPESTATUS[0]}"
+set -e
+
+# ---------------------------------------------------------------------------------------
+step "Next"
+# The site LAN addresses an operator's laptop can reach the fallback on (never tailscale0).
+lan_ips="$(ip -4 -o addr show scope global 2>/dev/null | awk '$2 != "tailscale0" {sub(/\/.*/, "", $4); print $4}')"
+ts_state="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null || true)"
+if [[ "$ts_state" == Running ]]; then
+  echo "    On the tailnet: http://$(tailscale ip -4 2>/dev/null | head -1):8080/ (or the node's MagicDNS name)"
+elif [[ -f "$ADMIN_CRED" ]]; then
+  echo "    Join the tailnet from a laptop on the site LAN, through the admin fallback:"
+  for ip in $lan_ips; do echo "      https://$ip:$FALLBACK_PORT/"; done
+  [[ -f "$TLS_CERT" ]] && echo "      certificate SHA-256 $(openssl x509 -in "$TLS_CERT" -noout -fingerprint -sha256 | cut -d= -f2)"
+  echo "    Log in, save the auth key (and hostname, tags) on /config, then slide Join the Tailnet"
+  echo "    on the overview (ADR-0005)."
+else
+  echo "    Set the admin password (sudo ops/set-admin-password.sh), then re-run this installer:"
+  echo "    it prints where to join the tailnet from."
+fi
+exit "$doctor_rc"

@@ -81,12 +81,26 @@ ssh -L 8080:127.0.0.1:8080 pi@<node>  # the local door from elsewhere
 
 ## Host install (ops tier, ADR-0002)
 
+Bringing up a new node (ADR-0002 A2): clone as the operator user, never with sudo (the
+daemon runs as the checkout's owner), then run the installer.
+
+```bash
+sudo apt install git && git clone <repo> ~/commissioning-node
+sudo ~/commissioning-node/ops/install.sh
+                              # everything else: Python runtime, Tailscale + MediaMTX + nmap
+                              # at the ops/pins.sh versions, the firewall, the TLS key, the
+                              # admin password (prompts on a terminal), the systemd units,
+                              # then the doctor. Prints where to join the tailnet from.
+                              # Safe to re-run.
+```
+
+Then, from a laptop on the site LAN: open the printed `https://<LAN IP>:8443/`, compare the
+certificate fingerprint, log in, save the auth key on `/config`, and slide Join the Tailnet
+on the overview (ADR-0005).
+
 ```bash
 ops/install.sh --dry-run      # what would change; needs no root and no network
-sudo ops/install.sh           # apply: Tailscale + MediaMTX at the ops/pins.sh versions,
-                              # the firewall, and the systemd units. Safe to re-run.
-sudo ops/set-admin-password.sh  # enable the LAN admin fallback (interactive; no default)
-tailscale up --operator=<user>  # join the tailnet (manual: the auth key is a secret)
+sudo ops/set-admin-password.sh  # set or rotate the admin password on its own
 sudo ops/doctor.sh            # read-only health check (without sudo, root checks SKIP)
 ```
 

@@ -133,3 +133,30 @@ publish the site's camera streams to that LAN.
   `main.py`.
 - **Unverified.** That `trusted` carries the tailnet door, MediaMTX and the forwarded routes
   hasn't been seen on a joined node yet (docs/quirks.md, "Unverified assumptions").
+
+### A2 — 2026-10-15: one command brings up a node (after the git clone)
+
+- **Why.** Bringing up a node should be: clone the repo as the operator user, run
+  `sudo ops/install.sh`, then join from the dashboard. Until now a fresh node also needed
+  `python3-pydantic` installed by hand (the daemon failed to start without it), a separate
+  `set-admin-password.sh`, a separate doctor run, and the summary still pointed at a manual
+  `tailscale up`.
+- **Decision.** The installer now also:
+  1. installs the daemon's Python runtime from Debian (`python3`, `python3-pydantic`, plus
+     `openssl` for the TLS step) and refuses a pydantic that isn't major 2. These packages
+     are not pinned like the vendor binaries: the code needs pydantic 2, not one build of it
+     (`requirements.txt`).
+  2. offers to set the admin password when none exists, but only on a terminal. It runs
+     the same `set-admin-password.sh`, so the password only ever meets its no-echo prompt.
+     Declined, or with no terminal, the fallback stays off (fail closed), as before. A newly
+     set password restarts the daemon, because the fallback listener only starts when the
+     daemon does.
+  3. runs `ops/doctor.sh` at the end and exits with its status.
+  4. ends with the next step: the tailnet URL if the node is already joined; otherwise the
+     fallback's LAN URLs and certificate fingerprint, from which the operator saves the
+     auth key on `/config` and slides Join.
+  5. tells a root-owned checkout exactly how to fix it (`chown -R $SUDO_USER: <repo>`).
+- **Supersedes decision 5's "until".** The tailnet-gateway writer exists (ADR-0005), so
+  joining is the dashboard's Join, not `tailscale up`. The installer still never touches
+  the auth key: it is a site secret, and the operator surface on `/config` is its one path
+  (§8.9, ADR-0004 D3).

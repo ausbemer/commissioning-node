@@ -43,6 +43,9 @@ if [[ "${VERSION_CODENAME:-}" == "$TARGET_CODENAME" && "$arch" == "$TARGET_ARCH"
 else
   fail "host is ${PRETTY_NAME:-unknown} on $arch; pins are for Debian $TARGET_CODENAME on $TARGET_ARCH"
 fi
+pydantic="$(python3 -I -c 'import pydantic; print(pydantic.VERSION)' 2>/dev/null || true)"
+check "python3 has pydantic $pydantic (the daemon's runtime, requirements.txt)" \
+  "python3 has no pydantic 2${pydantic:+ (found $pydantic)} — run sudo ops/install.sh" test "${pydantic%%.*}" == 2
 
 section "Tailscale (pinned $TAILSCALE_VERSION)"
 have="$(dpkg-query -W -f='${Version}' tailscale 2>/dev/null || true)"
@@ -55,7 +58,7 @@ if [[ -n "$have" ]]; then
   state="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null || true)"
   case "$state" in
     Running) pass "logged in: $(tailscale ip -4 2>/dev/null | head -1)" ;;
-    NeedsLogin) warn "not logged in to a tailnet — run: tailscale up --operator=$RUN_USER" ;;
+    NeedsLogin) warn "not logged in to a tailnet — save the auth key on the dashboard's /config, then Join on its overview (ADR-0005)" ;;
     "") warn "could not read tailscale status" ;;
     *) warn "tailscale state: $state" ;;
   esac
@@ -221,7 +224,8 @@ else
     done
     ((bad_secrets)) || pass "secret files are regular, owned by $RUN_USER, private"
     site_secrets="$(find "$CN_STATE/site/secrets" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)"
-    ((site_secrets == 0)) || warn "$site_secrets site secret(s) stored — wiped at teardown; an auth key is deleted after its join"
+    # Expected on a joined node: the auth key is kept so the node can rejoin (ADR-0005 A1).
+    ((site_secrets == 0)) || pass "$site_secrets site secret(s) stored — the auth key is kept for auto-rejoin (ADR-0005 A1); wiped at teardown"
     malformed="$(find "$CN_STATE" -maxdepth 2 -name 'config.json.malformed-*' 2>/dev/null)"
     if [[ -n "$malformed" ]]; then warn "malformed config set aside (defaults in use): $(tr '\n' ' ' <<< "$malformed")"
     else pass "no malformed config set aside"; fi
