@@ -15,8 +15,7 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
          `NeedsLogin`, auto-rejoined in 5 s (quirks Q-005, ADR-0005 amendment). Still to
          do: a short power cycle (should come back `Running`, no rejoin).
       4. ~~Make the writer enabled by default~~ — done 2026-10-13; `CN_TAILNET_WRITER=0` stays
-         as the off-switch. On the node, remove the drop-in at
-         `/etc/systemd/system/commissioning-node.service.d/tailnet-writer.conf`.
+         as the off-switch. ~~On the node, remove the drop-in~~ — gone (checked 2026-10-15).
       5. The key is an OAuth client secret (ADR-0005 amendment). Verify that a rejoin with it
          needs no device approval (save it with `?preauthorized=true`, accepted since
          2026-10-13), that `--auth-key=file:` honours the suffix, and that it joins

@@ -335,7 +335,7 @@ if [[ -f "$ADMIN_CRED" ]]; then
 elif ((DRY_RUN)); then
   echo "    would: offer to set the admin password (sudo ops/set-admin-password.sh), on a terminal only"
 elif [[ -t 0 ]]; then
-  read -r -p "    No admin password, so the LAN fallback is off. Set it now? [Y/n] " answer
+  read -r -p "    No admin password, so the LAN fallback is off. Set it now? [Y/n] " answer || answer=n
   if [[ ! "$answer" =~ ^[Nn] ]]; then
     "$OPS_DIR/set-admin-password.sh" || refuse "the admin password was not set; re-run the installer"
     PASSWORD_SET=1
