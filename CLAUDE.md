@@ -32,7 +32,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 
 | Path | Role |
 |------|------|
-| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.6.0`. All cross-module types live here and nowhere else. |
+| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.7.0`. All cross-module types live here and nowhere else. |
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
@@ -49,7 +49,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
 neutral packages `freshness/` · bus-coupled infra `config_registry/` · ops tier `ops/` · composition root `main.py`.
 
-## Topics (contract v0.6.0)
+## Topics (contract v0.7.0)
 
 Not on the wire: `ConfigField` (0.3.0) is a config declaration, shared by the module that
 declares a field and the surface that edits it (ADR-0004).
@@ -61,7 +61,7 @@ declares a field and the surface that edits it (ADR-0004).
 | `camera/register` | `CameraRegistration` (command) | operator surface via `main.invoke()` → camera-config |
 | `camera/announced` | `CameraAnnouncement` | camera-config → stream-relay, dashboard |
 | `stream/announced` | `StreamAnnouncement` (nested `StreamEndpoint`) | stream-relay → dashboard |
-| `tailnet/status` | `TailnetStatus` | tailnet-gateway → stream-relay, site-survey, dashboard |
+| `tailnet/status` | `TailnetStatus` (0.7.0: `dns_name`) | tailnet-gateway → stream-relay, site-survey, dashboard |
 | `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`, 0.6.0: `endpoint`), declares `period_s` | tailnet-gateway → dashboard (caller identity, ADR-0003) |
 | `tailnet/apply` | `TailnetApply` (command; no values, no secret) | dashboard via `main.invoke()` → tailnet-gateway writer (ADR-0005) |
 | `tailnet/apply-result` | `TailnetApplyResult` | tailnet-gateway → dashboard |

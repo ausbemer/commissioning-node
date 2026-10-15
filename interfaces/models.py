@@ -125,6 +125,9 @@ class TailnetStatus(Envelope):
     #: Routes this node last advertised through its writer (ADR-0005 A3). Advertised is not
     #: served: the tailnet's admin approves a route; `served_routes` lists the approved ones.
     advertised_routes: list[str] = []
+    #: This node's MagicDNS name, fully qualified and without the trailing dot, e.g.
+    #: "cn-01.tail1234.ts.net" (0.7.0, ADR-0008). Empty when the overlay reports none.
+    dns_name: str = ""
 
 
 class TailnetPeer(Shape):
