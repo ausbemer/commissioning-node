@@ -3,6 +3,7 @@
 - **8080, all addresses (dual-stack):** the *local* door (request arrived on loopback) and
   the *tailnet* door (any other local address; the caller must resolve to a tailnet peer).
   The firewall drops 8080 off `lo`/`tailscale0` as the second, independent check.
+  A GET there on the node's MagicDNS name is only redirected to its tailnet IP (ADR-0008).
 - **8443, TLS, all addresses:** the *fallback* door. Every path but `/login` needs an
   admin session. It starts only when the admin credential and the TLS key pair are usable,
   so a missing password means no listener (fails closed).
@@ -36,7 +37,7 @@ from urllib.parse import parse_qs, parse_qsl
 
 from ..interface import (FALLBACK, MODULE, STATIC_PATH, THEME_COOKIE, THEME_PATH, Action, ActionResult,
                          AdminAuth, Caller, ConfigSurface, DashboardState, PeerDirectory, Refusal,
-                         View, authorize, classify, config_rows, host_allowed, same_origin,
+                         View, authorize, classify, config_rows, host_allowed, name_redirect, same_origin,
                          theme_choice, theme_return)
 from ..interface.admin import COOKIE, LABEL
 
@@ -98,6 +99,14 @@ class _Logout:
 
     def run(self, form: Mapping[str, str], caller: Caller) -> ActionResult:
         return ActionResult(True, "logged out")
+
+
+@dataclass(frozen=True)
+class _NameRedirect:
+    """A GET on the node's MagicDNS name: answered with a redirect to its tailnet IP and
+    nothing else (ADR-0008)."""
+
+    location: str
 
 
 class _Server(ThreadingHTTPServer):
@@ -236,17 +245,23 @@ class HttpSurface:
 
             # -- who is calling --------------------------------------------------------
 
-            def _caller(self) -> Caller | Refusal | None:
+            def _caller(self, redirect: bool = False) -> Caller | Refusal | _NameRedirect | None:
                 """Caller on the 8080 doors (or a refusal); on the fallback, the session's
-                caller or None when not logged in."""
+                caller or None when not logged in. With `redirect` (GET only), a tailnet
+                caller naming the node by its MagicDNS name is sent to its IP (ADR-0008)."""
                 if tls:
                     s = surface._admin.session(self._cookie())
                     return Caller(FALLBACK, LABEL, csrf=s.csrf) if s else None
-                local = self.connection.getsockname()[0]
+                local, port = self.connection.getsockname()[:2]
                 who = classify(local, self.client_address[0], surface._peers)
                 if isinstance(who, Refusal):
                     return who
                 if not host_allowed(self.headers.get("Host"), local):
+                    if redirect:
+                        status = (surface._state.snapshot().get("tailnet") or {}).get("self") or {}
+                        to = name_redirect(self.headers.get("Host"), local, port, self.path, status)
+                        if to is not None:
+                            return _NameRedirect(to)
                     return Refusal(421, "bad-host", "refused: open the dashboard by the node's "
                                                     "tailnet IP address (or localhost on the node)")
                 return who
@@ -267,7 +282,9 @@ class HttpSurface:
                 path, _, query = self.path.partition("?")
                 if tls and path == LOGIN_PATH:
                     return self._login_page("", 200)
-                caller = self._caller()
+                caller = self._caller(redirect=True)
+                if isinstance(caller, _NameRedirect):
+                    return self._redirect(caller.location)
                 if isinstance(caller, Refusal):
                     return self._refuse(caller.status, caller.message)
                 if path.startswith(THEME_PATH + "/"):

@@ -13,7 +13,7 @@ from modules.tailnet_gateway.core.tailscale_cli import TailscaleCliStatusSource
 
 SAMPLE = {
     "BackendState": "Running",
-    "Self": {"HostName": "cn-01", "TailscaleIPs": ["100.64.0.7", "fd7a:115c::7"],
+    "Self": {"HostName": "cn-01", "DNSName": "cn-01.tail1234.ts.net.", "TailscaleIPs": ["100.64.0.7", "fd7a:115c::7"],
              "PrimaryRoutes": ["192.168.10.0/24"], "Tags": ["tag:commissioning"]},
 }
 
@@ -34,6 +34,7 @@ def test_status_json_is_mapped() -> None:
     assert snap.addresses == ["100.64.0.7", "fd7a:115c::7"]
     assert snap.served_routes == ["192.168.10.0/24"]
     assert snap.tags == ["tag:commissioning"]
+    assert snap.dns_name == "cn-01.tail1234.ts.net"     # trailing dot stripped (ADR-0008)
 
 
 def test_failing_or_garbage_output_reports_disconnected() -> None:
@@ -45,3 +46,12 @@ def test_failing_or_garbage_output_reports_disconnected() -> None:
 
     for run in (boom, garbage):
         assert TailscaleCliStatusSource(run=run, which=lambda b: b).read().connected is False
+
+
+def test_status_report_publishes_the_dns_name() -> None:
+    from modules.tailnet_gateway.features.status_report import StatusReport
+    from modules.tailnet_gateway.interface import OVERLAY_SNAPSHOT, OverlaySnapshot
+
+    snap = OverlaySnapshot(hostname="cn-01", connected=True, dns_name="cn-01.tail1234.ts.net")
+    [(topic, status)] = StatusReport().handle(OVERLAY_SNAPSHOT, snap.model_dump())
+    assert topic == "tailnet/status" and status["dns_name"] == "cn-01.tail1234.ts.net"

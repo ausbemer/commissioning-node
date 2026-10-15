@@ -295,6 +295,8 @@ them is this ADR's mechanism for those decisions.
     `*.ts.net` for a client not using MagicDNS (security review, 2026-10-13). So tailnet
     users open the node by its tailnet IP for now. Accepting the exact MagicDNS FQDN is a
     follow-up that needs the name in the contract and a decision on that residual risk.
+    *(2026-10-15: decided in ADR-0008. The name is redirected to the tailnet IP, never
+    served.)*
   - **CSRF on the 8080 doors.** They have no cookies, so writes there are gated by the
     browser's `Origin` matching the listener, which `authorize()` checks on every door. The
     fallback adds the per-session token on top. Clients that are not browsers send `Origin`

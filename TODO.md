@@ -44,13 +44,13 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       apply old values. Refuse the restart while a tailnet apply or a scan has no result yet
       (observe `tailnet/apply` as the dashboard already observes `site/scan`), or have main
       wait for both worker slots to drain before exiting. Say so in `RESTART_WARNING`.
-- [ ] **Dashboard by MagicDNS name.** The tailnet door accepts only the node's tailnet IP in
-      `Host` (DNS rebinding, ADR-0003 amendment). Accepting the exact MagicDNS FQDN needs it
-      in the contract (`TailnetStatus` has no DNS name) and a decision on the residual risk:
-      a client not using MagicDNS resolves `*.ts.net` through a resolver the site may control.
+- [x] **Dashboard by MagicDNS name** (ADR-0008, 2026-10-15). A GET on the node's MagicDNS
+      FQDN or short name is redirected to its tailnet IP, never served (contract 0.7.0:
+      `TailnetStatus.dns_name`). Still to do: try it from a tailnet laptop on the node.
 - [ ] **Trusted certificate on the tailnet door** (after "Dashboard by MagicDNS name"). Serve
       the tailnet door over HTTPS with a `tailscale cert` (Let's Encrypt, `*.ts.net`), so the
-      everyday door has no browser warning. The fallback door keeps its self-signed
+      everyday door has no browser warning, and serve it on the name itself rather than
+      redirecting (TLS defeats the rebind; revisit ADR-0008 rule 2). The fallback door keeps its self-signed
       certificate and fingerprint check (ADR-0003 accepts the warning there). Decide in an ADR:
       renewal (a renewed level, §5), where the key lives, and what the door does if the
       certificate is missing or expired. `tailscale cert` is a vendor call, so it lives in

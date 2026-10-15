@@ -9,6 +9,9 @@ Pure functions; the HTTP core does the I/O and calls them for every request.
 - `host_allowed()` refuses a Host header that is not this node's address (or an exact
   name the core vouches for), so a DNS-rebinding page in a tailnet user's browser cannot
   read or write through that user's identity.
+- `name_redirect()` sends a GET that names the node by its MagicDNS name to the node's
+  tailnet address instead (ADR-0008). The name is never served, only redirected away from,
+  so a rebinding page gains nothing from it.
 - `authorize()` is the ONLY gate in front of a write: authenticated caller, same-origin
   request, the fallback session's CSRF token, and rung-4 confirmation. Every door that
   authenticates may write (decision D2).
@@ -85,8 +88,8 @@ def host_allowed(host_header: str | None, local_addr: str, node_names: Iterable[
     Names are where rebinding lives. A bare host name resolves through LLMNR, mDNS or the
     site's DNS, all of which a site-LAN attacker can answer; so can a hostile resolver for
     `*.ts.net` when the client is not using MagicDNS. So `node_names` must hold only names
-    whose resolution the attacker cannot control. Today the core passes none: tailnet
-    callers use the node's tailnet IP (TODO.md: the MagicDNS FQDN, with its residual risk)."""
+    whose resolution the attacker cannot control. The core passes none: a MagicDNS name is
+    redirected to the tailnet IP (`name_redirect()`, ADR-0008), never served."""
     if not host_header:
         return False
     name = _host_name(host_header)
@@ -97,6 +100,34 @@ def host_allowed(host_header: str | None, local_addr: str, node_names: Iterable[
     if name == "localhost":
         return local is not None and local.is_loopback
     return name in {n.lower() for n in node_names if n}
+
+
+def name_redirect(host_header: str | None, local_addr: str, port: int, path: str,
+                  status: Mapping[str, object]) -> str | None:
+    """Where to send a GET whose Host is this node's MagicDNS name (ADR-0008), or None.
+
+    `status` is the latest `TailnetStatus` as a dict. The name matches exactly: the FQDN in
+    `dns_name` or its first label (the short name MagicDNS search domains resolve). The
+    target is the node's tailnet IPv4, falling back to the address the request arrived on,
+    and only when that address is one of the node's tailnet `addresses` (rule 13: never a
+    site-LAN address). The page itself is never served on the name: a rebinding page that
+    gets this answer only learns a URL on another origin, which it can neither read nor post
+    to. So a stale or missing status costs nothing but the convenience: no name, no
+    redirect, and the caller gets the usual 421."""
+    fqdn = str(status.get("dns_name") or "").rstrip(".").lower()
+    if not host_header or not fqdn:
+        return None
+    if _host_name(host_header).rstrip(".") not in {fqdn, fqdn.split(".", 1)[0]}:
+        return None
+    local = parse_address(local_addr)
+    tailnet = [a for a in (parse_address(str(x)) for x in status.get("addresses") or []) if a]
+    if local is None or local not in tailnet:
+        return None
+    target = next((a for a in tailnet if a.version == 4), local)
+    where = f"[{target}]" if target.version == 6 else str(target)
+    if not path.startswith("/") or path.startswith("//"):
+        path = "/"
+    return f"http://{where}:{port}{path}"
 
 
 def same_origin(origin: str | None, scheme: str, host_header: str | None) -> bool:

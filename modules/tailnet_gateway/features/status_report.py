@@ -27,6 +27,7 @@ class StatusReport:
             served_routes=snap.served_routes,
             tags=snap.tags,
             state=snap.state,
+            dns_name=snap.dns_name,
             site_networks=snap.site_networks,
             # The same resolution the writer applies (ADR-0005 A3).
             wanted_routes=resolve_routes(self._config.get("advertise_routes"), snap.site_networks)

@@ -28,7 +28,8 @@ from bus import Bus
 from modules.dashboard import FallbackConfig
 from modules.dashboard.interface import (FALLBACK, LOCAL, TAILNET, ActionResult, AdminAuth,
                                          Caller, PeerDirectory, Refusal, Session, authorize,
-                                         classify, host_allowed, same_origin)
+                                         classify, host_allowed, name_redirect,
+                                         same_origin)
 from modules.dashboard.interface import admin as admin_mod
 
 V = interfaces.__version__
@@ -131,6 +132,47 @@ def test_vouched_names_match_exactly() -> None:
     assert host_allowed("CN-01.tail1234.ts.net:8080", "100.64.0.7", fqdn)
     assert not host_allowed("cn-01:8080", "100.64.0.7", fqdn)
     assert not host_allowed("cn-01.tail1234.ts.net.evil.example", "100.64.0.7", fqdn)
+
+
+# --- name_redirect: the MagicDNS name, redirected, never served (ADR-0008) ---------------
+
+STATUS = {"dns_name": "cn-01.tail1234.ts.net", "addresses": ["100.64.0.7", "fd7a:115c:a1e0::7"]}
+
+
+@pytest.mark.parametrize("host,local,path,to", [
+    ("cn-01.tail1234.ts.net:8080", "100.64.0.7", "/config?x=1", "http://100.64.0.7:8080/config?x=1"),
+    ("CN-01.tail1234.ts.net.", "100.64.0.7", "/", "http://100.64.0.7:8080/"),       # case, root dot
+    ("cn-01:8080", "100.64.0.7", "/", "http://100.64.0.7:8080/"),                    # the short name
+    # Arrived over IPv6 (MagicDNS answers AAAA too): sent to the IPv4 tailnet address.
+    ("cn-01.tail1234.ts.net:8080", "fd7a:115c:a1e0::7", "/", "http://100.64.0.7:8080/"),
+    ("cn-01.tail1234.ts.net", "100.64.0.7", "//evil.example/", "http://100.64.0.7:8080/"),
+    ("cn-01.tail1234.ts.net", "100.64.0.7", "http://evil.example/", "http://100.64.0.7:8080/"),
+    # Not the name: refused as before.
+    ("cn-01.tail1234.ts.net.evil.example", "100.64.0.7", "/", None),
+    ("cn-02.tail1234.ts.net", "100.64.0.7", "/", None),
+    ("tail1234.ts.net", "100.64.0.7", "/", None),
+    ("evil.example", "100.64.0.7", "/", None),
+    ("", "100.64.0.7", "/", None),
+    (None, "100.64.0.7", "/", None),
+    # Arrived on an address that is not the node's tailnet address (rule 13): no redirect.
+    ("cn-01.tail1234.ts.net", "192.168.10.5", "/", None),
+    ("cn-01.tail1234.ts.net", "127.0.0.1", "/", None),
+])
+def test_magicdns_name_redirects_to_the_tailnet_ip(host, local, path, to) -> None:
+    assert name_redirect(host, local, 8080, path, STATUS) == to
+
+
+def test_ipv6_only_node_redirects_to_bracketed_address() -> None:
+    status = {"dns_name": "cn-01.tail1234.ts.net", "addresses": ["fd7a:115c:a1e0::7"]}
+    assert name_redirect("cn-01", "fd7a:115c:a1e0::7", 8080, "/", status) == \
+        "http://[fd7a:115c:a1e0::7]:8080/"
+
+
+@pytest.mark.parametrize("status", [{}, {"dns_name": "", "addresses": ["100.64.0.7"]},
+                                    {"dns_name": "cn-01.tail1234.ts.net"}])
+def test_no_known_name_or_address_means_no_redirect(status) -> None:
+    """The safe default: without a status naming the node and its address, 421 as before."""
+    assert name_redirect("cn-01.tail1234.ts.net", "100.64.0.7", 8080, "/", status) is None
 
 
 def test_same_origin() -> None:
@@ -380,6 +422,20 @@ def test_tailnet_door_end_to_end() -> None:
         ).model_dump())
         status, _, html = call(conn, "GET", "/")
         assert status == 200 and "alice@example.com" in html and "tailnet door" in html
+        # The MagicDNS name (ADR-0008): 421 until the status names it, then a GET is
+        # redirected to the IP, and nothing is ever served or written on the name.
+        fqdn = {"Host": f"cn-01.tail1234.ts.net:{port}"}
+        assert call(conn, "GET", "/", headers=fqdn)[0] == 421
+        node.bus.publish(interfaces.TAILNET_STATUS, interfaces.TailnetStatus.stamped(
+            V, hostname="cn-01", connected=True, addresses=[ip], dns_name="cn-01.tail1234.ts.net"
+        ).model_dump())
+        status, headers, body = call(conn, "GET", "/config?x=1", headers=fqdn)
+        assert status == 303 and headers["location"] == f"http://{ip}:{port}/config?x=1"
+        assert body == "" and "alice" not in str(headers)
+        assert call(conn, "GET", "/", headers={"Host": "cn-01"})[0] == 303
+        assert call(conn, "POST", "/actions/noop", {},
+                    {**fqdn, "Origin": f"http://cn-01.tail1234.ts.net:{port}"})[0] == 421
+        assert call(conn, "GET", "/", headers={"Host": f"evil.example:{port}"})[0] == 421
         assert call(conn, "POST", "/actions/noop", {}, {"Origin": f"http://{ip}:{port}"})[0] == 200
         assert action.calls[-1][1] == Caller(TAILNET, "alice@example.com")
     finally:

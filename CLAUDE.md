@@ -74,11 +74,11 @@ declares a field and the surface that edits it (ADR-0004).
 
 | Module | Responsibility | Inward interface version |
 |--------|----------------|--------------------------|
-| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table; detects the site networks and proposes them as routes for operator confirmation (ADR-0005 A3). Sole writer of Tailscale state. Declares its config fields (hostname, tags, auth key; ADR-0004); joins, renames, sets advertised routes (default: the detected site networks) and leaves the site tailnet on a confirmed request, and rejoins a recorded join on its own (ADR-0005; on by default, `CN_TAILNET_WRITER=0` switches it off); stops advertising routes on request (`routes-off`). Reports each peer's direct endpoint for the site map (ADR-0007). | 0.7.0 |
+| `tailnet-gateway` (`modules/tailnet_gateway/`) | Bridge to tailscaled: reports tailnet status and the peer table; detects the site networks and proposes them as routes for operator confirmation (ADR-0005 A3). Sole writer of Tailscale state. Declares its config fields (hostname, tags, auth key; ADR-0004); joins, renames, sets advertised routes (default: the detected site networks) and leaves the site tailnet on a confirmed request, and rejoins a recorded join on its own (ADR-0005; on by default, `CN_TAILNET_WRITER=0` switches it off); stops advertising routes on request (`routes-off`). Reports each peer's direct endpoint for the site map (ADR-0007) and the node's MagicDNS name (ADR-0008). | 0.8.0 |
 | `camera-config` (`modules/camera_config/`) | Bridge to Axis VAPIX: knows the site's cameras; will probe and (operator-confirmed) configure them. Sole writer to cameras. | 0.1.0 |
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
 | `site-survey` (`modules/site_survey/`) | Bridge to nmap and the neighbour table: scans the site networks once per operator request (gentle, unprivileged, ports 80/443/554) and publishes every host that answered, with MAC, maker, hostname and open ports (ADR-0007). Never writes to a device; hosts are never persisted. | 0.1.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007). | 0.10.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008). | 0.11.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.
@@ -110,7 +110,8 @@ directory and import path.
     or in logs.
 13. **Domain-specific:** the site LAN is untrusted. Never advertise a stream or surface on a
     site-LAN address; tailnet addresses only (ADR-0001). The one exception is the TLS admin
-    fallback on 8443 (ADR-0003). Every request is sorted into a door and every write passes
+    fallback on 8443 (ADR-0003). A name is never served on 8080; the node's MagicDNS name
+    only redirects to its tailnet IP (ADR-0008). Every request is sorted into a door and every write passes
     the dashboard's single `authorize()`; a new surface or write path goes through the same
     doors, never around them.
 14. **Domain-specific:** Axis cameras belong to the site — the first write to any camera is

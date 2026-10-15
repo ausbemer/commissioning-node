@@ -1,10 +1,10 @@
-# dashboard Inward Interface — v0.10.0
+# dashboard Inward Interface — v0.11.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
 
 **Two versions, two meanings (spec §4 dual versioning).** `__version__` (here,
-`0.10.0`) is the *inward contract* version: it bumps only when this `interface/`
+`0.11.0`) is the *inward contract* version: it bumps only when this `interface/`
 package changes. `VERSION` is the module's *release* version: it bumps with features and
 implementation. A module shipping features behind an unchanged interface bumps `VERSION`
 only.
@@ -17,8 +17,8 @@ This package is the ONLY thing a feature may import from (spec §4: features nev
 - `MODULE` — the module name constant (kebab-case, e.g. `"dashboard"`), used for
   capability flags and logging. Lives here, not in `core/`, precisely so features can use
   the module identity without reaching into core.
-- `VERSION` — the module release version (`0.10.1`).
-- `__version__` — the inward interface semver (`0.10.0`).
+- `VERSION` — the module release version (`0.11.0`).
+- `__version__` — the inward interface semver (`0.11.0`).
 - The public models below and the `Feature` protocol.
 
 Features import like `from ..interface import MODULE, Feature` — never `from ..core ...`.
@@ -66,6 +66,7 @@ interface objects").
 
 ## Changelog
 
+- v0.11.0 — `name_redirect()` (`doors.py`): where a GET on the node's MagicDNS name goes, the tailnet IP, or None; the name is never served (ADR-0008) (additive).
 - v0.10.0 — `PeerDirectory.endpoints()`: fresh peers by their direct address, for the site map only, never for identity (ADR-0007 step 4) (additive).
 - v0.9.0 — `SITE_SCANNER`, `SITE_OPERATIONS`; `op_form` takes a site operation, and `marker` (the outcome marker a confirmed slide waits on); state kinds `site_hosts`, `site_scan`, `site_request` (the last `site/scan` seen, with `received_at`) (additive, ADR-0007).
 - v0.8.0 — `chrome.op_form`: a tailnet operation's may-disturb form, shared by the overview (Join/Leave as a slider) and `/config` (Rename and Routes beside their fields) (additive).

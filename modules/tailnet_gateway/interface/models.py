@@ -36,6 +36,9 @@ class OverlaySnapshot(Shape):
     tags: list[str] = []
     #: The overlay's state word (tailscaled's BackendState, e.g. "NeedsLogin"); "" unknown.
     state: str = ""
+    #: This node's name on the overlay (MagicDNS FQDN for Tailscale, no trailing dot); ""
+    #: when the overlay reports none (0.8.0, ADR-0008).
+    dns_name: str = ""
     #: Stamped by core: IPv4 networks the node is on now (`SiteNetworkSource`, ADR-0005 A3).
     site_networks: list[str] = []
     #: Stamped by core: the writer's record of the last join, None when there is none.

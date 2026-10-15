@@ -185,7 +185,8 @@ Pinned dependencies covered here:
   on 1.102.5, logged out (2026-10-12): the top-level keys `BackendState` (`NeedsLogin` when
   logged out), `Self`, `Peer` and `User` exist, and `Peer`/`User` are `null` when logged out.
   `Self` has `HostName`, `DNSName`, `TailscaleIPs` and `UserID`. `Tags` and `PrimaryRoutes`
-  are omitted when empty. Logged in (2026-10-13): `Peer[*].CurAddr` and `Relay` (Q-008).
+  are omitted when empty. Logged in (2026-10-15): `Self.DNSName` is the FQDN with a trailing
+  dot (`pi5-gateway.tail01d907.ts.net.`); tailnet-gateway strips it (ADR-0008). Logged in (2026-10-13): `Peer[*].CurAddr` and `Relay` (Q-008).
   **Still unverified**, because it needs a logged-in node:
   - that `BackendState == "Running"` means connected;
   - `Self.PrimaryRoutes` (routes this node is currently primary for, which is not the same

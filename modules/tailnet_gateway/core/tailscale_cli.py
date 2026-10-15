@@ -7,6 +7,8 @@ ADR, and this module stays its single writer (§11 rung 9).
 Field mapping, against tailscale 1.102.5 on this node (2026-10-12, logged out):
 - VERIFIED present: top-level BackendState, Self, Peer, User; Self.HostName, Self.DNSName,
   Self.TailscaleIPs, Self.UserID. Peer and User are null when logged out.
+- VERIFIED logged in (2026-10-15): Self.DNSName is the FQDN with a trailing dot
+  ("pi5-gateway.tail01d907.ts.net."), which the mapping strips (ADR-0008).
 - VERIFIED logged in (2026-10-13): Peer[*].CurAddr is "ip:port" ("[ip]:port" for IPv6) while
   the peer has an active direct path, else "" (idle or relayed); Relay is only the peer's home
   DERP region (quirks Q-008).
@@ -63,6 +65,7 @@ class TailscaleCliStatusSource:
             served_routes=[str(r) for r in me.get("PrimaryRoutes") or []],
             tags=[str(t) for t in me.get("Tags") or []],
             state=str(data.get("BackendState") or ""),
+            dns_name=str(me.get("DNSName") or "").rstrip("."),
             peers=self._peers(data),
         )
 
