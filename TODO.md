@@ -20,6 +20,20 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
          needs no device approval (save it with `?preauthorized=true`, accepted since
          2026-10-13), that `--auth-key=file:` honours the suffix, and that it joins
          ephemeral; record all three in quirks.md.
+- [ ] **Join fails when tailscaled has lost its operator** (seen 2026-10-21). tailscaled
+      booted 2026-10-18 with `profile not found` (state cleared, cause unknown) and no
+      `OperatorUser`, so three Joins from the dashboard failed with `Access denied: checkprefs
+      access denied`; fixed by hand with `sudo tailscale set --operator=admin`. Fix:
+      1. Find what cleared the profile. Suspect: a Leave's `tailscale logout` drops the
+         profile and with it `OperatorUser` (prefs are per profile). Verify on 1.102.5 and
+         record it in quirks.md (§7).
+      2. Keep the operator a renewed level, not a one-shot install step (§5): e.g. a
+         root-run drop-in on `tailscaled.service` that re-asserts `tailscale set
+         --operator=<daemon user>` on every start (ADR-0002 amendment first; never a sudo
+         rule for the daemon).
+      3. The writer maps `checkprefs access denied` to a plain Last action ("tailscaled has
+         no operator: run sudo ops/install.sh") instead of the raw CLI text, and the overview
+         shows the doctor's operator check.
 - [x] **ADR-0003 steps 5 and 6: config registry + tailnet-gateway writer** (ADR-0004,
       ADR-0005 with amendments A1–A3). Merged to `dev` 2026-10-13 after four review rounds
       (rulings in ADR-0005); routes rehearsed and approved on the node.
