@@ -39,16 +39,18 @@ def test_fallback_port_matches_main() -> None:
 
 
 def test_forwarding_is_fenced_before_it_is_enabled() -> None:
-    """ADR-0005 A3, review 2026-10-13: the forward chain lets only the tailnet open forwarded
-    connections, and the firewall unit owns forwarding: on only after that chain loads, off
+    """ADR-0005 A3, review 2026-10-13, amendment 2026-10-21: the forward chain lets the tailnet
+    open forwarded connections, and the site LAN open them only into the tailnet; it drops the
+    rest. The firewall unit owns forwarding: on only after that chain loads, off
     before it is deleted and when the unit fails. No sysctl drop-in turns it on at boot."""
     nft = (OPS / "firewall" / "commissioning-node.nft").read_text()
     chain = nft[nft.index("chain forward"):]
     rules = [line.strip() for line in chain.splitlines()[1:] if line.strip() and not line.strip().startswith("#")]
-    assert rules[:4] == ["type filter hook forward priority filter - 10; policy accept;",
+    assert rules[:5] == ["type filter hook forward priority filter - 10; policy accept;",
                          "ct state established,related accept",
                          'iifname "tailscale0" accept',
-                         'drop comment "forwarding: only the tailnet opens connections (ADR-0005)"']
+                         'oifname "tailscale0" accept comment "forwarding: the site LAN into the tailnet (ADR-0005, 2026-10-21)"',
+                         'drop comment "forwarding: nothing else is forwarded (ADR-0005)"']
     unit = [line for line in (OPS / "systemd" / "commissioning-node-firewall.service").read_text().splitlines()
             if line.startswith("Exec")]
     assert unit == ["ExecStart=/usr/sbin/nft -f /etc/commissioning-node/firewall.nft",

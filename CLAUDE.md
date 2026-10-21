@@ -44,7 +44,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `ci.sh` | The whole gate, the same locally and in CI. |
 | `tools/ledgers/`, `tests/replay/` | Evidence for behaviour/safety constants and the replay corpus (§8.11/§8.12) — this node acts on the world. |
 | `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX, Axis VAPIX, nmap and the RevPi image's firewalld (§7). |
-| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (one-command bring-up after the git clone, ADR-0002 A2: idempotent, `--dry-run`; also the Python runtime, the fallback TLS key pair, the Tailscale operator, the admin-password prompt, and a closing doctor run), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1, nmap 7.95+dfsg-3), `paths.sh` (host paths, incl. the config registry's state directory, + daemon user), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080; forwarding only from the tailnet; its unit also enables IPv4 forwarding for the subnet router once the table loads), the two entries it makes in the RevPi image's firewalld (the fallback's 8443 open, `tailscale0` trusted; ADR-0002 A1), and the systemd units. Never imported. |
+| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (one-command bring-up after the git clone, ADR-0002 A2: idempotent, `--dry-run`; also the Python runtime, the fallback TLS key pair, the Tailscale operator, the admin-password prompt, and a closing doctor run), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1, nmap 7.95+dfsg-3), `paths.sh` (host paths, incl. the config registry's state directory, + daemon user), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080; forwarding from the tailnet, and from the site LAN only into it; its unit also enables IPv4 forwarding for the subnet router once the table loads), the two entries it makes in the RevPi image's firewalld (the fallback's 8443 open, `tailscale0` trusted; ADR-0002 A1), and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
 neutral packages `freshness/` · bus-coupled infra `config_registry/` · ops tier `ops/` · composition root `main.py`.
@@ -118,8 +118,9 @@ directory and import path.
     operator-confirmed (§11 rung 3), and its warning appears in the action manifest (§5).
 15. **Domain-specific:** MediaMTX's ports and the dashboard's 8080 are reachable only from the tailnet and loopback.
     The `inet commissioning_node` nftables table enforces this, and `mediamtx.service`
-    refuses to run without it. Its forward chain lets only the tailnet open forwarded
-    connections (the node is a subnet router, ADR-0005); forwarding is enabled only after it loads. Never `flush ruleset` and never enable Debian's
+    refuses to run without it. Its forward chain lets the tailnet open forwarded connections
+    (the node is a subnet router, ADR-0005) and the site LAN open them only into the tailnet
+    (ADR-0005, 2026-10-21), and drops the rest; forwarding is enabled only after it loads. Never `flush ruleset` and never enable Debian's
     `nftables.service` (ADR-0002). A new MediaMTX server or port also means a firewall entry.
 16. Vendor calls (tailscale, VAPIX, MediaMTX, nmap) live only in their bridge module's `core/`
     adapter behind an `interface/` seam; every silent vendor behaviour you measure goes in

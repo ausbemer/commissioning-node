@@ -480,3 +480,42 @@ has nothing to offer the wrong LAN, so it still rejoins.
 
 Also found, not fixed in v0.1.0 (TODO): a service restart while a Join, Rename or Routes is
 still running loses its outcome, and can leave the join record behind what tailscaled did.
+
+### 2026-10-21 — the site LAN may open connections into the tailnet
+
+A3 fenced forwarding so that only the tailnet could open a forwarded connection: a site-LAN
+host could not use the node as a path into the tailnet. On site, devices on the node's
+network need to reach devices on the tailnet themselves (the reverse of the subnet routes).
+
+**Ruling (operator, 2026-10-21):** this is what the node is for. The forward chain gains one
+accept, between the tailnet's accept and the drop: **anything forwarded out `tailscale0`**
+(`oifname "tailscale0" accept`). Applied by hand on the node first (with `iifname "eth0"`),
+then here.
+
+- **No interface or subnet named.** The site interface is `eth0` on a Pi and `lan0` on the
+  RevPi image (Q-009), and the site subnet changes at every site. The rule matches only the
+  way out, so it holds on both images and on every site without an edit.
+- **What still limits it:**
+  - Tailscale's own netfilter rules drop traffic leaving on `tailscale0` with a
+    `100.64.0.0/10` source, so a site host can't pose as a tailnet node.
+  - A tailnet device accepts a forwarded packet only from a source in the node's
+    **approved** routes, and its tailnet policy decides which of them may reach it.
+    Which tailnet devices and ports the site reaches is that policy's call (a grant from the
+    site subnet), made by the tailnet's admin, not by this node.
+  - The drop stays: the node is still never a path from one site network to another, or
+    from the site to the internet through an exit.
+- **The site's side is the site's.** Site hosts (or the site router) need a route to
+  `100.64.0.0/10` via the node, and Linux tailnet targets need `--accept-routes` to answer.
+  The node configures neither.
+- **ADR-0001 stands:** the site LAN is still untrusted and the node still serves it nothing.
+  This opens a path *through* the node, gated by the tailnet's policy, not a surface on it.
+
+**Safety:** rung 2: the opening is fixed in ops, not per site; per-site reach is the
+tailnet policy's grant. Rung 13: two independent fences remain (this chain's drop for
+everything but the tailnet; Tailscale's source checks and policy for what reaches it).
+
+**Unverified (TODO):** on the RevPi image, firewalld's forward chain rejects forwarded
+traffic not in a zone (Q-009), so a site host's packets into `tailscale0` may still be
+rejected there; ADR-0002 A1 limits firewalld to two entries, so a third needs its own
+amendment. Also unmeasured on 1.102.5: that a tailnet peer drops a forwarded packet whose
+source is outside the approved routes. Record both in quirks.md once seen.

@@ -84,9 +84,9 @@ if ((EUID == 0)); then
     "no live 8080 drop rule — the dashboard's tailnet door is open to the site LAN" \
     grep -q 'tcp dport 8080 drop' <<< "$table"
   if [[ "$(sysctl -n net.ipv4.ip_forward 2>/dev/null)" == 1 ]]; then
-    check "forwarding fenced: only the tailnet opens forwarded connections (live rule)" \
+    check "forwarding fenced: nothing forwarded but from or into the tailnet (live rule)" \
       "IPv4 forwarding is ON but the forward chain is missing — the site LAN can route through the node" \
-      grep -q 'only the tailnet opens' <<< "$table"
+      grep -q 'nothing else is forwarded' <<< "$table"
   fi
 else
   skip "nftables table check needs root (sudo ops/doctor.sh)"

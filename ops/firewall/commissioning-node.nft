@@ -7,9 +7,11 @@
 # interface, i.e. the site LAN. Nothing else on the host is touched: this is our own table,
 # never `flush ruleset` (that would also wipe Tailscale's rules).
 #
-# Forwarding (ADR-0005 A3): the node is a subnet router, so IPv4 forwarding is on. Only the
-# tailnet may open a forwarded connection; replies flow back. Nothing else is forwarded, so a
-# site-LAN host can't use the node as a path into the tailnet or to another network.
+# Forwarding (ADR-0005 A3): the node is a subnet router, so IPv4 forwarding is on. The tailnet
+# may open a forwarded connection to anywhere the node routes, and a site-LAN host may open one
+# into the tailnet (ADR-0005, 2026-10-21); replies flow back. Which tailnet devices it reaches
+# is the tailnet policy's call: the site networks reach the tailnet only as approved routes.
+# Nothing else is forwarded, so the node is never a path from one site network to another.
 #
 # The admin fallback (8443, TLS + admin password, ADR-0003) is deliberately NOT listed: it
 # is the door for when the tailnet is down, so it must stay reachable from the site LAN.
@@ -43,6 +45,7 @@ table inet commissioning_node {
 
 		ct state established,related accept
 		iifname "tailscale0" accept
-		drop comment "forwarding: only the tailnet opens connections (ADR-0005)"
+		oifname "tailscale0" accept comment "forwarding: the site LAN into the tailnet (ADR-0005, 2026-10-21)"
+		drop comment "forwarding: nothing else is forwarded (ADR-0005)"
 	}
 }
