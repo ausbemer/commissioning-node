@@ -29,6 +29,10 @@
 #
 # Usage:  sudo ops/install.sh        apply
 #         ops/install.sh --dry-run   show what would change; needs no root and no network
+
+# Steps run through act() ("act DESCRIPTION fn"), which shellcheck can't follow, so it calls
+# their functions unreachable (SC2317, since 4d2ed78; it failed CI's lint from then on).
+# shellcheck disable=SC2317
 set -euo pipefail
 
 OPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +46,7 @@ DRY_RUN=0
 case "${1:-}" in
   "") ;;
   --dry-run) DRY_RUN=1 ;;
-  -h | --help) sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
 esac
 
