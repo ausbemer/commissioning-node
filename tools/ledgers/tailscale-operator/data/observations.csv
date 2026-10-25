@@ -1,0 +1,3 @@
+date,host,tailscale,event,seconds,source
+2026-10-25,RevPi136506,1.102.5,tailscaled start to ipn Starting (local API serving),0.450,"journal -o short-monotonic: Program starting 17.761 -> NoState->Starting 18.211"
+2026-10-25,RevPi136506,1.102.5,Leave to first refused Join (operator gone),8,"journal: logout 22:39:00 -> check-prefs 22:39:08 (quirks Q-010)"

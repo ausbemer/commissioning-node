@@ -1,0 +1,19 @@
+# Installed by ops/install.sh (ADR-0002 A4). Renews tailscaled's operator: a Leave's
+# `tailscale logout` deletes it (docs/quirks.md Q-010). Started by tailscaled starting (the
+# [Install] below), by the .path on a tailscaled state change and by the .timer.
+[Unit]
+Description=commissioning-node: keep the tailscale operator the daemon user
+After=tailscaled.service
+
+[Service]
+Type=oneshot
+# The root-owned copy the installer made, never the repo's (the daemon user owns the repo).
+ExecStart=/usr/local/libexec/commissioning-node/tailscale-operator
+# A no-op run logs nothing, systemd's start/stop lines included; a renewal or a failure does.
+LogLevelMax=notice
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+
+[Install]
+WantedBy=tailscaled.service

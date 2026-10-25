@@ -6,7 +6,7 @@ The ONLY package features may import from this module (spec §4).
 #: Defined before the imports below: config.py declares its fields under this name.
 MODULE = "tailnet-gateway"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 #: Inward contract version — bumps only when this interface/ package changes.
 __version__ = "0.8.0"
 

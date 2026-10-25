@@ -5,7 +5,7 @@
 #   1. apt prerequisites (ca-certificates, curl, gnupg, nftables, openssl) and the daemon's
 #      Python runtime from Debian (python3, python3-pydantic; requirements.txt)
 #   2. Tailscale from its signed apt repo (key fingerprint pinned), exact version, held,
-#      with the daemon user as its operator (ADR-0003)
+#      with the daemon user as its operator (ADR-0003), renewed by a root oneshot (A4)
 #   3. the commissioning-node firewall table + unit (MediaMTX + dashboard ports: tailnet +
 #      loopback; forwarding only from the tailnet). The firewall unit also owns IPv4
 #      forwarding for the subnet router (ADR-0005): on only after its forward chain loads
@@ -183,6 +183,28 @@ set_operator() {
 }
 if [[ "$(operator)" == "$RUN_USER" ]]; then ok "tailscale operator is $RUN_USER"
 else act "tailscale set --operator=$RUN_USER" set_operator; fi
+
+# ...and keep it so (ADR-0002 A4): a Leave's `tailscale logout` deletes the operator with the
+# profile (docs/quirks.md Q-010). A root oneshot renews it when tailscaled starts, when its
+# state file changes, and every 5 minutes. Root runs a root-owned copy with the user filled in,
+# never the repo's file, which the daemon user can write.
+CHANGED=0
+sed -e "s|@RUN_USER@|$RUN_USER|g" "$OPS_DIR/tailscale-operator.sh" > "$work/tailscale-operator"
+sync_file "$work/tailscale-operator" "$OPERATOR_HELPER" 0755
+for kind in service path timer; do
+  sync_file "$OPS_DIR/systemd/$OPERATOR_UNIT.$kind" "$UNIT_DIR/$OPERATOR_UNIT.$kind" 0644
+done
+ensure_service "$OPERATOR_UNIT.path" "$CHANGED"     # reloads systemd first when files changed
+ensure_service "$OPERATOR_UNIT.timer" 0
+((CHANGED)) && act "restart $OPERATOR_UNIT.timer" systemctl restart "$OPERATOR_UNIT.timer"
+# The service is wanted by tailscaled.service (its [Install]), so enabling it is the start hook.
+if systemctl is-enabled --quiet "$OPERATOR_UNIT.service" 2>/dev/null; then ok "$OPERATOR_UNIT.service runs on tailscaled start"
+else act "enable $OPERATOR_UNIT.service (on tailscaled start)" systemctl enable --quiet "$OPERATOR_UNIT.service"; fi
+run_operator_unit() {
+  systemctl start "$OPERATOR_UNIT.service" \
+    || echo "    WARNING: $OPERATOR_UNIT.service failed (journalctl -u $OPERATOR_UNIT); its timer retries" >&2
+}
+act "run $OPERATOR_UNIT.service once" run_operator_unit
 
 # ---------------------------------------------------------------------------------------
 step "nmap $NMAP_VERSION"

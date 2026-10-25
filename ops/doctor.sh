@@ -32,6 +32,8 @@ owner_mode() { stat -c '%U %a' "$1" 2>/dev/null; }
 private_to_daemon() { local u m; read -r u m <<< "$(owner_mode "$1")"; [[ "$u" == "$RUN_USER" && "${m: -2}" == "00" ]]; }
 listening() { [[ -n "$(ss -Htln "sport = :$1" 2>/dev/null)" ]]; }
 not_listening() { ! listening "$1"; }
+enabled_active() { systemctl is-enabled --quiet "$1" 2>/dev/null && active "$1"; }
+helper_matches() { sed -e "s|@RUN_USER@|$RUN_USER|g" "$OPS_DIR/tailscale-operator.sh" | cmp -s - "$OPERATOR_HELPER"; }
 pref() { tailscale debug prefs 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))" 2>/dev/null; }
 
 section "Host"
@@ -55,16 +57,32 @@ else fail "tailscale $have installed, pinned $TAILSCALE_VERSION"; fi
 if [[ -n "$have" ]]; then
   check_warn "held" "not held — apt upgrade may move it off the pin" held
   check "tailscaled active" "tailscaled not active" active tailscaled.service
-  state="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null || true)"
+  # Running with a pending AuthURL is a node control refused, on its cached netmap (Q-005).
+  state="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); s=d.get("BackendState",""); print("Refused" if s == "Running" and d.get("AuthURL") else s)' 2>/dev/null || true)"
   case "$state" in
+    Refused) warn "tailscaled says Running, but control refused the node (removed while off, quirks Q-005) — Join on the dashboard's overview" ;;
     Running) pass "logged in: $(tailscale ip -4 2>/dev/null | head -1)" ;;
     NeedsLogin) warn "not logged in to a tailnet — save the auth key on the dashboard's /config, then Join on its overview (ADR-0005)" ;;
     "") warn "could not read tailscale status" ;;
     *) warn "tailscale state: $state" ;;
   esac
+  # A Leave deletes the operator with the profile (Q-010); a root oneshot renews it (ADR-0002 A4).
   op="$(pref OperatorUser)"
-  check_warn "operator is $RUN_USER (the daemon can run tailscale without root)" \
-    "operator is '${op:-none}', not $RUN_USER — re-run sudo ops/install.sh" test "$op" == "$RUN_USER"
+  check "operator is $RUN_USER (the daemon can run tailscale without root)" \
+    "operator is '${op:-none}', not $RUN_USER — every Join fails; sudo systemctl start $OPERATOR_UNIT, or re-run sudo ops/install.sh" \
+    test "$op" == "$RUN_USER"
+  check "$OPERATOR_UNIT.service renews it on tailscaled start" \
+    "$OPERATOR_UNIT.service not enabled — re-run sudo ops/install.sh" \
+    quiet systemctl is-enabled "$OPERATOR_UNIT.service"
+  for kind in path timer; do
+    check "$OPERATOR_UNIT.$kind active" "$OPERATOR_UNIT.$kind not enabled and active — re-run sudo ops/install.sh" \
+      enabled_active "$OPERATOR_UNIT.$kind"
+  done
+  check "$OPERATOR_HELPER matches the repo" "$OPERATOR_HELPER differs from the repo or is missing — re-run sudo ops/install.sh" \
+    helper_matches
+  check "$OPERATOR_HELPER is root's alone (the daemon user can't change what root runs)" \
+    "$OPERATOR_HELPER is not root-owned 0755 — re-run sudo ops/install.sh" \
+    test "$(stat -c '%U %a' "$OPERATOR_HELPER" 2>/dev/null)" == "root 755"
 fi
 
 section "Firewall"

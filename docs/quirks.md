@@ -213,10 +213,12 @@ Pinned dependencies covered here:
   2026-10-21 (TODO.md).
 - **Detection signature:** journal `localapi: [POST] /localapi/v0/logout` followed by
   `profile not found`. `tailscale debug prefs` has no `OperatorUser`, and
-  `sudo ops/doctor.sh` warns "operator is 'none'".
-- **Our accommodation:** none yet. Fixed by hand with `sudo tailscale set --operator=pi`.
-  The fix (TODO.md) keeps the operator a renewed level, re-asserted by root, not a
-  one-shot install step.
+  `sudo ops/doctor.sh` FAILs "operator is 'none'".
+- **Our accommodation:** ADR-0002 A4. A root oneshot (`ops/tailscale-operator.sh`,
+  installed as a root-owned copy) sets the operator back when tailscaled starts, when
+  `/var/lib/tailscale/tailscaled.state` changes, and every 5 minutes. The writer reports
+  `checkprefs access denied` as a plain message, not the CLI's `sudo tailscale up` advice.
+  Not yet measured: that a logout changes the state file, and Leave → operator back.
 - **Last verified:** 1.102.5, 2026-10-25.
 
 ## Unverified assumptions (verify, then turn into entries or delete)

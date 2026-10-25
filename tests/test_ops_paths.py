@@ -72,3 +72,35 @@ def test_forwarding_is_fenced_before_it_is_enabled() -> None:
     install = (OPS / "install.sh").read_text()
     assert 'rm -f "$LEGACY_SYSCTL_FILE"' in install and "sysctl -q -p" not in install
     assert shell_var("LEGACY_SYSCTL_FILE") == "/etc/sysctl.d/90-commissioning-node.conf"
+
+
+def test_tailscale_operator_is_renewed_by_root_never_from_the_repo() -> None:
+    """ADR-0002 A4: a Leave deletes tailscaled's operator (quirks Q-010). A root oneshot renews
+    it on tailscaled start, on a state change and on a timer. Root runs a root-owned copy, never
+    the repo's file (the daemon user owns the repo), and writes only the operator."""
+    unit = shell_var("OPERATOR_UNIT")
+    helper = shell_var("OPERATOR_HELPER")
+    assert not helper.startswith("/opt/") and helper.startswith("/usr/local/libexec/")
+    systemd = OPS / "systemd"
+    service = (systemd / f"{unit}.service").read_text()
+    assert f"ExecStart={helper}\n" in service
+    assert "WantedBy=tailscaled.service" in service and "After=tailscaled.service" in service
+    assert "User=" not in service                     # root: `tailscale set --operator` needs it
+    assert "PathChanged=/var/lib/tailscale/tailscaled.state" in (systemd / f"{unit}.path").read_text()
+    timer = (systemd / f"{unit}.timer").read_text()
+    assert "OnUnitActiveSec=300" in timer and "OnActiveSec=" in timer   # OPERATOR_RENEW_S
+
+    script = (OPS / "tailscale-operator.sh").read_text()
+    assert 'RUN_USER="@RUN_USER@"' in script
+    commands = [line.strip() for line in script.splitlines()
+                if "tailscale " in line and not line.lstrip().startswith("#")]
+    writes = [c for c in commands if not c.startswith("tailscale debug prefs")
+              and "warn " not in c and "note " not in c]
+    assert writes == ['if out="$(tailscale set --operator="$RUN_USER" 2>&1)"; then']   # the one write
+
+    install = (OPS / "install.sh").read_text()
+    assert '"$OPS_DIR/tailscale-operator.sh" > "$work/tailscale-operator"' in install
+    assert 'sync_file "$work/tailscale-operator" "$OPERATOR_HELPER" 0755' in install
+    doctor = (OPS / "doctor.sh").read_text()
+    assert 'check "operator is $RUN_USER' in doctor     # a FAIL now, not a WARN
+    assert '"root 755"' in doctor

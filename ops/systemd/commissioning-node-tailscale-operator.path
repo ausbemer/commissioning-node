@@ -1,0 +1,12 @@
+# Installed by ops/install.sh (ADR-0002 A4). A Leave rewrites tailscaled's state file as it
+# deletes the profile (docs/quirks.md Q-010), so this brings the operator back before the
+# next Join. The .timer is the guarantee; this only makes it prompt.
+[Unit]
+Description=commissioning-node: renew the tailscale operator when tailscaled's state changes
+
+[Path]
+PathChanged=/var/lib/tailscale/tailscaled.state
+Unit=commissioning-node-tailscale-operator.service
+
+[Install]
+WantedBy=multi-user.target

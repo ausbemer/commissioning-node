@@ -27,12 +27,14 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       1. ~~Find what cleared the profile~~ — confirmed 2026-10-25: a Leave's `tailscale
          logout` deletes the profile, and `OperatorUser` with it (quirks Q-010). Every Leave
          therefore breaks the next Join, so steps 2 and 3 are now urgent.
-      2. Keep the operator a renewed level, not a one-shot install step (§5). Drafted as
-         ADR-0002 A4 (Proposed, 2026-10-25): a root oneshot run on tailscaled start, on a
-         tailscaled state change (path unit) and by a 5-min timer. Accept it, then build it.
-      3. The writer maps `checkprefs access denied` to a plain Last action ("tailscaled has
-         no operator: run sudo ops/install.sh") instead of the raw CLI text, and the overview
-         shows the doctor's operator check.
+      2. ~~Keep the operator a renewed level~~ — built 2026-10-25 (ADR-0002 A4, accepted):
+         root oneshot on tailscaled start, a state-change path unit, a 5-min timer.
+         **Still to do on the node:** `sudo ops/install.sh`, then the A4 rehearsal (Leave,
+         operator back within 5 s?; path unit stopped, the timer brings it back), and
+         record the timings in `tools/ledgers/tailscale-operator/` and Q-010.
+      3. ~~The writer maps `checkprefs access denied` to a plain Last action~~ — done
+         2026-10-25 (`NO_OPERATOR_MESSAGE`). Still open: the overview shows the doctor's
+         operator check.
 - [x] **ADR-0003 steps 5 and 6: config registry + tailnet-gateway writer** (ADR-0004,
       ADR-0005 with amendments A1–A3). Merged to `dev` 2026-10-13 after four review rounds
       (rulings in ADR-0005); routes rehearsed and approved on the node.

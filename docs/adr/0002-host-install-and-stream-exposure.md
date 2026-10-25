@@ -183,7 +183,9 @@ publish the site's camera streams to that LAN.
 - **Checks.** `ops/doctor.sh` (root) FAILs for each site zone the policy doesn't forward
   into `trusted` in the runtime and permanent config, or if its target isn't `ACCEPT`.
 
-### A4 — 2026-10-25: the tailscale operator is a renewed level, not an install step (Proposed)
+### A4 — 2026-10-25: the tailscale operator is a renewed level, not an install step
+
+- **Status:** Accepted 2026-10-25 (Austin Emerson); built the same day, rehearsal pending.
 
 - **Why.** `ops/install.sh` runs `tailscale set --operator=<daemon user>` once (A2), so the
   daemon can run `tailscale` without root (ADR-0003, ADR-0005). That pref doesn't last.
@@ -200,7 +202,16 @@ publish the site's camera streams to that LAN.
      `OperatorUser` from `tailscale debug prefs`. If it isn't `RUN_USER` (`ops/paths.sh`,
      fixed at install), it runs `tailscale set --operator=$RUN_USER` and logs one line.
      Otherwise it does nothing and says nothing. Reading first keeps it idempotent, and stops
-     its own write from triggering it again (trigger 2).
+     its own write from triggering it again (trigger 2). `LogLevelMax=notice` keeps a no-op
+     run out of the journal, systemd's own start and stop lines included. A renewal is one
+     notice line and a failure one warning, with tailscale's error in it.
+  1a. **Root never runs a file the daemon user can write.** The daemon runs as the checkout's
+     owner, who can edit the repo, so a root unit running `ops/tailscale-operator.sh` from
+     the repo would let a compromised daemon run anything as root. The installer renders a
+     copy with `RUN_USER` filled in (`@RUN_USER@`) to `OPERATOR_HELPER`
+     (`/usr/local/libexec/commissioning-node/tailscale-operator`, root, 0755), and the unit
+     runs only that copy. The doctor FAILs if the copy differs from the repo or isn't
+     `root 755`. A change to the script reaches the node only through `sudo ops/install.sh`.
   2. It has three triggers, each covering a gap in the others:
      - **tailscaled start:** `WantedBy=` and `After=tailscaled.service` (boot, upgrade,
        restart). The script waits up to `OPERATOR_WAIT_S` for tailscaled's socket to answer.
@@ -210,8 +221,9 @@ publish the site's camera streams to that LAN.
        operator should be back within a second or two, before the operator's next Join.
        *Unverified:* that logout writes this file, and how fast the path unit fires.
      - **the level:** `commissioning-node-tailscale-operator.timer`,
-       `OnUnitActiveSec=OPERATOR_RENEW_S`. It renews the operator even if both edges above
-       are missed (§5: the level is the guarantee, the edges only make it prompt).
+       `OnActiveSec=60` (the first run after the timer starts; `OnUnitActiveSec` alone never
+       fires for a unit that hasn't run), then `OnUnitActiveSec=OPERATOR_RENEW_S`. It renews
+       the operator even if both edges above are missed (§5: the level is the guarantee, the edges only make it prompt).
 - **No new authority.** The unit writes exactly one pref, to the value the installer
   already sets, for the user ADR-0003 already granted it to. It never logs in, never touches
   routes, tags, the hostname or the auth key, and never runs `up`, `down` or `logout`.
@@ -230,11 +242,14 @@ publish the site's camera streams to that LAN.
     SD card. The path unit gives the speed and the timer stays slow.
 - **Checks.** `ops/doctor.sh` FAILs (not just warns) when the operator isn't `RUN_USER`, or
   when the path or timer unit isn't enabled and active. `ops/install.sh --dry-run` shows the
-  three units. The installer's existing one-shot `set --operator` stays, so a fresh node has
+  three units, the copy, and one run of the service. The doctor also reports a node that
+  says `Running` with a pending `AuthURL` as refused by control (Q-005), not as logged in. The
+  installer's existing one-shot `set --operator` stays, so a fresh node has
   an operator before the first Join.
 - **Companion change (ADR-0005, writer):** a Join or Rename refused with
-  `checkprefs access denied` gets a plain Last action ("tailscaled has no operator; it is
-  restored within OPERATOR_RENEW_S, or run sudo ops/install.sh"), not the raw CLI text that
+  `checkprefs access denied` gets a plain Last action (`NO_OPERATOR_MESSAGE` in
+  `core/tailscale_writer.py`: the node restores it within 5 minutes, or at once with
+  `sudo systemctl start commissioning-node-tailscale-operator`), not the raw CLI text that
   suggests a `sudo tailscale up`, which would bypass the writer's join record.
 - **Constants (§8.11, PROVISIONAL until ledgered in `tools/ledgers/tailscale-operator/`):**
   `OPERATOR_RENEW_S = 300` (the worst case once both edges are missed: a Join fails for

@@ -40,6 +40,16 @@ OUTPUT_CAP = 4096
 
 _KEY_RE = re.compile(r"tskey-[A-Za-z0-9-]+")
 
+#: tailscaled's refusal when the daemon user is not its operator. A Leave's logout deletes the
+#: operator with the profile (docs/quirks.md Q-010); root renews it (ADR-0002 A4).
+_NO_OPERATOR = "checkprefs access denied"
+#: Said instead of the CLI's own advice, a `sudo tailscale up` that would bypass the writer
+#: and its join record (ADR-0005).
+NO_OPERATOR_MESSAGE = ("tailscaled has no operator, so the daemon may not run tailscale "
+                       "(a Leave clears it, quirks Q-010). The node restores it within "
+                       "5 minutes, or at once with sudo systemctl start "
+                       "commissioning-node-tailscale-operator; then try again")
+
 
 def scrub(text: str) -> str:
     """Blank anything shaped like an auth key, THEN cap (§8.9): capping first could cut a key's
@@ -118,6 +128,8 @@ class TailscaleCliWriter:
         except ValueError as exc:                  # the seam must not raise
             return WriterReply(ok=False, message=f"{op} failed: {type(exc).__name__}")
         if proc.returncode != 0:
+            if _NO_OPERATOR in (proc.stderr or "") + (proc.stdout or ""):
+                return WriterReply(ok=False, message=f"{op} failed: {NO_OPERATOR_MESSAGE}")
             detail = scrub((proc.stderr or "") + (proc.stdout or "")) or "no output"
             return WriterReply(ok=False, message=f"{op} failed (exit {proc.returncode}): {detail}")
         return WriterReply(ok=True, message=done)

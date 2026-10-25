@@ -131,6 +131,17 @@ def test_failure_output_is_scrubbed_and_capped(keyfile) -> None:
     assert "kkkk" not in scrub("x" + long_key + " tail")
 
 
+def test_no_operator_is_a_plain_message_not_the_clis_sudo_advice(keyfile) -> None:
+    # The CLI's text from 2026-10-25 (quirks Q-010): its advice, a `sudo tailscale up`, would
+    # bypass the writer and its join record (ADR-0002 A4, ADR-0005).
+    run = Runner(returncode=1, stderr="Access denied: checkprefs access denied\n\nUse 'sudo tailscale "
+                                      f"up --operator=pi --auth-key=file:{keyfile}'.")
+    reply = adapter(run).join("gw", [], keyfile)
+    assert not reply.ok and reply.message == f"join failed: {tw.NO_OPERATOR_MESSAGE}"
+    assert "sudo tailscale up" not in reply.message
+    assert "commissioning-node-tailscale-operator" in reply.message
+
+
 def test_timeout_and_missing_cli_are_in_band(keyfile) -> None:
     reply = adapter(Runner(raises=subprocess.TimeoutExpired("tailscale", 70))).join("gw", [], keyfile)
     assert not reply.ok and "timed out" in reply.message and "unknown" in reply.message

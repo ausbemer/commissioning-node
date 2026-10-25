@@ -1,0 +1,13 @@
+# Installed by ops/install.sh (ADR-0002 A4). The renewed level (spec §5): the operator comes
+# back within OPERATOR_RENEW_S even if tailscaled's start and its state change were both missed.
+[Unit]
+Description=commissioning-node: renew the tailscale operator every 5 minutes
+
+[Timer]
+OnActiveSec=60
+# OPERATOR_RENEW_S. PROVISIONAL (tools/ledgers/tailscale-operator/).
+OnUnitActiveSec=300
+Unit=commissioning-node-tailscale-operator.service
+
+[Install]
+WantedBy=timers.target

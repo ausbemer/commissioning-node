@@ -23,6 +23,11 @@ FALLBACK_PORT=8443
 # into the tailnet (ADR-0005 2026-10-21, ADR-0002 A3).
 FIREWALLD_POLICY=site-to-tailnet
 
+# The root-owned copy of ops/tailscale-operator.sh that renews tailscaled's operator, and its
+# units (ADR-0002 A4). Root runs it, so it is never run from the repo the daemon user owns.
+OPERATOR_HELPER=/usr/local/libexec/commissioning-node/tailscale-operator
+OPERATOR_UNIT=commissioning-node-tailscale-operator
+
 # The config registry (ADR-0004): systemd creates it (StateDirectory=, 0700, owned by the
 # daemon user). site/ is wiped when the node leaves a site; node/ survives the move.
 CN_STATE=/var/lib/commissioning-node
