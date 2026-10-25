@@ -32,5 +32,32 @@ OPERATOR_UNIT=commissioning-node-tailscale-operator
 # daemon user). site/ is wiped when the node leaves a site; node/ survives the move.
 CN_STATE=/var/lib/commissioning-node
 
-# The daemon runs as the checkout's owner, and owns its secrets (0600).
-RUN_USER="$(stat -c %U "$REPO_ROOT")"
+# The daemon user, written by the first install (root, 0644; ADR-0009 D1). A release checkout
+# is root's, so its owner can't name the daemon user; the file does. Without the file (a node
+# installed before ADR-0009, or a dry run on a fresh one) it is the checkout's owner, as before.
+DAEMON_USER_FILE="$CN_ETC/daemon-user"
+# What this node runs: tree, commit, ref, clean, when and by whom (root, 0644, schema_version;
+# ADR-0009 D1). Written by every install; read by the doctor and, later, the dashboard.
+RUNNING_FILE="$CN_ETC/running.json"
+
+# daemon_user FILE TREE — the daemon user: FILE's first line, else TREE's owner.
+daemon_user() {
+  local name=""
+  [[ -r "$1" ]] && read -r name < "$1"
+  if [[ -n "$name" ]]; then echo "$name"; else stat -c %U "$2"; fi
+}
+# The checkout's owner: not always the daemon user once a release checkout exists.
+TREE_OWNER="$(stat -c %U "$REPO_ROOT")"
+# The daemon runs as this user, and owns its secrets (0600).
+RUN_USER="$(daemon_user "$DAEMON_USER_FILE" "$REPO_ROOT")"
+
+# tree_git ARGS... — git in the checkout, as the checkout's owner. Never root in a tree another
+# user owns: its .git/config (fsmonitor, hooks) would run as root, which is what git's
+# "dubious ownership" check stops. Fails (empty output) if it can't.
+tree_git() {
+  if ((EUID == 0)) && [[ "$TREE_OWNER" != root ]]; then
+    runuser -u "$TREE_OWNER" -- git -C "$REPO_ROOT" "$@" 2>/dev/null
+  else
+    git -C "$REPO_ROOT" "$@" 2>/dev/null
+  fi
+}

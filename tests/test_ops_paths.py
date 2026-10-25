@@ -104,3 +104,42 @@ def test_tailscale_operator_is_renewed_by_root_never_from_the_repo() -> None:
     doctor = (OPS / "doctor.sh").read_text()
     assert 'check "operator is $RUN_USER' in doctor     # a FAIL now, not a WARN
     assert '"root 755"' in doctor
+
+
+def _daemon_user(tmp_path, file_text: str | None) -> str:
+    """Run paths.sh's daemon_user against a temp file and this repo as the tree."""
+    import subprocess
+    f = tmp_path / "daemon-user"
+    if file_text is not None:
+        f.write_text(file_text)
+    out = subprocess.run(["bash", "-c", f'REPO_ROOT="$1"; . "$2"; daemon_user "$3" "$1"', "_",
+                          str(OPS.parent), str(OPS / "paths.sh"), str(f)],
+                         capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+def test_daemon_user_comes_from_its_file_else_the_checkout_owner(tmp_path) -> None:
+    """ADR-0009 D1: a release checkout is root's, so the first install records the daemon user;
+    a node installed before that still falls back to the checkout's owner."""
+    owner = (OPS.parent).owner()
+    assert _daemon_user(tmp_path, None) == owner
+    assert _daemon_user(tmp_path, "") == owner
+    assert _daemon_user(tmp_path, "svc-node\n") == "svc-node"
+
+
+def test_provenance_is_recorded_by_root_and_git_never_runs_as_root_in_a_users_tree() -> None:
+    """ADR-0009 D1: every install records what the node runs (root, 0644, schema_version), the
+    doctor reports it, and root runs git in a tree another user owns only as that user."""
+    assert shell_var("DAEMON_USER_FILE") == '"$CN_ETC/daemon-user"'
+    assert shell_var("RUNNING_FILE") == '"$CN_ETC/running.json"'
+    paths = (OPS / "paths.sh").read_text()
+    assert 'runuser -u "$TREE_OWNER" -- git -C "$REPO_ROOT"' in paths
+    assert "safe.directory" not in paths
+    install = (OPS / "install.sh").read_text()
+    assert '"schema_version": "0.1.0"' in install
+    assert 'install -D -m 0644 "$work/running.json" "$RUNNING_FILE"' in install
+    assert 'install -m 0644 "$work/daemon-user" "$DAEMON_USER_FILE"' in install
+    for script in ("install.sh", "doctor.sh"):
+        assert "git -C" not in (OPS / script).read_text(), f"{script}: use tree_git"
+    doctor = (OPS / "doctor.sh").read_text()
+    assert 'section "Provenance (ADR-0009 D1)"' in doctor and "tree_git rev-parse HEAD" in doctor

@@ -93,8 +93,14 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       join flow (ADR-0003 step 6) or a manual join.
 - [ ] Install `nodejs` on the dev node (dev/CI only) so `ci.sh` parses the dashboard's scripts
       (ADR-0006); until then that gate prints SKIPPED.
-- [ ] Provenance (§2, ADR-0002): run a tagged checkout on shipped nodes, and have the
-      doctor and node card report the running commit.
+- [ ] **One-click node update** (ADR-0009, accepted 2026-10-25). Step 1 done (the daemon
+      user and the running commit recorded by root; the doctor reports them). Next: step 2,
+      contract 0.8.0 and `node-updater`, read-only (the check, the Overview banner,
+      `update_channel`); then the root updater and the rehearsal. On the node: re-run
+      `sudo ops/install.sh` once, to write `daemon-user` and `running.json`.
+- [ ] Provenance (§2, ADR-0002): ~~the doctor reports the running commit~~ (ADR-0009 step
+      1). Still: run a tagged checkout on shipped nodes (ADR-0009's `releases` channel), and
+      the node card reports the commit (step 2).
 - [ ] **Site LAN into the tailnet: loose ends** (ADR-0005, 2026-10-21). The RevPi side is
       done (ADR-0002 A3, firewalld policy `site-to-tailnet`, seen working 2026-10-23). Still:
       run `sudo ops/install.sh` on the RevPi to confirm it adopts the hand-made policy with no

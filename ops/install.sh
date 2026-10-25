@@ -20,7 +20,9 @@
 #   8. the admin password, when none is set and a terminal is attached: it offers to run
 #      ops/set-admin-password.sh (no-echo prompt; ADR-0002 A2). Without a terminal, or
 #      declined, the fallback stays off (fail closed) and the summary says how to set it
-#   9. ops/doctor.sh, read-only, whose verdict is the installer's exit status
+#   9. what this node runs: the daemon user and the installed commit, recorded by root in
+#      /etc/commissioning-node (ADR-0009 D1)
+#  10. ops/doctor.sh, read-only, whose verdict is the installer's exit status
 #
 # It does NOT join the tailnet: the auth key is a site secret (spec §8.9), entered on the
 # dashboard's /config and applied by its Join (tailnet-gateway writer, ADR-0005). The summary
@@ -46,7 +48,7 @@ DRY_RUN=0
 case "${1:-}" in
   "") ;;
   --dry-run) DRY_RUN=1 ;;
-  -h | --help) sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h | --help) sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
 esac
 
@@ -117,9 +119,21 @@ fi
 # The daemon runs as the checkout's owner. A checkout made with `sudo mkdir` / `sudo tar` is
 # root-owned (this happened on the first node), and the daemon must never run as root.
 if [[ "$RUN_USER" == root ]]; then
+  if [[ -s "$DAEMON_USER_FILE" ]]; then refuse "$DAEMON_USER_FILE names root; the daemon must never run as root"; fi
   refuse "$REPO_ROOT is owned by root, so the daemon would run as root; give it to the operator user first: chown -R ${SUDO_USER:-<user>}: $REPO_ROOT"
 fi
+id -u "$RUN_USER" > /dev/null 2>&1 || refuse "daemon user '$RUN_USER' (from ${DAEMON_USER_FILE}) does not exist on this host"
+# A developer checkout must be the daemon user's: it runs the daemon. A root-owned tree is a
+# release checkout (ADR-0009 D1), which only an existing daemon-user file can serve.
+if [[ "$TREE_OWNER" != root && "$TREE_OWNER" != "$RUN_USER" ]]; then
+  refuse "$REPO_ROOT is owned by $TREE_OWNER, but the daemon user is $RUN_USER ($DAEMON_USER_FILE); chown the checkout, or change that file deliberately"
+fi
 ok "repo $REPO_ROOT, daemon will run as $RUN_USER"
+if [[ -s "$DAEMON_USER_FILE" ]]; then ok "daemon user recorded in $DAEMON_USER_FILE"
+else
+  write_daemon_user() { install -d -m 0755 "$CN_ETC" && echo "$RUN_USER" > "$work/daemon-user" && install -m 0644 "$work/daemon-user" "$DAEMON_USER_FILE"; }
+  act "record the daemon user ($RUN_USER) in $DAEMON_USER_FILE (ADR-0009)" write_daemon_user
+fi
 
 # ---------------------------------------------------------------------------------------
 step "apt prerequisites"
@@ -410,6 +424,33 @@ sync_file "$work/commissioning-node.service" "$UNIT_DIR/commissioning-node.servi
 ensure_service commissioning-node.service "$CHANGED"
 if [[ -d "$CN_STATE" ]]; then ok "$CN_STATE (config registry, created by systemd)"
 else echo "    note: systemd creates $CN_STATE when commissioning-node starts (StateDirectory=)"; fi
+
+# ---------------------------------------------------------------------------------------
+step "Provenance (ADR-0009 D1: what this node runs)"
+# Recorded on every install, by root, where the daemon can read it but not change it. The
+# daemon runs these files from its next start (a code change alone doesn't restart it).
+commit="$(tree_git rev-parse HEAD)"
+if [[ -z "$commit" ]]; then
+  echo "    WARNING: can't read the commit of $REPO_ROOT (not a git checkout?); $RUNNING_FILE not written" >&2
+else
+  if [[ -z "$(tree_git status --porcelain)" ]]; then clean=true; else clean=false; fi
+  # A developer checkout is "local", whatever its branch; the updater will record its channel's ref.
+  if [[ "$TREE_OWNER" == root ]]; then mode=release; else mode=dev-tree; fi
+  record_running() {
+    MODE="$mode" TREE="$REPO_ROOT" COMMIT="$commit" CLEAN="$clean" \
+      DESCRIBE="$(tree_git describe --tags --always --dirty)" BRANCH="$(tree_git symbolic-ref --short -q HEAD)" \
+      BY="${SUDO_USER:-root}" python3 -I -c '
+import datetime, json, os
+e = os.environ
+print(json.dumps({"schema_version": "0.1.0", "mode": e["MODE"], "tree": e["TREE"],
+                  "commit": e["COMMIT"], "ref": "local" if e["MODE"] == "dev-tree" else "",
+                  "describe": e["DESCRIBE"], "branch": e["BRANCH"], "clean": e["CLEAN"] == "true",
+                  "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                  "installed_by": e["BY"]}, indent=2))' > "$work/running.json" \
+      && install -D -m 0644 "$work/running.json" "$RUNNING_FILE"
+  }
+  act "record $mode $REPO_ROOT @ ${commit:0:12}$([[ $clean == true ]] || echo ' (dirty)') in $RUNNING_FILE" record_running
+fi
 
 # ---------------------------------------------------------------------------------------
 if ((DRY_RUN)); then

@@ -49,6 +49,38 @@ pydantic="$(python3 -I -c 'import pydantic; print(pydantic.VERSION)' 2>/dev/null
 check "python3 has pydantic $pydantic (the daemon's runtime, requirements.txt)" \
   "python3 has no pydantic 2${pydantic:+ (found $pydantic)} — run sudo ops/install.sh" test "${pydantic%%.*}" == 2
 
+section "Provenance (ADR-0009 D1)"
+# running.json is root's record of the last install; the tree is what the daemon runs from its
+# next start. Either can move without the other (a `git pull` with no install), so both show.
+if [[ -s "$DAEMON_USER_FILE" ]]; then
+  check "daemon user $RUN_USER recorded in $DAEMON_USER_FILE (root 644)" \
+    "$DAEMON_USER_FILE is '$(owner_mode "$DAEMON_USER_FILE")', want 'root 644' — re-run sudo ops/install.sh" \
+    test "$(owner_mode "$DAEMON_USER_FILE")" == "root 644"
+else
+  warn "no $DAEMON_USER_FILE (installed before ADR-0009) — re-run sudo ops/install.sh"
+fi
+running() { python3 -I -c "import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ''))" "$RUNNING_FILE" "$1" 2>/dev/null; }
+if [[ ! -s "$RUNNING_FILE" ]]; then
+  warn "no $RUNNING_FILE: nothing records what this node runs — re-run sudo ops/install.sh"
+elif [[ -z "$(running commit)" ]]; then
+  fail "$RUNNING_FILE is unreadable — re-run sudo ops/install.sh"
+else
+  rec_commit="$(running commit)"
+  dirty=""; [[ "$(running clean)" == True ]] || dirty=", dirty"
+  pass "installed $(running describe) ($(running mode) $(running tree)$dirty) at $(running installed_at) by $(running installed_by)"
+  if [[ "$(running tree)" != "$REPO_ROOT" ]]; then
+    warn "this doctor is $REPO_ROOT's, but the node was installed from $(running tree)"
+  else
+    head="$(tree_git rev-parse HEAD)"
+    if [[ -z "$head" ]]; then skip "can't read $REPO_ROOT's commit"
+    elif [[ "$head" != "$rec_commit" ]]; then
+      warn "$REPO_ROOT is at ${head:0:12}, not the installed ${rec_commit:0:12}: the daemon runs it from its next restart, unrecorded — re-run sudo ops/install.sh"
+    else
+      pass "$REPO_ROOT is still at the installed commit"
+    fi
+  fi
+fi
+
 section "Tailscale (pinned $TAILSCALE_VERSION)"
 have="$(dpkg-query -W -f='${Version}' tailscale 2>/dev/null || true)"
 if [[ -z "$have" ]]; then fail "tailscale not installed — run sudo ops/install.sh"

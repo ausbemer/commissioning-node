@@ -99,6 +99,8 @@ publish the site's camera streams to that LAN.
 - **Provenance (§2): the daemon runs whatever is checked out in the repo directory.** That's
   acceptable during commissioning on a dev node. Before a node ships for real, it runs a
   tagged checkout, and the doctor reports which commit is running. That's tracked in TODO.
+  *Since ADR-0009 step 1 (2026-10-25):* every install records the commit in
+  `/etc/commissioning-node/running.json`, and the doctor reports it.
 - **The RevPi's own all-interface services** (80/443/41443, and SSH) are site-LAN exposure
   this ADR doesn't address. Deciding on them belongs to the admin-fallback ADR.
 
