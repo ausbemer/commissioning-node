@@ -38,6 +38,16 @@ def test_fallback_port_matches_main() -> None:
     assert shell_var("FALLBACK_PORT") == match.group(1)
 
 
+def test_firewalld_forward_policy_is_installed_and_checked() -> None:
+    """ADR-0002 A3: on the RevPi image firewalld rejects the site LAN into the tailnet unless
+    paths.sh's policy forwards the site zones into trusted; install.sh keeps it, doctor.sh checks it."""
+    assert shell_var("FIREWALLD_POLICY") == "site-to-tailnet"
+    install = (OPS / "install.sh").read_text()
+    assert 'pol="$FIREWALLD_POLICY"' in install
+    assert "--add-egress-zone=trusted" in install and "--set-target=ACCEPT" in install
+    assert '--policy="$FIREWALLD_POLICY" --query-ingress-zone' in (OPS / "doctor.sh").read_text()
+
+
 def test_forwarding_is_fenced_before_it_is_enabled() -> None:
     """ADR-0005 A3, review 2026-10-13, amendment 2026-10-21: the forward chain lets the tailnet
     open forwarded connections, and the site LAN open them only into the tailnet; it drops the

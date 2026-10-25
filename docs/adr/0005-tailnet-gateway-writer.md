@@ -514,8 +514,7 @@ then here.
 tailnet policy's grant. Rung 13: two independent fences remain (this chain's drop for
 everything but the tailnet; Tailscale's source checks and policy for what reaches it).
 
-**Unverified (TODO):** on the RevPi image, firewalld's forward chain rejects forwarded
-traffic not in a zone (Q-009), so a site host's packets into `tailscale0` may still be
-rejected there; ADR-0002 A1 limits firewalld to two entries, so a third needs its own
-amendment. Also unmeasured on 1.102.5: that a tailnet peer drops a forwarded packet whose
+**RevPi image (2026-10-23):** firewalld's forward chain did reject a site host's packets
+into `tailscale0` (Q-009); a policy from the site zones into `trusted` lets them through,
+now ADR-0002 A3's third firewalld entry. **Unverified (TODO):** unmeasured on 1.102.5: that a tailnet peer drops a forwarded packet whose
 source is outside the approved routes. Record both in quirks.md once seen.

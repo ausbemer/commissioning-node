@@ -19,6 +19,9 @@ TLS_CERT="$TLS_DIR/fallback.crt"
 # The fallback's port (main.py FALLBACK_PORT). The only port of ours open to the site LAN, so
 # the installer opens it in firewalld when the RevPi image runs it (docs/quirks.md Q-009).
 FALLBACK_PORT=8443
+# firewalld policy that lets the site zones forward into trusted (tailscale0): the site LAN
+# into the tailnet (ADR-0005 2026-10-21, ADR-0002 A3).
+FIREWALLD_POLICY=site-to-tailnet
 
 # The config registry (ADR-0004): systemd creates it (StateDirectory=, 0700, owned by the
 # daemon user). site/ is wiped when the node leaves a site; node/ survives the move.

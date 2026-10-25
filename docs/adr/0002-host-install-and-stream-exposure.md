@@ -160,3 +160,25 @@ publish the site's camera streams to that LAN.
   joining is the dashboard's Join, not `tailscale up`. The installer still never touches
   the auth key: it is a site secret, and the operator surface on `/config` is its one path
   (§8.9, ADR-0004 D3).
+
+### A3 — 2026-10-23: a third firewalld entry, the site LAN into the tailnet
+
+- **Why.** ADR-0005 (2026-10-21) lets a site-LAN host open forwarded connections into the
+  tailnet, and our table accepts them. On the RevPi image firewalld's forward chain then
+  rejects them: `lan0` is in `public`, `tailscale0` is in `trusted`, and nothing lets one
+  zone forward into the other (docs/quirks.md Q-009). Measured 2026-10-23: a site host's
+  ping into the tailnet failed until a policy `public` → `trusted` with target `ACCEPT`
+  was added, then got through.
+- **Decision.** A1's two entries become three. `ops/install.sh` also keeps a firewalld
+  policy `FIREWALLD_POLICY` (`site-to-tailnet`, `ops/paths.sh`): ingress every site zone (the
+  same set as entry 1), egress `trusted`, target `ACCEPT`, in the runtime and permanent
+  config. It is no wider than our own table: the forward chain's drop still stops
+  everything but the tailnet's own connections and the site LAN into `tailscale0`.
+- **One reload, amending A1's "never reloads".** firewalld creates a policy only in its
+  permanent config, and a policy's target is permanent-only too. So when the policy is
+  missing from the runtime config, the installer runs `firewall-cmd --reload` once to load
+  it. Entries 1 and 2 are already permanent by then, so they survive. A runtime-only change
+  someone else made to firewalld is lost, but only on that first run. Once the policy is
+  loaded, a new site zone is added to the runtime and the permanent config with no reload.
+- **Checks.** `ops/doctor.sh` (root) FAILs for each site zone the policy doesn't forward
+  into `trusted` in the runtime and permanent config, or if its target isn't `ACCEPT`.

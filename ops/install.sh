@@ -24,7 +24,7 @@
 #
 # It does NOT join the tailnet: the auth key is a site secret (spec §8.9), entered on the
 # dashboard's /config and applied by its Join (tailnet-gateway writer, ADR-0005). The summary
-# says where. It touches no firewall rules but its own table and the two firewalld entries
+# says where. It touches no firewall rules but its own table and the three firewalld entries
 # in 3b. Re-running is safe: each step checks before changing.
 #
 # Usage:  sudo ops/install.sh        apply
@@ -222,14 +222,16 @@ fi
 step "firewalld (the RevPi image's own firewall; docs/quirks.md Q-009)"
 # firewalld rejects everything on the site LAN but the RevPi's stock services, and treats an
 # interface in no zone (tailscale0) the same way. Its table is a separate base chain, so our
-# table's accepts never override its rejects. Two entries, and nothing else of firewalld's:
+# table's accepts never override its rejects. Three entries, and nothing else of firewalld's:
 # the fallback's port in every zone a site interface can land in (the default zone and the
-# active ones, but trusted), and tailscale0 in trusted. Each goes into the runtime and the
-# permanent config, so no --reload is needed and no one else's runtime change is lost.
+# active ones, but trusted), tailscale0 in trusted, and a policy that forwards those site
+# zones into trusted (ADR-0002 A3). Each goes into the runtime and the permanent config. A
+# new policy can only be created permanent, so creating one is the single --reload; the
+# entries above are already permanent by then, so the reload keeps them.
 if ! systemctl is-active --quiet firewalld.service 2>/dev/null; then
   ok "firewalld not running"
 elif ((EUID != 0)); then
-  echo "    would: open $FALLBACK_PORT/tcp in firewalld's site zones, put tailscale0 in its trusted zone (queries need root)"
+  echo "    would: open $FALLBACK_PORT/tcp in firewalld's site zones, put tailscale0 in its trusted zone, forward the site zones into trusted (queries need root)"
 else
   fw() { firewall-cmd -q "$@"; }
   fw_both() { fw "$@" && fw --permanent "$@"; }
@@ -250,6 +252,33 @@ else
     act "put tailscale0 in firewalld's trusted zone (the tailnet is the boundary, ADR-0001)" \
       fw_both --zone=trusted --change-interface=tailscale0
   fi
+
+  # The site LAN into the tailnet (ADR-0005 2026-10-21): without this policy firewalld's
+  # forward chain rejects site-zone -> trusted after our table accepts it (Q-009).
+  pol="$FIREWALLD_POLICY"
+  has_policy() { firewall-cmd "$@" --get-policies | tr ' ' '\n' | grep -qx "$pol"; }
+  pol_entries() {  # the policy's entries, in the config "$@" names (--permanent or runtime)
+    local zone
+    for zone in $site_zones; do
+      fw "$@" --policy="$pol" --query-ingress-zone="$zone" \
+        || act "forward firewalld zone $zone into the tailnet (policy $pol${*:+, $*})" fw "$@" --policy="$pol" --add-ingress-zone="$zone"
+    done
+    fw "$@" --policy="$pol" --query-egress-zone=trusted \
+      || act "make trusted the egress zone of policy $pol${*:+ ($*)}" fw "$@" --policy="$pol" --add-egress-zone=trusted
+  }
+  has_policy --permanent \
+    || act "create firewalld policy $pol (permanent: firewalld creates policies no other way)" fw --permanent --new-policy="$pol"
+  # The target is permanent-only too; a missing policy (dry run) reads as not ACCEPT.
+  [[ "$(firewall-cmd --permanent --policy="$pol" --get-target 2>/dev/null)" == ACCEPT ]] \
+    || act "set policy $pol's target to ACCEPT" fw --permanent --policy="$pol" --set-target=ACCEPT
+  pol_entries --permanent
+  if has_policy; then
+    pol_entries
+  else
+    # Loads the permanent policy, entries and all. Our other entries are already permanent.
+    act "reload firewalld to load the new policy $pol" fw --reload
+  fi
+  ok "firewalld policy $pol forwards the site zones into trusted (the site LAN into the tailnet)"
 fi
 
 # ---------------------------------------------------------------------------------------

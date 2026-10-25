@@ -94,14 +94,11 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       (ADR-0006); until then that gate prints SKIPPED.
 - [ ] Provenance (§2, ADR-0002): run a tagged checkout on shipped nodes, and have the
       doctor and node card report the running commit.
-- [ ] **Site LAN into the tailnet: finish on the RevPi image** (ADR-0005, 2026-10-21). The
-      forward chain now accepts anything out `tailscale0`; seen working on the Pi 5 (no
-      firewalld). On the RevPi image, firewalld's forward chain may still reject it (Q-009):
-      test there, and if it does, an ADR-0002 A1 amendment for a third firewalld entry
-      (a policy from the site zones into `trusted`), plus its doctor check. Also measure that
-      a tailnet peer drops a forwarded source outside the approved routes; both in quirks.md.
-      After pulling this, run `sudo ops/install.sh` on the Pi 5 to replace the hand-edited
-      `eth0` rule with the repo's.
+- [ ] **Site LAN into the tailnet: loose ends** (ADR-0005, 2026-10-21). The RevPi side is
+      done (ADR-0002 A3, firewalld policy `site-to-tailnet`, seen working 2026-10-23). Still:
+      run `sudo ops/install.sh` on the RevPi to confirm it adopts the hand-made policy with no
+      change, and on the Pi 5 to replace the hand-edited `eth0` rule with the repo's. Measure
+      that a tailnet peer drops a forwarded source outside the approved routes (quirks.md).
 - [ ] A check that `relay_planner.MEDIAMTX_RTSP_PORT` matches `rtspAddress` in the MediaMTX
       config.
 - [ ] Decide on the RevPi's stock all-interface services (80/443/41443, SSH) as part of the

@@ -114,8 +114,22 @@ if active firewalld.service; then
         "firewalld zone $zone rejects $FALLBACK_PORT/tcp (runtime or after reboot) — the admin fallback is unreachable from the site LAN; re-run sudo ops/install.sh" \
         port_open "$zone"
     done
+    # ADR-0002 A3: the site LAN into the tailnet. Targets are readable only from the permanent config.
+    pol_forwards() {
+      [[ "$(firewall-cmd --permanent --policy="$FIREWALLD_POLICY" --get-target 2>/dev/null)" == ACCEPT ]] || return 1
+      local cfg
+      for cfg in "" --permanent; do
+        firewall-cmd -q ${cfg:+"$cfg"} --policy="$FIREWALLD_POLICY" --query-egress-zone=trusted 2>/dev/null || return 1
+        firewall-cmd -q ${cfg:+"$cfg"} --policy="$FIREWALLD_POLICY" --query-ingress-zone="$1" 2>/dev/null || return 1
+      done
+    }
+    for zone in $site_zones; do
+      check "firewalld forwards zone $zone into the tailnet (policy $FIREWALLD_POLICY, runtime + permanent)" \
+        "firewalld rejects forwarding from zone $zone into tailscale0 (runtime or after reboot) — site hosts can't reach the tailnet; re-run sudo ops/install.sh" \
+        pol_forwards "$zone"
+    done
   else
-    skip "firewalld permanent config and the admin fallback's port need root (sudo ops/doctor.sh)"
+    skip "firewalld permanent config, the admin fallback's port and the site-to-tailnet policy need root (sudo ops/doctor.sh)"
   fi
 else
   pass "firewalld not running (only our table filters)"

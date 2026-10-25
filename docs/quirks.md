@@ -169,13 +169,21 @@ Pinned dependencies covered here:
   every boot. ADR-0002 had recorded "no firewall rules are loaded" (2026-10-12), probably
   from a `nft list ruleset` run without root, which prints nothing.
 - **Detection signature:** `firewall-cmd --get-zone-of-interface=tailscale0` is not
-  `trusted`, or `sudo firewall-cmd --zone=public --query-port=8443/tcp` prints `no`. `sudo
-  ops/doctor.sh` FAILs on either.
-- **Our accommodation:** `ops/install.sh` adds exactly two entries to firewalld's runtime
+  `trusted`, or `sudo firewall-cmd --zone=public --query-port=8443/tcp` prints `no`, or a
+  site host reaches the node but not the tailnet while `sudo firewall-cmd --get-policies`
+  has no policy from its zone into `trusted`. `sudo ops/doctor.sh` FAILs on each.
+- **Our accommodation:** `ops/install.sh` adds exactly three entries to firewalld's runtime
   and permanent config: `8443/tcp` in every zone a site interface can land in (the default
-  zone and the active ones, but not `trusted`), and `tailscale0` in `trusted` (ADR-0002 A1).
-  It never reloads, disables or replaces firewalld.
-- **Last verified:** 2.3.1-1+deb13u1, 2026-10-14 (the 8443 rejection). That `tailscale0` in
+  zone and the active ones, but not `trusted`), and `tailscale0` in `trusted` (ADR-0002 A1),
+  and a policy `site-to-tailnet` forwarding those zones into `trusted` (ADR-0002 A3). It
+  never disables or replaces firewalld. It reloads it once, only to load that policy.
+- **Policies are permanent-only:** `firewall-cmd --new-policy` and `--set-target` refuse
+  without `--permanent` ("Option can be used only with --permanent"), so a new policy is
+  live only after `--reload`. One call takes only one of `--add-ingress-zone`,
+  `--add-egress-zone` ("not allowed with argument") and `--set-target`.
+- **Last verified:** 2.3.1-1+deb13u1, 2026-10-14 (the 8443 rejection); 2026-10-23 (the
+  forward reject: a site host's ping into the tailnet got through only once the policy
+  `public` → `trusted`, target `ACCEPT`, was loaded). That `tailscale0` in
   `trusted` lets the tailnet door, MediaMTX and the subnet routes through is not yet seen on
   a joined node: see "Unverified assumptions".
 
