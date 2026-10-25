@@ -28,6 +28,8 @@ import modules.camera_config as camera_config
 import modules.camera_config.interface as camera_config_if
 import modules.dashboard as dashboard
 import modules.dashboard.interface as dashboard_if
+import modules.node_updater as node_updater
+import modules.node_updater.interface as node_updater_if
 import modules.site_survey as site_survey
 import modules.site_survey.interface as site_survey_if
 import modules.stream_relay as stream_relay
@@ -64,6 +66,7 @@ CONFIG_ROOT = "/var/lib/commissioning-node"
 INTERFACES = {
     "camera-config": camera_config_if,
     "dashboard": dashboard_if,
+    "node-updater": node_updater_if,
     "site-survey": site_survey_if,
     "stream-relay": stream_relay_if,
     "tailnet-gateway": tailnet_gateway_if,
@@ -106,7 +109,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
             actions: list | None = None, config_root: str | None = None,
             tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None,
             site_networks=None, restart: Callable[[], None] | None = None,
-            site_scanner=None, scan_spawn=None) -> Node:
+            site_scanner=None, scan_spawn=None, release_source=None, running_source=None,
+            update_spawn=None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
@@ -117,7 +121,10 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
 
     `tailnet_writer` enables tailnet-gateway's writer (ADR-0005; registered disabled
     otherwise). Tests pass a fake `overlay_writer` and an inline `writer_spawn`, and a fake
-    `site_scanner` with an inline `scan_spawn` (ADR-0007)."""
+    `site_scanner` with an inline `scan_spawn` (ADR-0007).
+
+    `release_source` turns on node-updater's channel check (ADR-0009). Daemon mode passes the
+    GitHub adapter; without one nothing is checked, so tests never reach the network."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
     if config_root is not None:
@@ -138,6 +145,9 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
         camera_config.build(sub, pub),
         stream_relay.build(sub, pub, clock),
         site_survey.build(sub, pub, site_scanner, clock, scan_spawn),
+        node_updater.build(sub, pub, release_source, running_source,
+                           config=node.config.owner_view("node-updater") if node.config else None,
+                           clock=clock, spawn=update_spawn),
         dash_registry,
     ]
     return node
@@ -214,7 +224,8 @@ def serve() -> None:
     node = compose(Bus(), dashboard_port=_port_from_env(),
                    fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
                    admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT,
-                   tailnet_writer=_writer_from_env(), restart=restart)
+                   tailnet_writer=_writer_from_env(), restart=restart,
+                   release_source=node_updater.GitHubReleaseSource())
     try:
         node.dashboard.start()
     except OSError as exc:

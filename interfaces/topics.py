@@ -39,3 +39,9 @@ SITE_HOSTS = "site/hosts"
 SITE_SCAN_RESULT = "site/scan-result"
 #: What a device on the site said it is (an Axis camera over VAPIX). Payload: `CameraIdentification`.
 CAMERA_IDENTIFIED = "camera/identified"
+
+#: What this node runs and what its update channel offers (ADR-0009). Payload: `NodeUpdateStatus`.
+NODE_UPDATE_STATUS = "node/update-status"
+#: Command: operator asks node-updater to check its channel now (ADR-0009). Payload:
+#: `NodeUpdateCheck`. Carries no values.
+NODE_UPDATE_CHECK = "node/update-check"

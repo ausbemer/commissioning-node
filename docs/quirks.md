@@ -12,6 +12,7 @@ Pinned dependencies covered here:
 | MediaMTX | v1.21.1 linux_arm64 (`ops/pins.sh`, sha256-pinned) | `stream-relay` (adapter not yet written); host install `ops/` (ADR-0002) |
 | Axis VAPIX (camera firmware) | per camera; record model + firmware seen on site | `camera-config` (adapter not yet written) |
 | firewalld | 2.3.1-1+deb13u1, not pinned: the RevPi image enables it | host install `ops/` (ADR-0002 A1) |
+| GitHub (repo refs, REST API) | not pinned: a hosted service; API version `2022-11-28` | `node-updater` (`modules/node_updater/core/github_source.py`, ADR-0009) |
 
 ## Entries
 
@@ -220,6 +221,36 @@ Pinned dependencies covered here:
   `checkprefs access denied` as a plain message, not the CLI's `sudo tailscale up` advice.
   Not yet measured: that a logout changes the state file, and Leave → operator back.
 - **Last verified:** 1.102.5, 2026-10-25.
+
+### Q-011: GitHub — annotated tags peel under `^{}`; CI is the branch push's; `compare` 404s
+
+- **Dependency / version:** github.com and its REST API (`X-GitHub-Api-Version: 2022-11-28`),
+  unauthenticated, over HTTPS; git 2.47.3 (Debian trixie) for `ls-remote`. Used by
+  `node-updater` (`modules/node_updater/core/github_source.py`, ADR-0009).
+- **Behaviour:**
+  - `git ls-remote --heads --tags` lists an annotated tag twice: the tag object's id under
+    `refs/tags/vX.Y.Z`, then the commit under `refs/tags/vX.Y.Z^{}`. The commit is the second.
+  - A tag gets no Actions run of its own (the workflow runs on pushes to `dev`/`master`). A
+    tagged commit's CI is the branch push's run, found with `actions/runs?head_sha=<commit>`.
+    `v0.2.0`'s commit (`472fedb`) has a failed run: CI was red from 2026-10-15 to 2026-10-25.
+  - `compare/<base>...<head>` answers `status` `ahead` (head newer), `behind`, `identical` or
+    `diverged`, and **404** when GitHub doesn't have a commit (an unpushed one). It lists the
+    changed files even with `per_page=1`: 196 KB for 13 commits.
+  - The unauthenticated API allows 60 requests an hour per IP (`x-ratelimit-limit: 60`), shared
+    by everything behind the site's NAT. A refusal is 403 (or 429) with
+    `x-ratelimit-remaining: 0`.
+  - Job logs need authentication even on a public repo; run lists and results don't.
+- **How measured:** 2026-10-25 from the node: `git ls-remote` against the repo (0.46 s), and
+  `curl` of `actions/runs?head_sha=`, `actions/runs?branch=dev&status=success` and four
+  `compare` pairs (ahead, behind, identical, an all-`0123…` commit for the 404), reading the
+  rate headers.
+- **Detection signature:** an offered release that is older than the newest tag
+  ("v0.2.0's CI failed; offering v0.1.0"); a running commit that relates as `unknown`; a check
+  that fails with "API limit for this network is used up".
+- **Our accommodation:** the adapter takes the peeled commit, reads CI by `head_sha`, maps 404
+  to `unknown` (never an offer), reads at most 2 MiB of a response, walks at most 3 release tags
+  per check, and checks every 30 min (at most 4 calls a check).
+- **Last verified:** 2026-10-25.
 
 ## Unverified assumptions (verify, then turn into entries or delete)
 

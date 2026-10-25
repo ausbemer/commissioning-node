@@ -1,6 +1,6 @@
 # ADR 0009: One-click node update from the dashboard
 
-- **Status:** Accepted 2026-10-25 (Austin Emerson); step 1 built the same day
+- **Status:** Accepted 2026-10-25 (Austin Emerson); steps 1 and 2 built the same day
 - **Date:** 2026-10-25
 - **Deciders:** Austin Emerson
 - **Shape:** standard, with a Safety section (spec §7, §11)
@@ -221,8 +221,18 @@ Producer `node-updater`; consumer the dashboard. Nothing existing changes.
 1. ~~`paths.sh` / `install.sh`: `daemon-user`, `running.json`, the doctor shows the running
    commit~~ — done 2026-10-25. The installer also refuses a developer checkout whose owner
    isn't the recorded daemon user, and runs git in it only as its owner (`tree_git`).
-2. Contract 0.8.0 and `node-updater`, read-only: the check, `node/update-status`, the
-   Overview banner (no button yet), `update_channel` on `/config`.
+2. ~~Contract 0.8.0 and `node-updater`, read-only: the check, `node/update-status`, the
+   Overview banner (no button yet), `update_channel` on `/config`~~ — done 2026-10-25.
+   As built:
+   - `node/update-check` is in 0.8.0 too; `node/update` and its result wait for step 3.
+   - The one target rule is `choose_target` in node-updater's `interface/`. Step 3's root
+     updater must reuse it; if ops can't import it from the release tree, it moves to a
+     neutral package first, never a copy.
+   - A check makes at most 4 API calls. A rate-limited failure waits the full 30 minutes
+     before retrying (quirks Q-011, `tools/ledgers/node-updater/`).
+   - Found on the first live check: `v0.2.0`'s commit failed CI, so `releases` offers
+     `v0.1.0`, which is older than anything running, so nothing is offered. A clean
+     `v0.2.1` tag would make the channel useful.
 3. The root updater (`ops/update.sh` → its root-owned copy, `.path` + `.service`), the
    request and result files, rollback; `node/update` behind `node-updater:apply`,
    registered disabled.

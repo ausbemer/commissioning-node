@@ -102,6 +102,11 @@ TAILNET_OPERATIONS = {
               "the LAN fallback on :8443."),
 }
 
+#: The capability an update check needs (§5, ADR-0009), and its POST path. Checking only reads
+#: GitHub, so it disturbs nothing and needs no confirm.
+NODE_UPDATE_CHECKER = "node-updater:update-check"
+UPDATE_CHECK_PATH = "/actions/node/update-check"
+
 #: The capability a site scan needs (§5, ADR-0007).
 SITE_SCANNER = "site-survey:scanner"
 

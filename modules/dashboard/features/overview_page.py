@@ -29,9 +29,10 @@ import ipaddress
 import time
 from html import escape
 
+from freshness import stale_after
 from interfaces import __version__ as CONTRACT_VERSION
 
-from ..interface import SITE_SCANNER, TAILNET_WRITER, banner, op_form, page
+from ..interface import SITE_SCANNER, TAILNET_WRITER, UPDATE_CHECK_PATH, banner, op_form, page
 
 GATEWAY = "tailnet-gateway"
 #: Browser auto-refresh, seconds. A display preference, not a behaviour constant.
@@ -128,6 +129,13 @@ STYLE = """
 .maplegend i.tail { border:2px solid var(--ok); }
 .maplegend i.arp { border-style:dashed; }
 .maplegend i.missing { border-style:dotted; }
+.update { margin:20px 0 0; padding:12px 14px; border:1px solid var(--accent); border-left-width:4px;
+  border-radius:6px; background:var(--accent-soft); display:flex; flex-wrap:wrap; align-items:baseline;
+  gap:4px 14px; }
+.update strong { font-size:15px; }
+.update .sub { flex-basis:100%; font-size:13px; color:var(--muted); }
+.check { display:inline; margin-left:8px; }
+.check .btn { padding:2px 10px; font-size:12px; }
 """
 
 
@@ -191,7 +199,7 @@ def _last(last: dict | None) -> str:
             f'{escape(last.get("requested_by", ""))}{why}')
 
 
-def _gateway(status: dict, machine: str, last: dict | None = None) -> str:
+def _gateway(status: dict, machine: str, last: dict | None = None, software: str = "") -> str:
     if not status:
         return '<p class="empty">No tailnet status yet.</p>'
     connected = bool(status.get("connected"))
@@ -216,7 +224,84 @@ def _gateway(status: dict, machine: str, last: dict | None = None) -> str:
               ("Approved", _mono(approved) + match)]
     if last:
         facts.append(("Last action", _last(last)))
+    if software:
+        facts.append(("Software", software))
     return ('<dl class="facts">' + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts) + "</dl>")
+
+
+# -- software and updates (ADR-0009 D5) -----------------------------------------------------
+
+def update_status(snapshot: dict) -> dict | None:
+    """node-updater's latest status, or None when there is none or it has lapsed (a renewed
+    level, judged by when it arrived and the cadence it declares)."""
+    st = (snapshot.get("node_update") or {}).get("self")
+    if not st:
+        return None
+    now = snapshot.get("now") or time.time()
+    if now - (st.get("received_at") or 0) > stale_after(st.get("period_s") or 0):
+        return None
+    return st
+
+
+def _version(v: dict | None) -> str:
+    """A version for people: a release tag, else its describe, else the short commit."""
+    if not v:
+        return "unknown"
+    commit = (v.get("commit") or "")[:7]
+    ref = v.get("ref") or ""
+    if ref.startswith("v"):
+        return f"{ref} ({commit})"
+    if v.get("describe"):
+        return v["describe"]
+    return f"{ref} {commit}".strip()
+
+
+def _check_form(snapshot: dict) -> str:
+    if UPDATE_CHECK_PATH not in (snapshot.get("writes") or []):
+        return ""
+    csrf = (snapshot.get("viewer") or {}).get("csrf")
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    return (f'<form class="check" method="post" action="{UPDATE_CHECK_PATH}">{token}'
+            '<input type="hidden" name="then" value="/"><button class="btn" type="submit">Check now'
+            '</button></form>')
+
+
+def _software(snapshot: dict) -> str:
+    """The Software fact: what runs, and what the update channel said and when."""
+    st = update_status(snapshot)
+    if st is None:
+        return '<span class="muted">no recent update status</span>'
+    running = st.get("running")
+    chips = []
+    if st.get("running_mode") == "dev-tree":
+        chips.append('<span class="chip none">dev tree</span>')
+    if st.get("running_clean") is False:
+        chips.append('<span class="chip warn">local changes</span>')
+    if st.get("update_available"):
+        chips.append('<span class="chip plan">update available</span>')
+    head = f'<span class="mono">{escape(_version(running) if running else "not recorded")}</span> {" ".join(chips)}'
+    if st.get("checking"):
+        when = "checking now"
+    elif st.get("checked_at"):
+        when = f"checked {_ago(max(0.0, (snapshot.get('now') or time.time()) - st['checked_at']))}"
+    else:
+        when = "not checked yet"
+    line = " · ".join(x for x in (f"{st.get('channel', '')} channel", when, st.get("message", "")) if x)
+    check = "" if st.get("checking") else _check_form(snapshot)
+    return f'{head}<span class="sub">{escape(line)}{check}</span>'
+
+
+def _update_banner(snapshot: dict) -> str:
+    """Shown only when the channel offers something newer than what runs."""
+    st = update_status(snapshot)
+    if not st or not st.get("update_available"):
+        return ""
+    offer = st.get("available") or {}
+    return (f'<section class="update" aria-label="Update available"><strong>Update available: '
+            f'{escape(_version(offer))}</strong><span>on the {escape(st.get("channel", ""))} channel, '
+            f'running {escape(_version(st.get("running")))}</span>'
+            '<span class="sub">Updating from the dashboard is not enabled yet (ADR-0009 step 3): '
+            'for now, update over SSH with git and sudo ops/install.sh.</span></section>')
 
 
 def last_marker(snapshot: dict) -> str:
@@ -509,10 +594,11 @@ class OverviewPage:
 <div><h1>{escape(name)}</h1><p>{escape(_summary(status, cameras, streams))}</p></div>
 <span class="tick">Refreshes every {REFRESH_S} s</span>
 </div>
+{_update_banner(snapshot)}
 {_site_map(snapshot, status, cameras, name, snapshot.get("now") or time.time())}
 <div class="zones">
 <section class="zone lan"><h2>Cameras <small>on the site network</small></h2>{_cameras(cameras)}</section>
-<section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine, (snapshot.get("tailnet_apply") or {}).get("self"))}{_apply(snapshot, status)}{last_marker(snapshot)}</section>
+<section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine, (snapshot.get("tailnet_apply") or {}).get("self"), _software(snapshot))}{_apply(snapshot, status)}{last_marker(snapshot)}</section>
 <section class="zone tail"><h2>Streams <small>tailnet endpoints</small></h2>{_streams(streams)}</section>
 </div>
 {_system(nodes, snapshot.get("wire", {}), system_open)}"""

@@ -94,13 +94,15 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] Install `nodejs` on the dev node (dev/CI only) so `ci.sh` parses the dashboard's scripts
       (ADR-0006); until then that gate prints SKIPPED.
 - [ ] **One-click node update** (ADR-0009, accepted 2026-10-25). Step 1 done (the daemon
-      user and the running commit recorded by root; the doctor reports them). Next: step 2,
-      contract 0.8.0 and `node-updater`, read-only (the check, the Overview banner,
-      `update_channel`); then the root updater and the rehearsal. On the node: re-run
+      user and the running commit recorded by root; the doctor reports them) and step 2 done
+      (contract 0.8.0, `node-updater`: the check, the Overview's Software row and banner,
+      Check now, `update_channel` on `/config`). Next: step 3, the root updater and
+      `node/update` behind a disabled flag; then the rehearsal. Also: tag a `v0.2.1` from a
+      green commit (`v0.2.0`'s CI failed, so `releases` has nothing current to offer). On the node: re-run
       `sudo ops/install.sh` once, to write `daemon-user` and `running.json`.
 - [ ] Provenance (§2, ADR-0002): ~~the doctor reports the running commit~~ (ADR-0009 step
-      1). Still: run a tagged checkout on shipped nodes (ADR-0009's `releases` channel), and
-      the node card reports the commit (step 2).
+      1). Still: run a tagged checkout on shipped nodes (ADR-0009's `releases` channel). The
+      overview shows the running commit (step 2); the node card doesn't yet.
 - [ ] **Site LAN into the tailnet: loose ends** (ADR-0005, 2026-10-21). The RevPi side is
       done (ADR-0002 A3, firewalld policy `site-to-tailnet`, seen working 2026-10-23). Still:
       run `sudo ops/install.sh` on the RevPi to confirm it adopts the hand-made policy with no

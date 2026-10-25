@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from interfaces import (
     CAMERA_ANNOUNCED,
+    NODE_UPDATE_STATUS,
     SITE_HOSTS,
     SITE_SCAN,
     SITE_SCAN_RESULT,
@@ -24,6 +25,7 @@ from interfaces import (
     TAILNET_STATUS,
     CameraAnnouncement,
     NodeCard,
+    NodeUpdateStatus,
     SiteHosts,
     SiteScan,
     SiteScanResult,
@@ -50,10 +52,12 @@ _ROUTES = {
     SITE_HOSTS: ("site_hosts", SiteHosts, None),
     SITE_SCAN_RESULT: ("site_scan", SiteScanResult, None),
     SITE_SCAN: ("site_request", SiteScan, None),
+    NODE_UPDATE_STATUS: ("node_update", NodeUpdateStatus, None),
 }
 #: Kinds stored with the wall-clock time they arrived (`received_at`), for a payload that
-#: carries no time of its own: the map says since when a scan has run.
-_STAMPED = {"site_request"}
+#: carries no time of its own: the map says since when a scan has run, and the overview judges
+#: the update status, a renewed level, by when it last arrived (ADR-0009).
+_STAMPED = {"site_request", "node_update"}
 
 
 class StateCollector:

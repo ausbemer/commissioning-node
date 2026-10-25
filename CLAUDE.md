@@ -32,7 +32,7 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 
 | Path | Role |
 |------|------|
-| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.7.0`. All cross-module types live here and nowhere else. |
+| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.8.0`. All cross-module types live here and nowhere else. |
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
@@ -43,13 +43,13 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 | `tests/` | Smoke test (bus round-trip), additivity test, boundary test (with planted violations), plus per-module unit tests. Keep all green. |
 | `ci.sh` | The whole gate, the same locally and in CI. |
 | `tools/ledgers/`, `tests/replay/` | Evidence for behaviour/safety constants and the replay corpus (§8.11/§8.12) — this node acts on the world. |
-| `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX, Axis VAPIX, nmap and the RevPi image's firewalld (§7). |
+| `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX, Axis VAPIX, nmap, GitHub and the RevPi image's firewalld (§7). |
 | `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (one-command bring-up after the git clone, ADR-0002 A2: idempotent, `--dry-run`; also the Python runtime, the fallback TLS key pair, the Tailscale operator, the admin-password prompt, and a closing doctor run), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `tailscale-operator.sh` (renews tailscaled's operator as root, installed as a root-owned copy; ADR-0002 A4), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1, nmap 7.95+dfsg-3), `paths.sh` (host paths, incl. the config registry's state directory, + the daemon user, recorded at first install, and the running-commit record, ADR-0009), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080; forwarding from the tailnet, and from the site LAN only into it; its unit also enables IPv4 forwarding for the subnet router once the table loads), the three entries it makes in the RevPi image's firewalld (the fallback's 8443 open, `tailscale0` trusted, ADR-0002 A1; the `site-to-tailnet` forward policy, A3), and the systemd units. Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
 neutral packages `freshness/` · bus-coupled infra `config_registry/` · ops tier `ops/` · composition root `main.py`.
 
-## Topics (contract v0.7.0)
+## Topics (contract v0.8.0)
 
 Not on the wire: `ConfigField` (0.3.0) is a config declaration, shared by the module that
 declares a field and the surface that edits it (ADR-0004).
@@ -69,6 +69,8 @@ declares a field and the surface that edits it (ADR-0004).
 | `site/hosts` | `SiteHosts` (nested `SiteHost`), a snapshot per completed scan | site-survey → dashboard (camera-config planned, ADR-0007 step 5) |
 | `site/scan-result` | `SiteScanResult` | site-survey → dashboard |
 | `camera/identified` | `CameraIdentification` (not a registration) | camera-config → dashboard; **planned** (ADR-0007 step 5): no producer yet |
+| `node/update-status` | `NodeUpdateStatus` (nested `NodeVersion`), declares `period_s` (0.8.0) | node-updater → dashboard (ADR-0009) |
+| `node/update-check` | `NodeUpdateCheck` (command; no values, 0.8.0) | dashboard via `main.invoke()` → node-updater (ADR-0009) |
 
 ## Modules
 
@@ -78,7 +80,8 @@ declares a field and the surface that edits it (ADR-0004).
 | `camera-config` (`modules/camera_config/`) | Bridge to Axis VAPIX: knows the site's cameras; will probe and (operator-confirmed) configure them. Sole writer to cameras. | 0.1.0 |
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
 | `site-survey` (`modules/site_survey/`) | Bridge to nmap and the neighbour table: scans the site networks once per operator request (gentle, unprivileged, ports 80/443/554) and publishes every host that answered, with MAC, maker, hostname and open ports (ADR-0007). Never writes to a device; hosts are never persisted. | 0.1.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008). | 0.11.0 |
+| `node-updater` (`modules/node_updater/`) | Bridge to GitHub: read-only, unauthenticated (`git ls-remote` over HTTPS, the public API). Reads what the node runs from the root-written `running.json`, checks the node's update channel (`releases` or `dev`, node-scoped config) on a schedule and on the operator's Check now, and offers only the newest commit whose CI passed, and only if newer (ADR-0009). Applies nothing yet: the root updater is ADR-0009 step 3. | 0.1.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008); shows what runs and any update on the overview, with Check now (ADR-0009). | 0.12.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.
@@ -122,7 +125,7 @@ directory and import path.
     (the node is a subnet router, ADR-0005) and the site LAN open them only into the tailnet
     (ADR-0005, 2026-10-21), and drops the rest; forwarding is enabled only after it loads. Never `flush ruleset` and never enable Debian's
     `nftables.service` (ADR-0002). A new MediaMTX server or port also means a firewall entry.
-16. Vendor calls (tailscale, VAPIX, MediaMTX, nmap) live only in their bridge module's `core/`
+16. Vendor calls (tailscale, VAPIX, MediaMTX, nmap, GitHub) live only in their bridge module's `core/`
     adapter behind an `interface/` seam; every silent vendor behaviour you measure goes in
     `docs/quirks.md`.
 

@@ -314,3 +314,68 @@ class CameraIdentification(Envelope):
     observed_at: float
     #: Discriminator (§3): which producer made this identification, "module/feature".
     origin: str
+
+
+class NodeVersion(Shape):
+    """One version of this node's code: what it runs, or what its update channel offers
+    (ADR-0009)."""
+    #: The full git commit (40 hex digits).
+    commit: str
+    #: Where it comes from: a release tag ("v0.3.0"), "dev", or "local" (a developer tree).
+    #: Open vocabulary.
+    ref: str = ""
+    #: `git describe` of the commit, e.g. "v0.2.0-7-gee0e13d"; "" when unknown.
+    describe: str = ""
+    #: The commit's GitHub CI: "success", "failure", "pending", or "" unknown. Open vocabulary.
+    ci: str = ""
+
+
+class NodeUpdateStatus(Envelope):
+    """What this node runs and what its update channel offers (ADR-0009 D2). Published every
+    tick, a renewed level: once older than its bound, derived from `period_s`, it says nothing.
+    Reading it never acts: an update is a separate, confirmed command.
+    """
+    #: The channel checked: "releases" or "dev". Open vocabulary.
+    channel: str
+    #: What runs, from the root-written record of the last install; None when there is none.
+    running: NodeVersion | None = None
+    #: "release" or "dev-tree" (ADR-0009 D1); "" unknown. Open vocabulary.
+    running_mode: str = ""
+    #: Whether the installed tree had no local changes; None when unknown.
+    running_clean: bool | None = None
+    #: The channel's newest commit whose CI passed: the only one ever offered. None when
+    #: there is none, or the last check failed.
+    available: NodeVersion | None = None
+    #: The channel's newest commit when that is not `available` (its CI hasn't passed).
+    newest: NodeVersion | None = None
+    #: `available` relative to `running`: "ahead" (newer), "behind", "identical", "diverged",
+    #: or "unknown" (e.g. GitHub doesn't have the running commit). Open vocabulary.
+    relation: str = ""
+    #: True only when `available` is newer than what runs (`relation` "ahead").
+    update_available: bool = False
+    #: Whether the last check worked. A failed check offers nothing (fails toward no offer).
+    ok: bool = False
+    #: For people: what the last check found, or why it failed (§11 rung 7).
+    message: str = ""
+    #: Wall-clock time the last check finished (Unix seconds); None before the first.
+    checked_at: float | None = None
+    #: True while a check runs.
+    checking: bool = False
+    #: The cadence of scheduled checks, seconds.
+    check_period_s: float
+    #: The cadence this status is published at, seconds (§11 rung 11).
+    period_s: float
+    #: Discriminator (§3): which producer made this status, "module/feature".
+    origin: str
+
+
+class NodeUpdateCheck(Envelope):
+    """Command: check the update channel now (ADR-0009 D2). Produced by the operator surface
+    through `invoke()`; consumed by node-updater. Carries no values: the channel is the
+    node's own config."""
+    #: Correlates this request in the logs.
+    request_id: str
+    #: Who asked, as the operator surface recorded them.
+    requested_by: str
+    #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
+    door: str

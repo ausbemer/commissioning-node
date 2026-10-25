@@ -1,0 +1,5 @@
+date,what,value,unit,source
+2026-10-25,git ls-remote --heads --tags (repo),0.46,s,"time git ls-remote from the RevPi"
+2026-10-25,compare response (13 commits apart),196201,bytes,"curl compare/438a23b...ee0e13d?per_page=1"
+2026-10-25,compare response (identical),9336,bytes,"curl compare/ee0e13d...ee0e13d?per_page=1"
+2026-10-25,unauthenticated API limit,60,requests/hour,"x-ratelimit-limit header (quirks Q-011)"

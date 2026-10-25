@@ -1,4 +1,4 @@
-# dashboard Inward Interface — v0.11.0
+# dashboard Inward Interface — v0.12.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
@@ -66,6 +66,7 @@ interface objects").
 
 ## Changelog
 
+- v0.12.0 — `NODE_UPDATE_CHECKER`, `UPDATE_CHECK_PATH` (`config.py`) and the `node_update` state kind: what runs and the update channel's offer, with Check now (ADR-0009) (additive).
 - v0.11.0 — `name_redirect()` (`doors.py`): where a GET on the node's MagicDNS name goes, the tailnet IP, or None; the name is never served (ADR-0008) (additive).
 - v0.10.0 — `PeerDirectory.endpoints()`: fresh peers by their direct address, for the site map only, never for identity (ADR-0007 step 4) (additive).
 - v0.9.0 — `SITE_SCANNER`, `SITE_OPERATIONS`; `op_form` takes a site operation, and `marker` (the outcome marker a confirmed slide waits on); state kinds `site_hosts`, `site_scan`, `site_request` (the last `site/scan` seen, with `received_at`) (additive, ADR-0007).

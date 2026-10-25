@@ -11,6 +11,9 @@ from .models import (
     ConfigField,
     ModuleInfo,
     NodeCard,
+    NodeUpdateCheck,
+    NodeUpdateStatus,
+    NodeVersion,
     SiteHost,
     SiteHosts,
     SiteScan,
@@ -28,6 +31,8 @@ from .topics import (
     CAMERA_ANNOUNCED,
     CAMERA_IDENTIFIED,
     CAMERA_REGISTER,
+    NODE_UPDATE_CHECK,
+    NODE_UPDATE_STATUS,
     SITE_HOSTS,
     SITE_SCAN,
     SITE_SCAN_RESULT,
@@ -40,7 +45,7 @@ from .topics import (
     TAILNET_STATUS,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "__version__",
@@ -64,6 +69,9 @@ __all__ = [
     "SiteHosts",
     "SiteScanResult",
     "CameraIdentification",
+    "NodeVersion",
+    "NodeUpdateStatus",
+    "NodeUpdateCheck",
     "SYSTEM_TICK",
     "SYSTEM_CARD",
     "CAMERA_REGISTER",
@@ -77,4 +85,6 @@ __all__ = [
     "SITE_HOSTS",
     "SITE_SCAN_RESULT",
     "CAMERA_IDENTIFIED",
+    "NODE_UPDATE_STATUS",
+    "NODE_UPDATE_CHECK",
 ]
