@@ -34,7 +34,8 @@ class OverlaySnapshot(Shape):
     served_routes: list[str] = []
     #: ACL tags this node carries. Empty when untagged, or when the overlay doesn't say.
     tags: list[str] = []
-    #: The overlay's state word (tailscaled's BackendState, e.g. "NeedsLogin"); "" unknown.
+    #: The overlay's state word (tailscaled's BackendState, e.g. "NeedsLogin"; a refused node
+    #: still "Running" on a cached netmap reads "NeedsLogin", quirks Q-005); "" unknown.
     state: str = ""
     #: This node's name on the overlay (MagicDNS FQDN for Tailscale, no trailing dot); ""
     #: when the overlay reports none (0.8.0, ADR-0008).

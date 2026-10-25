@@ -182,3 +182,65 @@ publish the site's camera streams to that LAN.
   loaded, a new site zone is added to the runtime and the permanent config with no reload.
 - **Checks.** `ops/doctor.sh` (root) FAILs for each site zone the policy doesn't forward
   into `trusted` in the runtime and permanent config, or if its target isn't `ACCEPT`.
+
+### A4 — 2026-10-25: the tailscale operator is a renewed level, not an install step (Proposed)
+
+- **Why.** `ops/install.sh` runs `tailscale set --operator=<daemon user>` once (A2), so the
+  daemon can run `tailscale` without root (ADR-0003, ADR-0005). That pref doesn't last.
+  `OperatorUser` belongs to a tailscaled profile, and `tailscale logout` (the writer's
+  Leave) deletes the profile, so the operator goes with it (docs/quirks.md Q-010).
+  Measured 2026-10-25: a Leave at 22:39:00, then `profile not found`, then three Joins
+  refused with `Access denied: checkprefs access denied`. Every Leave breaks the next Join,
+  and a profile lost for any other reason does too (seen 2026-10-21, cause not traced). The
+  fix each time was root at a terminal. A grant of authority that one event can drop has
+  to be renewed (§5), not set once.
+- **Decision.** The ops tier gets a root-run unit that renews the operator, and the
+  installer installs and enables it:
+  1. `commissioning-node-tailscale-operator.service` (oneshot, root). It reads
+     `OperatorUser` from `tailscale debug prefs`. If it isn't `RUN_USER` (`ops/paths.sh`,
+     fixed at install), it runs `tailscale set --operator=$RUN_USER` and logs one line.
+     Otherwise it does nothing and says nothing. Reading first keeps it idempotent, and stops
+     its own write from triggering it again (trigger 2).
+  2. It has three triggers, each covering a gap in the others:
+     - **tailscaled start:** `WantedBy=` and `After=tailscaled.service` (boot, upgrade,
+       restart). The script waits up to `OPERATOR_WAIT_S` for tailscaled's socket to answer.
+       It doesn't edit tailscaled's own unit (no drop-in).
+     - **state change:** `commissioning-node-tailscale-operator.path` with
+       `PathChanged=/var/lib/tailscale/tailscaled.state`. A Leave rewrites that file, so the
+       operator should be back within a second or two, before the operator's next Join.
+       *Unverified:* that logout writes this file, and how fast the path unit fires.
+     - **the level:** `commissioning-node-tailscale-operator.timer`,
+       `OnUnitActiveSec=OPERATOR_RENEW_S`. It renews the operator even if both edges above
+       are missed (§5: the level is the guarantee, the edges only make it prompt).
+- **No new authority.** The unit writes exactly one pref, to the value the installer
+  already sets, for the user ADR-0003 already granted it to. It never logs in, never touches
+  routes, tags, the hostname or the auth key, and never runs `up`, `down` or `logout`.
+  tailnet-gateway stays the only writer of Tailscale *state* (ADR-0005, rung 9). The
+  operator pref is host provisioning, and this unit renews the installer's write. The daemon
+  gets no sudo rule and no polkit rule. It never asks for the operator: root renews it
+  without being asked.
+- **Rejected options:**
+  - **A sudo or polkit rule letting the daemon re-set its own operator:** that gives the
+    daemon user root-run commands, which the TODO and ADR-0003 rule out.
+  - **Leave via `tailscale down` instead of `logout`, keeping the profile:** an ephemeral
+    node is then only removed after control's offline delay, not straight away, and
+    ADR-0005 D4 relies on Leave removing it at once.
+  - **Only the start hook:** misses the main case, a Leave on a running tailscaled.
+  - **Only a fast timer (say 10 s):** two systemd journal lines every 10 s, all day, on an
+    SD card. The path unit gives the speed and the timer stays slow.
+- **Checks.** `ops/doctor.sh` FAILs (not just warns) when the operator isn't `RUN_USER`, or
+  when the path or timer unit isn't enabled and active. `ops/install.sh --dry-run` shows the
+  three units. The installer's existing one-shot `set --operator` stays, so a fresh node has
+  an operator before the first Join.
+- **Companion change (ADR-0005, writer):** a Join or Rename refused with
+  `checkprefs access denied` gets a plain Last action ("tailscaled has no operator; it is
+  restored within OPERATOR_RENEW_S, or run sudo ops/install.sh"), not the raw CLI text that
+  suggests a `sudo tailscale up`, which would bypass the writer's join record.
+- **Constants (§8.11, PROVISIONAL until ledgered in `tools/ledgers/tailscale-operator/`):**
+  `OPERATOR_RENEW_S = 300` (the worst case once both edges are missed: a Join fails for
+  up to 5 min, with a plain message). `OPERATOR_WAIT_S = 30` (tailscaled's socket at boot;
+  Q-005 measured `NeedsLogin` 30.4 s after boot, but the socket answers earlier, not yet
+  timed). Measure: Leave → operator back (path unit), and boot → operator checked.
+- **Rehearsal (§11):** on the node, Leave on `/config`, then check
+  `tailscale debug prefs | grep OperatorUser` within 5 s, then Join. Then stop the path
+  unit, Leave, and see the timer bring the operator back. Record both in Q-010.

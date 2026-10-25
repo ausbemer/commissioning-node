@@ -15,6 +15,10 @@ Field mapping, against tailscale 1.102.5 on this node (2026-10-12, logged out):
 - NOT YET VERIFIED (needs a logged-in node): Self.PrimaryRoutes, Self.Tags and per-peer Tags (all
   omitted when empty), the rest of the Peer entries' shape, and User[str(UserID)].LoginName.
   docs/quirks.md tracks this.
+- VERIFIED (2026-10-25, quirks Q-005): an ephemeral node removed while off can boot from its
+  cached netmap into BackendState "Running" with a non-empty top-level AuthURL and
+  Self.Online false; control refused it. The mapping reads that as "NeedsLogin": not
+  connected, and no peers (the table is the cached netmap's, not the tailnet's).
 """
 from __future__ import annotations
 
@@ -29,6 +33,9 @@ from typing import Callable
 from ..interface import MODULE, VERSION, OverlayPeer, OverlaySnapshot
 
 log = logging.getLogger(MODULE)
+
+#: The state word for a node that must log in again (tailscaled's own word for it).
+NEEDS_LOGIN = "NeedsLogin"
 
 #: Upper bound on one `tailscale status` call, seconds. PROVISIONAL — unmeasured (TODO.md, §8.11).
 STATUS_TIMEOUT_S = 5.0
@@ -58,15 +65,19 @@ class TailscaleCliStatusSource:
             log.warning("tailscale status unreadable (%s); reporting disconnected", exc)
             return self._disconnected()
         me = data.get("Self") or {}
+        state = str(data.get("BackendState") or "")
+        if state == "Running" and data.get("AuthURL"):
+            state = NEEDS_LOGIN                         # Q-005: refused, running on a cached netmap
+        connected = state == "Running"
         return OverlaySnapshot(
             hostname=me.get("HostName") or socket.gethostname(),
-            connected=data.get("BackendState") == "Running",
+            connected=connected,
             addresses=[str(a) for a in me.get("TailscaleIPs") or []],
             served_routes=[str(r) for r in me.get("PrimaryRoutes") or []],
             tags=[str(t) for t in me.get("Tags") or []],
-            state=str(data.get("BackendState") or ""),
+            state=state,
             dns_name=str(me.get("DNSName") or "").rstrip("."),
-            peers=self._peers(data),
+            peers=self._peers(data) if connected else [],
         )
 
     @staticmethod

@@ -24,13 +24,12 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       booted 2026-10-18 with `profile not found` (state cleared, cause unknown) and no
       `OperatorUser`, so three Joins from the dashboard failed with `Access denied: checkprefs
       access denied`; fixed by hand with `sudo tailscale set --operator=admin`. Fix:
-      1. Find what cleared the profile. Suspect: a Leave's `tailscale logout` drops the
-         profile and with it `OperatorUser` (prefs are per profile). Verify on 1.102.5 and
-         record it in quirks.md (§7).
-      2. Keep the operator a renewed level, not a one-shot install step (§5): e.g. a
-         root-run drop-in on `tailscaled.service` that re-asserts `tailscale set
-         --operator=<daemon user>` on every start (ADR-0002 amendment first; never a sudo
-         rule for the daemon).
+      1. ~~Find what cleared the profile~~ — confirmed 2026-10-25: a Leave's `tailscale
+         logout` deletes the profile, and `OperatorUser` with it (quirks Q-010). Every Leave
+         therefore breaks the next Join, so steps 2 and 3 are now urgent.
+      2. Keep the operator a renewed level, not a one-shot install step (§5). Drafted as
+         ADR-0002 A4 (Proposed, 2026-10-25): a root oneshot run on tailscaled start, on a
+         tailscaled state change (path unit) and by a 5-min timer. Accept it, then build it.
       3. The writer maps `checkprefs access denied` to a plain Last action ("tailscaled has
          no operator: run sudo ops/install.sh") instead of the raw CLI text, and the overview
          shows the doctor's operator check.

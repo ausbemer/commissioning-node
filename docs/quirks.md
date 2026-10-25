@@ -91,7 +91,17 @@ Pinned dependencies covered here:
 - **Our accommodation:** this is auto-rejoin's trigger (ADR-0005 A2). A long outage always
   means a rejoin; only a short one (inside the control plane's removal delay, not measured)
   comes back `Running` with no rejoin.
-- **Last verified:** 1.102.5, 2026-10-13.
+- **Variant (2026-10-25): it can boot `Running` instead.** Off ~2 days (last log
+  2026-10-23 19:08, booted 2026-10-25 22:29:48, on a different network), tailscaled loaded
+  its cached netmap (`control-netmap ... cached=true`, `active login: <missing-profile>`)
+  and went `Starting -> Running`. Control then refused it (`RegisterReq: got response;
+  nodeKeyExpired=false, machineAuthorized=false; authURL=true`). `tailscale status --json`
+  kept `BackendState == "Running"` with a non-empty top-level `AuthURL`, `Self.Online`
+  false and the cached `Peer` table; the console showed no node. Signature: `Running` with
+  `AuthURL` set. `core/tailscale_cli.py` maps it to `NeedsLogin` (not connected, no peers),
+  so the dashboard tells the truth and auto-rejoin sees its trigger. Not yet measured: whether
+  auto-rejoin's `tailscale up` recovers from this state as it does from a plain `NeedsLogin`.
+- **Last verified:** 1.102.5, 2026-10-13; the `Running` variant 2026-10-25.
 
 ### Q-006: unprivileged nmap misses hosts that drop TCP; the neighbour table still has them
 
@@ -186,6 +196,28 @@ Pinned dependencies covered here:
   `public` → `trusted`, target `ACCEPT`, was loaded). That `tailscale0` in
   `trusted` lets the tailnet door, MediaMTX and the subnet routes through is not yet seen on
   a joined node: see "Unverified assumptions".
+
+### Q-010: `tailscale logout` deletes the profile, and the operator with it
+
+- **Dependency / version:** tailscale 1.102.5.
+- **Behaviour:** `OperatorUser` is a per-profile pref. `tailscale logout` (the writer's
+  Leave) deletes the profile, so the operator goes with it, with no warning. After that,
+  every `tailscale up` run as the daemon user fails with `Access denied: checkprefs access
+  denied` (exit 1) until root runs `tailscale set --operator=<user>` again. Joining again
+  does not bring it back.
+- **How measured:** 2026-10-25 on the node. At boot (22:29:48) tailscaled loaded
+  `profile-16f6` with `op="pi"`. The dashboard's Leave at 22:39:00 logged
+  `localapi: [POST] /localapi/v0/logout`, then `profile data directory: profile not found`
+  and `NoState -> NeedsLogin`. `tailscale debug prefs` then had no `OperatorUser`, and three
+  Joins (22:39:08, 22:41:32, 22:43:41) failed at `check-prefs`. The same happened on
+  2026-10-21 (TODO.md).
+- **Detection signature:** journal `localapi: [POST] /localapi/v0/logout` followed by
+  `profile not found`. `tailscale debug prefs` has no `OperatorUser`, and
+  `sudo ops/doctor.sh` warns "operator is 'none'".
+- **Our accommodation:** none yet. Fixed by hand with `sudo tailscale set --operator=pi`.
+  The fix (TODO.md) keeps the operator a renewed level, re-asserted by root, not a
+  one-shot install step.
+- **Last verified:** 1.102.5, 2026-10-25.
 
 ## Unverified assumptions (verify, then turn into entries or delete)
 

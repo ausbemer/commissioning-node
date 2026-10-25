@@ -37,6 +37,21 @@ def test_status_json_is_mapped() -> None:
     assert snap.dns_name == "cn-01.tail1234.ts.net"     # trailing dot stripped (ADR-0008)
 
 
+def test_refused_node_on_a_cached_netmap_needs_login() -> None:
+    # Captured 2026-10-25 (quirks Q-005): an ephemeral node removed while off booted from its
+    # cached netmap into "Running", but control refused it and handed out an auth URL.
+    refused = {**SAMPLE, "AuthURL": "https://login.tailscale.com/a/000000000000",
+               "Self": {**SAMPLE["Self"], "Online": False},
+               "Peer": {"k": {"HostName": "laptop", "TailscaleIPs": ["100.64.0.9"]}}}
+
+    def run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(refused), stderr="")
+
+    snap = TailscaleCliStatusSource(run=run, which=lambda b: b).read()
+    assert snap.connected is False and snap.state == "NeedsLogin"
+    assert snap.peers == []                             # the cached table is not the tailnet's
+
+
 def test_failing_or_garbage_output_reports_disconnected() -> None:
     def boom(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, 5)
