@@ -96,8 +96,12 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] **One-click node update** (ADR-0009, accepted 2026-10-25). Step 1 done (the daemon
       user and the running commit recorded by root; the doctor reports them) and step 2 done
       (contract 0.8.0, `node-updater`: the check, the Overview's Software row and banner,
-      Check now, `update_channel` on `/config`). Next: step 3, the root updater and
-      `node/update` behind a disabled flag; then the rehearsal. Also: tag a `v0.2.1` from a
+      Check now, `update_channel` on `/config`). Step 3 done
+      2026-10-26 (the root updater, `node/update`, behind `CN_NODE_UPDATE=1`, off). Next:
+      the rehearsal (step 4) on this node: `sudo ops/install.sh`, a drop-in with
+      `CN_NODE_UPDATE=1`, then a dev-tree → release switch, an update across a pin change, a
+      forced doctor FAIL → rollback, a refusal because the channel moved. Time each and
+      ledger them (`UPDATE_TIMEOUT_S`), then decide whether the flag stays on. Also: tag a `v0.2.1` from a
       green commit (`v0.2.0`'s CI failed, so `releases` has nothing current to offer). On the node: re-run
       `sudo ops/install.sh` once, to write `daemon-user` and `running.json`.
 - [ ] Provenance (§2, ADR-0002): ~~the doctor reports the running commit~~ (ADR-0009 step

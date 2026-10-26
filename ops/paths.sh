@@ -32,6 +32,19 @@ OPERATOR_UNIT=commissioning-node-tailscale-operator
 # daemon user). site/ is wiped when the node leaves a site; node/ survives the move.
 CN_STATE=/var/lib/commissioning-node
 
+# One-click update (ADR-0009). Root's release checkout (root 0755), cloned over HTTPS from the
+# public repo (no key), and the root updater's copies and units. Root never runs a tree's file
+# as root except this checkout's, which only root writes.
+UPDATE_TREE=/opt/commissioning-node-release
+UPDATE_REPO_URL=https://github.com/ausbemer/commissioning-node.git
+UPDATE_HELPER=/usr/local/libexec/commissioning-node/update
+UPDATE_PY=/usr/local/libexec/commissioning-node/update_helper.py
+UPDATE_UNIT=commissioning-node-update
+# The daemon's request (in its own state directory), and root's result (root 0755, so the
+# daemon can read it but never plant a symlink root would write through).
+UPDATE_REQUEST="$CN_STATE/updater/request.json"
+UPDATE_RESULT_DIR=/var/lib/commissioning-node-update
+
 # The daemon user, written by the first install (root, 0644; ADR-0009 D1). A release checkout
 # is root's, so its owner can't name the daemon user; the file does. Without the file (a node
 # installed before ADR-0009, or a dry run on a fresh one) it is the checkout's owner, as before.

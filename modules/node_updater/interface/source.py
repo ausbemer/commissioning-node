@@ -191,3 +191,69 @@ class CheckSlot:
         with self._lock:
             done, self._done = self._done, []
             return done
+
+
+# -- applying an update (ADR-0009 D3; inward 0.2.0) -----------------------------------------
+
+#: Inward topic: core routes root's result record to features under this name, every tick.
+#: Never published on the bus.
+RESULT_READING = "node-updater/result-reading"
+#: Relations an update may be requested for: newer, or a switch (diverged, or a running commit
+#: GitHub doesn't have). Never "behind" or "identical". Root applies the same list
+#: (ops/update_helper.py ACTIONABLE; tests check they agree).
+ACTIONABLE = ("ahead", "diverged", "unknown")
+#: The schema of the request file root reads (ops/update_helper.py read-request).
+REQUEST_SCHEMA = "0.1.0"
+
+
+class UpdateRequest(Shape):
+    """The request the daemon leaves for the root updater: one expected commit, no code."""
+    schema_version: str = REQUEST_SCHEMA
+    request_id: str
+    channel: str
+    expected_commit: str
+    requested_by: str
+    door: str
+    #: Wall-clock time (Unix seconds); root refuses a request much older than this.
+    requested_at: float
+
+
+class RootResult(Shape):
+    """The root updater's record of the last update (`result.json`, root's directory), as core
+    read it. Flat, as root writes it."""
+    request_id: str = ""
+    done: bool = False
+    ok: bool = False
+    phase: str = ""
+    message: str = ""
+    from_commit: str = ""
+    from_ref: str = ""
+    from_describe: str = ""
+    to_commit: str = ""
+    to_ref: str = ""
+    to_describe: str = ""
+    rolled_back: bool = False
+    requested_by: str = ""
+    door: str = ""
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
+@runtime_checkable
+class UpdateRequester(Protocol):
+    """Leaves a request for the root updater. Never overwrites one that is still there."""
+
+    def submit(self, request: UpdateRequest) -> str | None:
+        """None when the request was left; else why not, for people."""
+        ...
+
+    def pending(self) -> bool:
+        """True while a request waits for root to pick it up."""
+        ...
+
+
+@runtime_checkable
+class ResultSource(Protocol):
+    """Reads root's result record. None when there is none or it's unreadable."""
+
+    def read(self) -> RootResult | None: ...

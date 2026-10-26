@@ -1,4 +1,4 @@
-# node-updater Inward Interface — v0.1.0
+# node-updater Inward Interface — v0.2.0
 
 The stable contract between this module's core and its features (spec §4).
 Additive rules apply: MINOR adds optional things, MAJOR is a rare planned event.
@@ -25,4 +25,5 @@ The ONLY thing a feature may import from (spec §4). It exports:
 
 ## Changelog
 
+- v0.2.0 — the confirmed update (ADR-0009 step 3): `UpdateRequest` (the file root reads, `REQUEST_SCHEMA`), `RootResult` (root's record), the `UpdateRequester` and `ResultSource` seams, `RESULT_READING`, and `ACTIONABLE` (root's `ops/update_helper.py` uses the same list; a test checks they agree) (additive).
 - v0.1.0 — initial: the seams, `choose_target`, the slot, `update_channel` (ADR-0009 step 2).

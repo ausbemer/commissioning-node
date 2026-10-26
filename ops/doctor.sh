@@ -34,6 +34,12 @@ listening() { [[ -n "$(ss -Htln "sport = :$1" 2>/dev/null)" ]]; }
 not_listening() { ! listening "$1"; }
 enabled_active() { systemctl is-enabled --quiet "$1" 2>/dev/null && active "$1"; }
 helper_matches() { sed -e "s|@RUN_USER@|$RUN_USER|g" "$OPS_DIR/tailscale-operator.sh" | cmp -s - "$OPERATOR_HELPER"; }
+update_rendered() {
+  sed -e "s|@UPDATE_TREE@|$UPDATE_TREE|g" -e "s|@UPDATE_REPO_URL@|$UPDATE_REPO_URL|g" \
+    -e "s|@CN_STATE@|$CN_STATE|g" -e "s|@UPDATE_RESULT_DIR@|$UPDATE_RESULT_DIR|g" \
+    -e "s|@UPDATE_PY@|$UPDATE_PY|g" -e "s|@RUNNING_FILE@|$RUNNING_FILE|g" "$OPS_DIR/update.sh"
+}
+updater_matches() { update_rendered | cmp -s - "$UPDATE_HELPER" && cmp -s "$OPS_DIR/update_helper.py" "$UPDATE_PY"; }
 pref() { tailscale debug prefs 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))" 2>/dev/null; }
 
 section "Host"
@@ -79,6 +85,29 @@ else
       pass "$REPO_ROOT is still at the installed commit"
     fi
   fi
+fi
+
+section "One-click update (ADR-0009)"
+# Root runs these, so they must be root's alone and match this tree. The release checkout and
+# the result directory are root's too: the daemon user may read them, never write them.
+check "the root updater matches the repo" "$UPDATE_HELPER or $UPDATE_PY differs from the repo or is missing — re-run sudo ops/install.sh" \
+  updater_matches
+check "the root updater is root's alone" "the root updater's copies are not root-owned 0755/0644 — re-run sudo ops/install.sh" \
+  test "$(stat -c '%U %a' "$UPDATE_HELPER" 2>/dev/null) $(stat -c '%U %a' "$UPDATE_PY" 2>/dev/null)" == "root 755 root 644"
+check "$UPDATE_UNIT.path active (waits for a request)" "$UPDATE_UNIT.path not enabled and active — re-run sudo ops/install.sh" \
+  enabled_active "$UPDATE_UNIT.path"
+check "$UPDATE_RESULT_DIR is root's (root 755)" "$UPDATE_RESULT_DIR is '$(owner_mode "$UPDATE_RESULT_DIR")', want 'root 755' — re-run sudo ops/install.sh" \
+  test "$(owner_mode "$UPDATE_RESULT_DIR")" == "root 755"
+if [[ -e "$UPDATE_TREE" ]]; then
+  check "$UPDATE_TREE is root's (root 755)" "$UPDATE_TREE is '$(owner_mode "$UPDATE_TREE")', want 'root 755': root installs from it" \
+    test "$(owner_mode "$UPDATE_TREE")" == "root 755"
+fi
+last_update="$UPDATE_RESULT_DIR/result.json"
+if [[ -s "$last_update" ]]; then
+  lu() { python3 -I -c "import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ''))" "$last_update" "$1" 2>/dev/null; }
+  if [[ "$(lu "done")" != True ]]; then warn "an update is running (phase $(lu phase), by $(lu requested_by))"
+  elif [[ "$(lu ok)" == True ]]; then pass "last update: $(lu message)"
+  else warn "last update didn't succeed: $(lu message)"; fi
 fi
 
 section "Tailscale (pinned $TAILSCALE_VERSION)"

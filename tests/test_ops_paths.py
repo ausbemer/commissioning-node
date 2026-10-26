@@ -143,3 +143,33 @@ def test_provenance_is_recorded_by_root_and_git_never_runs_as_root_in_a_users_tr
         assert "git -C" not in (OPS / script).read_text(), f"{script}: use tree_git"
     doctor = (OPS / "doctor.sh").read_text()
     assert 'section "Provenance (ADR-0009 D1)"' in doctor and "tree_git rev-parse HEAD" in doctor
+
+
+def test_the_root_updater_runs_only_root_owned_copies() -> None:
+    """ADR-0009 D1, D3: root runs copies the installer rendered into /usr/local/libexec, never a
+    tree's file; only the .path is enabled; a killed run is marked unfinished; the result is in
+    root's directory, the request in the daemon's."""
+    unit = shell_var("UPDATE_UNIT")
+    helper, py = shell_var("UPDATE_HELPER"), shell_var("UPDATE_PY")
+    assert helper.startswith("/usr/local/libexec/") and py.startswith("/usr/local/libexec/")
+    assert shell_var("UPDATE_TREE") == "/opt/commissioning-node-release"
+    assert shell_var("UPDATE_REPO_URL").startswith("https://github.com/")    # no key involved
+    assert shell_var("UPDATE_RESULT_DIR") == "/var/lib/commissioning-node-update"
+    service = (OPS / "systemd" / f"{unit}.service").read_text()
+    assert f"ExecStart={helper}\n" in service and f"ExecStopPost={helper} --after\n" in service
+    assert "[Install]" not in service and "User=" not in service and "TimeoutStartSec=900" in service
+    path = (OPS / "systemd" / f"{unit}.path").read_text()
+    assert "PathExists=/var/lib/commissioning-node/updater/request.json" in path
+    script = (OPS / "update.sh").read_text()
+    for placeholder in ("@UPDATE_TREE@", "@UPDATE_REPO_URL@", "@CN_STATE@", "@UPDATE_RESULT_DIR@",
+                        "@UPDATE_PY@", "@RUNNING_FILE@"):
+        assert placeholder in script
+    assert script.rstrip().endswith('main "$@"\nexit 0')                # parsed whole, then run
+    assert "GIT_CONFIG_GLOBAL=/dev/null" in script
+    install = (OPS / "install.sh").read_text()
+    assert 'sync_file "$work/update" "$UPDATE_HELPER" 0755' in install
+    assert 'sync_file "$OPS_DIR/update_helper.py" "$UPDATE_PY" 0644' in install
+    assert 'ensure_service "$UPDATE_UNIT.path"' in install and 'ensure_service "$UPDATE_UNIT.service"' not in install
+    assert 'install -d -o root -m 0755 "$UPDATE_RESULT_DIR"' in install
+    doctor = (OPS / "doctor.sh").read_text()
+    assert '"root 755 root 644"' in doctor and 'enabled_active "$UPDATE_UNIT.path"' in doctor

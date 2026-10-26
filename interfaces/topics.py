@@ -45,3 +45,8 @@ NODE_UPDATE_STATUS = "node/update-status"
 #: Command: operator asks node-updater to check its channel now (ADR-0009). Payload:
 #: `NodeUpdateCheck`. Carries no values.
 NODE_UPDATE_CHECK = "node/update-check"
+#: Command: operator asks node-updater to update the node to a confirmed commit (ADR-0009).
+#: Payload: `NodeUpdate`. Carries the expected commit and nothing else.
+NODE_UPDATE = "node/update"
+#: Where one `node/update` is, or how it ended. Payload: `NodeUpdateResult`.
+NODE_UPDATE_RESULT = "node/update-result"

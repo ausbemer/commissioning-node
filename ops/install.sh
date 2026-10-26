@@ -20,8 +20,8 @@
 #   8. the admin password, when none is set and a terminal is attached: it offers to run
 #      ops/set-admin-password.sh (no-echo prompt; ADR-0002 A2). Without a terminal, or
 #      declined, the fallback stays off (fail closed) and the summary says how to set it
-#   9. what this node runs: the daemon user and the installed commit, recorded by root in
-#      /etc/commissioning-node (ADR-0009 D1)
+#   9. the root updater's copies and units, and what this node runs: the daemon user and the
+#      installed commit, recorded by root in /etc/commissioning-node (ADR-0009)
 #  10. ops/doctor.sh, read-only, whose verdict is the installer's exit status
 #
 # It does NOT join the tailnet: the auth key is a site secret (spec §8.9), entered on the
@@ -426,6 +426,27 @@ if [[ -d "$CN_STATE" ]]; then ok "$CN_STATE (config registry, created by systemd
 else echo "    note: systemd creates $CN_STATE when commissioning-node starts (StateDirectory=)"; fi
 
 # ---------------------------------------------------------------------------------------
+step "One-click update (ADR-0009: the root updater)"
+# The daemon asks by leaving a request with no code in it; the .path starts the root updater,
+# which fetches into root's own checkout ($UPDATE_TREE) and installs from there. Root runs only
+# root-owned copies of the updater, made here, never a tree's file. The updater re-runs this
+# installer from its checkout, which replaces these copies: the script is parsed whole first.
+CHANGED=0
+sed -e "s|@UPDATE_TREE@|$UPDATE_TREE|g" -e "s|@UPDATE_REPO_URL@|$UPDATE_REPO_URL|g" \
+  -e "s|@CN_STATE@|$CN_STATE|g" -e "s|@UPDATE_RESULT_DIR@|$UPDATE_RESULT_DIR|g" \
+  -e "s|@UPDATE_PY@|$UPDATE_PY|g" -e "s|@RUNNING_FILE@|$RUNNING_FILE|g" \
+  "$OPS_DIR/update.sh" > "$work/update"
+sync_file "$work/update" "$UPDATE_HELPER" 0755
+sync_file "$OPS_DIR/update_helper.py" "$UPDATE_PY" 0644
+for kind in service path; do
+  sync_file "$OPS_DIR/systemd/$UPDATE_UNIT.$kind" "$UNIT_DIR/$UPDATE_UNIT.$kind" 0644
+done
+if [[ -d "$UPDATE_RESULT_DIR" && "$(stat -c '%U %a' "$UPDATE_RESULT_DIR")" == "root 755" ]]; then ok "$UPDATE_RESULT_DIR (root 755)"
+else act "create $UPDATE_RESULT_DIR (root 755: the daemon reads results, never writes them)" install -d -o root -m 0755 "$UPDATE_RESULT_DIR"; fi
+# Only the .path is enabled: the service runs when a request appears, never on its own.
+ensure_service "$UPDATE_UNIT.path" "$CHANGED"
+
+# ---------------------------------------------------------------------------------------
 step "Provenance (ADR-0009 D1: what this node runs)"
 # Recorded on every install, by root, where the daemon can read it but not change it. The
 # daemon runs these files from its next start (a code change alone doesn't restart it).
@@ -434,16 +455,17 @@ if [[ -z "$commit" ]]; then
   echo "    WARNING: can't read the commit of $REPO_ROOT (not a git checkout?); $RUNNING_FILE not written" >&2
 else
   if [[ -z "$(tree_git status --porcelain)" ]]; then clean=true; else clean=false; fi
-  # A developer checkout is "local", whatever its branch; the updater will record its channel's ref.
+  # A developer checkout is "local", whatever its branch; the updater passes its channel's ref
+  # (CN_INSTALL_REF) and who asked (CN_INSTALLED_BY).
   if [[ "$TREE_OWNER" == root ]]; then mode=release; else mode=dev-tree; fi
   record_running() {
     MODE="$mode" TREE="$REPO_ROOT" COMMIT="$commit" CLEAN="$clean" \
       DESCRIBE="$(tree_git describe --tags --always --dirty)" BRANCH="$(tree_git symbolic-ref --short -q HEAD)" \
-      BY="${SUDO_USER:-root}" python3 -I -c '
+      REF="${CN_INSTALL_REF:-}" BY="${CN_INSTALLED_BY:-${SUDO_USER:-root}}" python3 -I -c '
 import datetime, json, os
 e = os.environ
 print(json.dumps({"schema_version": "0.1.0", "mode": e["MODE"], "tree": e["TREE"],
-                  "commit": e["COMMIT"], "ref": "local" if e["MODE"] == "dev-tree" else "",
+                  "commit": e["COMMIT"], "ref": "local" if e["MODE"] == "dev-tree" else e["REF"],
                   "describe": e["DESCRIBE"], "branch": e["BRANCH"], "clean": e["CLEAN"] == "true",
                   "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
                   "installed_by": e["BY"]}, indent=2))' > "$work/running.json" \

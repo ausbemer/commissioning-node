@@ -23,8 +23,8 @@ from modules.node_updater.core import github_source as gh
 from modules.node_updater.core.github_source import GitHubReleaseSource, ci_state, parse_ls_remote
 from modules.node_updater.core.running_record import RunningFile
 from modules.node_updater.features import update_check as uc
-from modules.node_updater.interface import (MAX_RELEASES_WALKED, ReleaseReading, RunningRecord,
-                                            choose_target)
+from modules.node_updater.interface import (MAX_RELEASES_WALKED, ReleaseReading, RootResult,
+                                            RunningRecord, choose_target)
 
 A, B, C, D = ("a" * 40, "b" * 40, "c" * 40, "d" * 40)
 
@@ -431,7 +431,7 @@ def test_overview_shows_an_update_banner_only_when_one_is_available() -> None:
                                        "available": {"commit": B, "ref": "v0.3.0"},
                                        "message": "an update is available"}))
     assert "Update available: v0.3.0 (bbbbbbb)" in page and "running v0.2.0-7-gaaaaaaa" in page
-    assert "Updating from the dashboard is not enabled yet" in page
+    assert "Updating from the dashboard is off on this node" in page
     quiet = OverviewPage().render(snap({"running": RUNNING, "update_available": False, "message": "up to date"}))
     assert "Update available" not in quiet and "releases channel · checked 3 min ago · up to date" in quiet
 
@@ -457,3 +457,189 @@ def test_a_lapsed_status_says_nothing() -> None:
 def test_github_text_is_escaped() -> None:
     page = OverviewPage().render(snap({"running": RUNNING, "message": "<script>x</script>"}))
     assert "<script>x</script>" not in page and "&lt;script&gt;" in page
+
+
+# -- the confirmed update (ADR-0009 step 3) ---------------------------------------------------
+
+class FakeRequester:
+    def __init__(self, problem=None) -> None:
+        self.requests: list = []
+        self.problem = problem
+        self.waiting = False
+
+    def submit(self, request):
+        if self.problem:
+            return self.problem
+        self.requests.append(request)
+        self.waiting = True
+        return None
+
+    def pending(self):
+        return self.waiting
+
+
+class FakeResults:
+    def __init__(self) -> None:
+        self.record = None
+
+    def read(self):
+        return self.record
+
+
+def make_apply(reading=None, running=None):
+    clock = Clock()
+    requester, results = FakeRequester(), FakeResults()
+    node = main.compose(Bus(), clock=clock, dashboard_port=0, release_source=FakeSource(reading),
+                        running_source=running or FakeRunning(), update_spawn=lambda work: work(),
+                        node_update=True, update_requester=requester, update_results=results)
+    seen: list[dict] = []
+    node.bus.subscribe(interfaces.NODE_UPDATE_RESULT, lambda t, p: seen.append(p))
+    main.tick(node)
+    main.tick(node)                     # the check is drained: the status offers v0.3.0 (B)
+    return node, clock, requester, results, seen
+
+
+def update(node, expected=B):
+    cmd = interfaces.NodeUpdate.stamped(interfaces.__version__, request_id="r1", expected_commit=expected,
+                                        requested_by="alice@example.com", door="tailnet")
+    return main.invoke(node, interfaces.NODE_UPDATE, cmd.model_dump(), "node-updater:update-apply")
+
+
+def test_the_update_is_off_unless_main_enables_it() -> None:
+    node, _, _, _ = make()
+    assert "node-updater:update-apply" not in node.capabilities()
+    ok, msg = update(node)
+    assert not ok and "installed but disabled" in msg
+
+
+def test_a_confirmed_update_leaves_one_request_for_root() -> None:
+    node, _, requester, _, seen = make_apply()
+    ok, msg = update(node)
+    assert ok, msg
+    [req] = requester.requests
+    assert (req.expected_commit, req.channel, req.requested_by, req.door) == (B, "releases", "alice@example.com", "tailnet")
+    assert req.schema_version == "0.1.0" and req.request_id == "r1"
+    r = interfaces.NodeUpdateResult.model_validate(seen[-1])
+    assert not r.done and r.phase == "requested" and r.to_version.ref == "v0.3.0" and r.from_version.commit == A
+
+
+@pytest.mark.parametrize("why, setup, said", [
+    ("not a commit", lambda n, c, q, res: None, "not a commit"),
+    ("moved", lambda n, c, q, res: None, "the offer changed since you looked"),
+    ("stale", lambda n, c, q, res: setattr(c, "now", c.now + 3600), "no fresh update status"),
+    ("pending", lambda n, c, q, res: setattr(q, "waiting", True), "already requested or running"),
+    ("root busy", lambda n, c, q, res: setattr(res, "record", RootResult(request_id="x", done=False)),
+     "already requested or running"),
+])
+def test_an_update_is_refused_with_its_reason(why, setup, said) -> None:
+    node, clock, requester, results, seen = make_apply()
+    setup(node, clock, requester, results)
+    if why == "root busy":
+        main.tick(node)
+    expected = {"not a commit": "abc", "moved": C}.get(why, B)
+    assert update(node, expected)[0]
+    r = interfaces.NodeUpdateResult.model_validate(seen[-1])
+    assert r.done and not r.ok and said in r.message and requester.requests == []
+
+
+def test_an_older_offer_is_never_requested() -> None:
+    older = ReleaseReading(ok=True, message="", relation="behind",
+                           target=interfaces.NodeVersion(commit=B, ref="v0.1.0", ci="success"))
+    node, _, requester, _, seen = make_apply(older)
+    update(node)
+    assert "is not newer than what runs (behind)" in seen[-1]["message"] and requester.requests == []
+
+
+def test_a_switch_from_a_dev_tree_may_be_requested() -> None:
+    switch = ReleaseReading(ok=True, message="", relation="unknown",
+                            target=interfaces.NodeVersion(commit=B, ref="dev", ci="success"))
+    node, _, requester, _, _ = make_apply(switch)
+    assert update(node)[0] and len(requester.requests) == 1
+
+
+def test_roots_result_is_published_when_it_changes() -> None:
+    node, _, _, results, seen = make_apply()
+    results.record = RootResult(request_id="r1", done=False, phase="installing", from_commit=A, to_commit=B,
+                                to_ref="v0.3.0", requested_by="alice@example.com", door="tailnet", started_at=1.0)
+    main.tick(node)
+    main.tick(node)
+    assert len(seen) == 1 and seen[-1]["phase"] == "installing" and seen[-1]["to_version"]["ref"] == "v0.3.0"
+    results.record = RootResult(request_id="r1", done=True, ok=False, rolled_back=True, message="rolled back",
+                                from_commit=A, to_commit=B, finished_at=2.0)
+    main.tick(node)
+    r = interfaces.NodeUpdateResult.model_validate(seen[-1])
+    assert len(seen) == 2 and r.done and r.rolled_back and r.message == "rolled back"
+
+
+def test_the_request_file_is_whole_private_and_never_overwritten(tmp_path) -> None:
+    from modules.node_updater.core.update_files import RequestFile
+    from modules.node_updater.interface import UpdateRequest
+    files = RequestFile(str(tmp_path))
+    req = UpdateRequest(request_id="0123456789ab", channel="dev", expected_commit=B,
+                        requested_by="a", door="local", requested_at=1.0)
+    assert not files.pending() and files.submit(req) is None and files.pending()
+    path = tmp_path / "updater" / "request.json"
+    assert oct(path.stat().st_mode & 0o777) == "0o600" and oct((tmp_path / "updater").stat().st_mode & 0o777) == "0o700"
+    assert json.loads(path.read_text())["expected_commit"] == B
+    assert "already requested" in files.submit(req.model_copy(update={"request_id": "ba9876543210"}))
+    assert json.loads(path.read_text())["request_id"] == "0123456789ab"
+    assert sorted(p.name for p in (tmp_path / "updater").iterdir()) == ["request.json"]
+
+
+def test_the_result_file_reader_tolerates_junk(tmp_path) -> None:
+    from modules.node_updater.core.update_files import ResultFile
+    path = tmp_path / "result.json"
+    assert ResultFile(str(path)).read() is None
+    path.write_text("junk")
+    assert ResultFile(str(path)).read() is None
+    path.write_text(json.dumps({"schema_version": "0.1.0", "request_id": "r", "done": True, "ok": True}))
+    assert ResultFile(str(path)).read().ok
+
+
+def test_the_daemon_and_root_agree_on_paths_and_rules() -> None:
+    import ast
+    from modules.node_updater.core import update_files
+    from modules.node_updater.interface import ACTIONABLE, REQUEST_SCHEMA
+    from tests.test_ops_paths import OPS, shell_var
+    assert shell_var("CN_STATE") == update_files.STATE_DIR
+    assert shell_var("UPDATE_REQUEST") == '"$CN_STATE/updater/request.json"'
+    assert f"{shell_var('UPDATE_RESULT_DIR')}/result.json" == update_files.RESULT_PATH
+    assert shell_var("UPDATE_REPO_URL") == gh.GIT_URL
+    helper = ast.parse((OPS / "update_helper.py").read_text())
+    consts = {t.id: ast.literal_eval(n.value) for n in helper.body if isinstance(n, ast.Assign)
+              for t in n.targets if isinstance(t, ast.Name) and t.id in ("ACTIONABLE", "REQUEST_DIR", "REQUEST_NAME")}
+    assert consts == {"ACTIONABLE": ACTIONABLE, "REQUEST_DIR": update_files.REQUEST_DIR,
+                      "REQUEST_NAME": update_files.REQUEST_NAME}
+    assert REQUEST_SCHEMA.startswith("0.")
+
+
+def test_overview_offers_the_slider_only_with_the_capability() -> None:
+    caps = {"cn": {"hostname": "cn", "modules": [{"name": "node-updater", "capabilities": ["node-updater:update-apply"]}]}}
+    status = {"running": RUNNING, "update_available": True, "relation": "ahead",
+              "available": {"commit": B, "ref": "v0.3.0"}, "message": "an update is available"}
+    s = snap(status)
+    s["nodes"] = caps
+    page = OverviewPage().render(s)
+    assert 'action="/actions/node/update" data-slide data-marker="data-last-update">' in page
+    assert f'name="expected" value="{B}"' in page and "Update to v0.3.0 (bbbbbbb)" in page
+    assert "Rolls back if the doctor fails." in page
+    switch = snap({**status, "update_available": False, "relation": "unknown"})
+    assert "Update available" not in OverviewPage().render(switch)          # no capability: no noise
+    switch["nodes"] = caps
+    page = OverviewPage().render(switch)
+    assert "The releases channel offers v0.3.0" in page and "Switch to v0.3.0" in page
+    assert "your developer tree is left as it is" in page
+
+
+def test_overview_shows_an_update_in_progress_and_the_last_outcome() -> None:
+    s = snap({"running": RUNNING, "message": "up to date"})
+    s["node_update_result"] = {"self": {"request_id": "r1", "done": False, "phase": "installing",
+                                        "to_version": {"commit": B, "ref": "v0.3.0"},
+                                        "requested_by": "alice@example.com", "started_at": NOW - 60}}
+    page = OverviewPage().render(s)
+    assert "Updating to v0.3.0 (bbbbbbb)" in page and ">installing<" in page
+    assert 'data-last-update="r1:installing:False"' in page
+    s["node_update_result"]["self"].update(done=True, ok=False, rolled_back=True, finished_at=NOW,
+                                            message="rolled back to v0.2.0: the dashboard is down")
+    page = OverviewPage().render(s)
+    assert "Updating to" not in page and "Rolled back" in page and "the dashboard is down" in page

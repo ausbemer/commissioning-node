@@ -110,7 +110,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
             tailnet_writer: bool = False, overlay_writer=None, writer_spawn=None,
             site_networks=None, restart: Callable[[], None] | None = None,
             site_scanner=None, scan_spawn=None, release_source=None, running_source=None,
-            update_spawn=None) -> Node:
+            update_spawn=None, node_update: bool = False, update_requester=None,
+            update_results=None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
@@ -124,7 +125,9 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
     `site_scanner` with an inline `scan_spawn` (ADR-0007).
 
     `release_source` turns on node-updater's channel check (ADR-0009). Daemon mode passes the
-    GitHub adapter; without one nothing is checked, so tests never reach the network."""
+    GitHub adapter; without one nothing is checked, so tests never reach the network.
+    `node_update` enables the confirmed update (ADR-0009 D3; registered disabled otherwise);
+    tests pass a fake `update_requester` and `update_results`."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
     if config_root is not None:
@@ -147,7 +150,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
         site_survey.build(sub, pub, site_scanner, clock, scan_spawn),
         node_updater.build(sub, pub, release_source, running_source,
                            config=node.config.owner_view("node-updater") if node.config else None,
-                           clock=clock, spawn=update_spawn),
+                           clock=clock, spawn=update_spawn, apply=node_update,
+                           requester=update_requester, results=update_results),
         dash_registry,
     ]
     return node
@@ -212,6 +216,16 @@ def _writer_from_env() -> bool:
     return raw in ("", "1")
 
 
+def _node_update_from_env() -> bool:
+    """The one-click update (ADR-0009) is off until its rehearsal passes: CN_NODE_UPDATE=1 in
+    the daemon's environment (a root-made drop-in) turns it on. Anything but unset, 0 or 1
+    turns it off and says so: a mistyped switch fails toward not updating."""
+    raw = os.environ.get("CN_NODE_UPDATE", "")
+    if raw not in ("", "0", "1"):
+        log.warning("CN_NODE_UPDATE=%r is not 0 or 1; the one-click update is disabled", raw)
+    return raw == "1"
+
+
 def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     stop, restarting = threading.Event(), threading.Event()
@@ -225,7 +239,8 @@ def serve() -> None:
                    fallback=dashboard.FallbackConfig(FALLBACK_PORT, TLS_CERT_PATH, TLS_KEY_PATH),
                    admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT,
                    tailnet_writer=_writer_from_env(), restart=restart,
-                   release_source=node_updater.GitHubReleaseSource())
+                   release_source=node_updater.GitHubReleaseSource(),
+                   node_update=_node_update_from_env())
     try:
         node.dashboard.start()
     except OSError as exc:

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from interfaces import (
     CAMERA_ANNOUNCED,
+    NODE_UPDATE_RESULT,
     NODE_UPDATE_STATUS,
     SITE_HOSTS,
     SITE_SCAN,
@@ -25,6 +26,7 @@ from interfaces import (
     TAILNET_STATUS,
     CameraAnnouncement,
     NodeCard,
+    NodeUpdateResult,
     NodeUpdateStatus,
     SiteHosts,
     SiteScan,
@@ -53,6 +55,7 @@ _ROUTES = {
     SITE_SCAN_RESULT: ("site_scan", SiteScanResult, None),
     SITE_SCAN: ("site_request", SiteScan, None),
     NODE_UPDATE_STATUS: ("node_update", NodeUpdateStatus, None),
+    NODE_UPDATE_RESULT: ("node_update_result", NodeUpdateResult, None),
 }
 #: Kinds stored with the wall-clock time they arrived (`received_at`), for a payload that
 #: carries no time of its own: the map says since when a scan has run, and the overview judges

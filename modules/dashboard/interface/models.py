@@ -11,7 +11,7 @@ import threading
 
 #: Kinds of entry the state holds, each keyed by its entity id.
 KINDS = ("nodes", "tailnet", "tailnet_apply", "cameras", "streams", "site_hosts", "site_scan", "site_request",
-         "node_update")
+         "node_update", "node_update_result")
 #: Bound per kind (§8.8). PROVISIONAL — unmeasured (TODO.md, §8.11).
 MAX_PER_KIND = 256
 

@@ -106,6 +106,15 @@ TAILNET_OPERATIONS = {
 #: GitHub, so it disturbs nothing and needs no confirm.
 NODE_UPDATE_CHECKER = "node-updater:update-check"
 UPDATE_CHECK_PATH = "/actions/node/update-check"
+#: The capability a confirmed update needs (§5, ADR-0009 D3): off until main enables it.
+NODE_UPDATER_APPLY = "node-updater:update-apply"
+#: Node operations (ADR-0009 D5), as `TAILNET_OPERATIONS`: operation -> (POST path, warning).
+NODE_OPERATIONS = {
+    "update": ("/actions/node/update",
+               "Installs it as root from the release checkout and restarts the daemon (the "
+               "dashboard drops for a few seconds), MediaMTX (camera streams drop) and, if a "
+               "pin changes, tailscaled (the tailnet drops). Rolls back if the doctor fails."),
+}
 
 #: The capability a site scan needs (§5, ADR-0007).
 SITE_SCANNER = "site-survey:scanner"

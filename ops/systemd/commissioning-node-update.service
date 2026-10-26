@@ -1,0 +1,16 @@
+# Installed by ops/install.sh (ADR-0009 D3, D4). Root: fetches into its own release checkout,
+# re-checks the request against the channel, installs, restarts the daemon, runs the doctor,
+# rolls back on a FAIL. Started only by its .path; never enabled on its own.
+[Unit]
+Description=commissioning-node: root updater (one confirmed update)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The root-owned copies the installer made, never a tree's (the daemon user owns the dev tree).
+ExecStart=/usr/local/libexec/commissioning-node/update
+# A run killed before it finished (the timeout) is marked unfinished, never left "running".
+ExecStopPost=/usr/local/libexec/commissioning-node/update --after
+# UPDATE_TIMEOUT_S. PROVISIONAL (tools/ledgers/node-updater/).
+TimeoutStartSec=900

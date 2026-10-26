@@ -1,0 +1,12 @@
+# Installed by ops/install.sh (ADR-0009 D3). The daemon asks for an update by leaving a request
+# (one expected commit, no code) in its state directory; this starts the root updater. The
+# updater deletes the request first, so a request runs once.
+[Unit]
+Description=commissioning-node: run the root updater when the daemon requests an update
+
+[Path]
+PathExists=/var/lib/commissioning-node/updater/request.json
+Unit=commissioning-node-update.service
+
+[Install]
+WantedBy=multi-user.target

@@ -379,3 +379,47 @@ class NodeUpdateCheck(Envelope):
     requested_by: str
     #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
     door: str
+
+
+class NodeUpdate(Envelope):
+    """Command: update this node to the commit the operator was shown (ADR-0009 D3). Produced
+    by the operator surface through `invoke()`; consumed by node-updater, which hands it to the
+    root updater as a request with no code in it.
+
+    Carries one value, `expected_commit`: root installs the channel's target only if it is
+    still exactly this commit. No ref, URL, path or argument.
+    """
+    #: Correlates the result with this request.
+    request_id: str
+    #: The commit (40 hex digits) the operator confirmed.
+    expected_commit: str
+    #: Who asked, as the operator surface recorded them.
+    requested_by: str
+    #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
+    door: str
+
+
+class NodeUpdateResult(Envelope):
+    """Where one `NodeUpdate` is, or how it ended (ADR-0009 D3, D4). Published when it changes;
+    the root updater's own record survives the daemon's restart in the middle of an update.
+    """
+    request_id: str
+    #: False while the update runs; True once it ended (done, refused, failed or rolled back).
+    done: bool
+    #: Whether it ended with the node updated and the doctor clean. False while running.
+    ok: bool = False
+    #: Where a running update is: "requested", "fetching", "verifying", "installing",
+    #: "checking", "rolling-back"; "" once done. Open vocabulary.
+    phase: str = ""
+    #: For people: what happened, or why not (§11 rung 7).
+    message: str = ""
+    #: What ran before, and what the update installs.
+    from_version: NodeVersion | None = None
+    to_version: NodeVersion | None = None
+    #: True when a failed update put the previous version back (D4).
+    rolled_back: bool = False
+    requested_by: str = ""
+    door: str = ""
+    #: Wall-clock times (Unix seconds); None when not yet.
+    started_at: float | None = None
+    finished_at: float | None = None

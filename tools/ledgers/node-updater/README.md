@@ -11,6 +11,8 @@ Re-derive: `python tools/ledgers/node-updater/derive.py`. Measurements are in
 | `MAX_RELEASES_WALKED` | `3` | `modules/node_updater/interface/source.py` | Provisional, a choice |
 | `LS_REMOTE_TIMEOUT_S`, `HTTP_TIMEOUT_S` | `20`, `15` | `modules/node_updater/core/github_source.py` | Provisional; one ls-remote measured (0.46 s) |
 | `MAX_RESPONSE_BYTES` | `2 MiB` | same | Provisional; largest compare seen 196 KB |
+| `UPDATE_TIMEOUT_S` | `900` | `ops/systemd/commissioning-node-update.service` (`TimeoutStartSec`) | Provisional, a guess: no update timed yet |
+| `MAX_REQUEST_AGE_S` | `600` | `ops/update_helper.py` | Provisional, a choice: root picks a request up within seconds |
 
 ## The cadence and the API limit
 
@@ -28,3 +30,12 @@ from spending the allowance.
 One `ls-remote` from the RevPi took 0.46 s (2026-10-25); 20 s is ~43× that, chosen for slow site
 uplinks, not measured on one. A `compare` lists the changed files, 196 KB for 13 commits; 2 MiB
 allows ~10× that before the check fails as "too large" (it then offers nothing).
+
+## The update's own bounds (ADR-0009 step 3)
+
+`UPDATE_TIMEOUT_S` bounds one root run: fetch, verify, install (apt included when a pin
+changes), the daemon's restart and the doctor, and a rollback doing the same again. 15 min is a
+guess until the rehearsal times one of each. A run killed by it is marked unfinished and is not
+rolled back. `MAX_REQUEST_AGE_S` only has to cover the gap between the daemon leaving a request
+and root's `.path` starting the service, which is seconds. 10 min keeps a request left before a
+reboot or a long outage from being acted on by someone who isn't there any more.

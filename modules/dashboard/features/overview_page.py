@@ -32,7 +32,8 @@ from html import escape
 from freshness import stale_after
 from interfaces import __version__ as CONTRACT_VERSION
 
-from ..interface import SITE_SCANNER, TAILNET_WRITER, UPDATE_CHECK_PATH, banner, op_form, page
+from ..interface import (NODE_UPDATER_APPLY, SITE_SCANNER, TAILNET_WRITER, UPDATE_CHECK_PATH, banner,
+                         op_form, page)
 
 GATEWAY = "tailnet-gateway"
 #: Browser auto-refresh, seconds. A display preference, not a behaviour constant.
@@ -134,6 +135,7 @@ STYLE = """
   gap:4px 14px; }
 .update strong { font-size:15px; }
 .update .sub { flex-basis:100%; font-size:13px; color:var(--muted); }
+.update-go { flex-basis:100%; max-width:360px; margin-top:6px; }
 .check { display:inline; margin-left:8px; }
 .check .btn { padding:2px 10px; font-size:12px; }
 """
@@ -288,20 +290,77 @@ def _software(snapshot: dict) -> str:
         when = "not checked yet"
     line = " · ".join(x for x in (f"{st.get('channel', '')} channel", when, st.get("message", "")) if x)
     check = "" if st.get("checking") else _check_form(snapshot)
-    return f'{head}<span class="sub">{escape(line)}{check}</span>'
+    return f'{head}<span class="sub">{escape(line)}{check}</span>{_last_update(update_result(snapshot))}'
+
+
+#: Relations offered as a switch, not an update: what runs isn't simply older (ADR-0009 D1).
+SWITCH = ("diverged", "unknown")
+
+
+def update_result(snapshot: dict) -> dict | None:
+    return (snapshot.get("node_update_result") or {}).get("self")
+
+
+def update_marker(snapshot: dict) -> str:
+    """The last update result: a confirmed Update slide holds until it changes (a refusal is a
+    new result; an accepted request turns the banner into "Updating")."""
+    r = update_result(snapshot) or {}
+    mark = f'{r.get("request_id", "")}:{r.get("phase", "")}:{r.get("done", "")}'
+    return f'<span hidden data-last-update="{escape(mark)}"></span>'
+
+
+def _last_update(r: dict | None) -> str:
+    """The last finished update, as one line: what, when, by whom, and why if it failed."""
+    if not r or not r.get("done") or not r.get("request_id"):
+        return ""
+    when = time.strftime("%H:%M", time.localtime(r.get("finished_at") or 0))
+    if r.get("ok"):
+        chip = '<span class="chip ok">Updated</span>'
+    elif r.get("rolled_back"):
+        chip = '<span class="chip warn">Rolled back</span>'
+    else:
+        chip = '<span class="chip crit">Not updated</span>'
+    return (f'<span class="sub">{chip} Last update at {escape(when)}, by {escape(r.get("requested_by", ""))}: '
+            f'{escape(r.get("message", ""))}</span>')
 
 
 def _update_banner(snapshot: dict) -> str:
-    """Shown only when the channel offers something newer than what runs."""
+    """An update in progress, or an offer newer than what runs (or a switch, when the node
+    can make it). Nothing otherwise."""
+    r = update_result(snapshot)
+    if r and not r.get("done"):
+        since = time.strftime("%H:%M", time.localtime(r.get("started_at") or 0))
+        return (f'<section class="update" aria-label="Updating"><strong>Updating to '
+                f'{escape(_version(r.get("to_version")))}</strong><span class="chip plan">'
+                f'{escape(r.get("phase") or "requested")}</span><span>since {escape(since)}, by '
+                f'{escape(r.get("requested_by", ""))}</span><span class="sub">The dashboard restarts '
+                'during the update and this page comes back by itself. The outcome stays here.</span></section>')
     st = update_status(snapshot)
-    if not st or not st.get("update_available"):
+    if not st or not st.get("ok") or not st.get("available"):
         return ""
-    offer = st.get("available") or {}
-    return (f'<section class="update" aria-label="Update available"><strong>Update available: '
-            f'{escape(_version(offer))}</strong><span>on the {escape(st.get("channel", ""))} channel, '
-            f'running {escape(_version(st.get("running")))}</span>'
-            '<span class="sub">Updating from the dashboard is not enabled yet (ADR-0009 step 3): '
-            'for now, update over SSH with git and sudo ops/install.sh.</span></section>')
+    newer, switch = bool(st.get("update_available")), st.get("relation") in SWITCH
+    can = NODE_UPDATER_APPLY in _capabilities(snapshot)
+    if not newer and not (switch and can):
+        return ""
+    offer = st["available"]
+    title = f"Update available: {_version(offer)}" if newer else \
+        f"The {st.get('channel', '')} channel offers {_version(offer)}"
+    note = ""
+    if switch:
+        note = ('<span class="sub">What runs isn\'t on GitHub (a developer tree, or local commits). '
+                'Switching installs the offer from root\'s release checkout; your developer tree is '
+                'left as it is, and going back to it is sudo ops/install.sh from it.</span>')
+    if can:
+        csrf = (snapshot.get("viewer") or {}).get("csrf")
+        control = op_form("update", f"{'Update' if newer else 'Switch'} to {_version(offer)}", csrf, "/",
+                          slide=True, marker="data-last-update", extra={"expected": offer.get("commit", "")})
+        control = f'<div class="update-go">{control}</div>'
+    else:
+        control = ('<span class="sub">Updating from the dashboard is off on this node '
+                   '(CN_NODE_UPDATE=1 turns it on, ADR-0009); for now, update over SSH.</span>')
+    return (f'<section class="update" aria-label="{escape(title)}"><strong>{escape(title)}</strong>'
+            f'<span>on the {escape(st.get("channel", ""))} channel, running '
+            f'{escape(_version(st.get("running")))}</span>{note}{control}</section>')
 
 
 def last_marker(snapshot: dict) -> str:
@@ -594,7 +653,7 @@ class OverviewPage:
 <div><h1>{escape(name)}</h1><p>{escape(_summary(status, cameras, streams))}</p></div>
 <span class="tick">Refreshes every {REFRESH_S} s</span>
 </div>
-{_update_banner(snapshot)}
+{_update_banner(snapshot)}{update_marker(snapshot)}
 {_site_map(snapshot, status, cameras, name, snapshot.get("now") or time.time())}
 <div class="zones">
 <section class="zone lan"><h2>Cameras <small>on the site network</small></h2>{_cameras(cameras)}</section>

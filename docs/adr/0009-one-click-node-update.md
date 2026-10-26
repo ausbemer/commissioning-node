@@ -1,6 +1,6 @@
 # ADR 0009: One-click node update from the dashboard
 
-- **Status:** Accepted 2026-10-25 (Austin Emerson); steps 1 and 2 built the same day
+- **Status:** Accepted 2026-10-25 (Austin Emerson); steps 1 and 2 built the same day, step 3 on 2026-10-26; the rehearsal (step 4) is next
 - **Date:** 2026-10-25
 - **Deciders:** Austin Emerson
 - **Shape:** standard, with a Safety section (spec §7, §11)
@@ -121,8 +121,11 @@ Operator decisions (2026-10-25):
   that state, and the LAN fallback (8443) is the way in. It never loops.
 - If the node was in dev-tree mode, "the last version" is the developer tree. The rollback
   points the units back at it and runs root's copy of the installer logic against it, but
-  never that tree's own `install.sh`. *Open:* whether this is worth building, or a failed
-  first switch simply stays failed with the fallback as the way in. Decide at the build.
+  never that tree's own `install.sh`. *Decided at the build (2026-10-26):* there is no
+  automatic way back. A failed first switch stays on the release checkout, and the result
+  says to run `sudo ops/install.sh` from the developer tree. Root would otherwise have to run
+  code the daemon user can write. The LAN fallback is served by the daemon, so if the failed
+  install left the daemon down, SSH is the way in.
 
 ### D5 — The dashboard
 
@@ -160,7 +163,7 @@ Producer `node-updater`; consumer the dashboard. Nothing existing changes.
 
 ## Safety (spec §11)
 
-- **Rung 1:** a new writer. Its capability flag, `node-updater:apply`, is registered
+- **Rung 1:** a new writer. Its capability flag, `node-updater:update-apply`, is registered
   disabled (§8.4) until the rehearsal passes. The check and the banner ship enabled, since
   they're read-only.
 - **Rungs 2–3:** the node is owned (ADR-0003), and no site system is touched. Every update
@@ -168,8 +171,10 @@ Producer `node-updater`; consumer the dashboard. Nothing existing changes.
 - **Rung 4:** may-disturb, confirmed, with its warning on the action for the manifest (D5).
 - **Rung 5:** one update at a time. systemd runs one instance of the service. A request
   made during a run is picked up after it, and then finds nothing to do. There's no force
-  door. The run is bounded by `UPDATE_TIMEOUT_S` (`TimeoutStartSec=`), and a timed-out run
-  is reported as failed and rolls back (D4).
+  door. The run is bounded by `UPDATE_TIMEOUT_S` (`TimeoutStartSec=`). *As built:* a run
+  killed by the timeout is marked unfinished by the unit's `ExecStopPost` ("the node's state
+  is unknown: run sudo ops/doctor.sh"), and it does **not** roll back: whatever hung could
+  hang the rollback the same way.
 - **Rung 6:** the safe state is "running the last version, doctor clean". D4 returns to it,
   and the LAN fallback is the way in when it can't.
 - **Rung 7:** every refusal is in-band with its reason: flag off, check stale, CI not green,
@@ -233,9 +238,32 @@ Producer `node-updater`; consumer the dashboard. Nothing existing changes.
    - Found on the first live check: `v0.2.0`'s commit failed CI, so `releases` offers
      `v0.1.0`, which is older than anything running, so nothing is offered. A clean
      `v0.2.1` tag would make the channel useful.
-3. The root updater (`ops/update.sh` → its root-owned copy, `.path` + `.service`), the
+3. ~~The root updater (`ops/update.sh` → its root-owned copy, `.path` + `.service`), the
    request and result files, rollback; `node/update` behind `node-updater:apply`,
-   registered disabled.
+   registered disabled~~ — done 2026-10-26. The flag is named `node-updater:update-apply`.
+   *As built:*
+   - **Contract 0.9.0:** `node/update` (`NodeUpdate`: the expected commit, nothing else) and
+     `node/update-result` (`NodeUpdateResult`).
+   - **The flag:** `node-updater:update-apply` is registered disabled unless the daemon's
+     environment has `CN_NODE_UPDATE=1`, which takes a root-made drop-in to set.
+   - **The request:** it waits in `updater/request.json` (0600, written whole and linked
+     into place, never overwritten). The result is in `/var/lib/commissioning-node-update/`.
+   - **Root's copies:** `ops/update.sh` (bash, parsed whole before it runs, because the
+     installer it calls replaces it) and `ops/update_helper.py` (the careful parts), rendered
+     by the installer into `/usr/local/libexec/commissioning-node/`.
+   - **Reading the request:** root opens it relative to `CN_STATE` with `O_NOFOLLOW` at each
+     step, refuses a symlink, FIFO, oversized or malformed request, and refuses one older
+     than `MAX_REQUEST_AGE_S` (600 s), so a request left before a reboot is never acted on.
+     Root deletes it whatever it says.
+   - **Verifying the target:** root checks out `expected_sha` in its tree and runs *that
+     commit's* `choose_target` and GitHub adapter (`python3 -I`, root's tree). That's the
+     same code root then installs, so it adds no trust and needs no copy of the rule. A
+     target older than the updater (no `node_updater` in its tree) is refused.
+   - **What counts as failure:** an `install.sh` failure is one, as well as a doctor FAIL
+     after the daemon restarts.
+   - **Tests:** `tests/test_updater.py` runs the real `ops/update.sh` in a sandbox: a local
+     repo standing in for GitHub, whose commits carry fake `install.sh`, `doctor.sh` and
+     adapter, with `systemctl` and `curl` shimmed.
 4. Rehearsal on this node: dev-tree → release switch, an update across a pin change, a
    forced doctor FAIL → rollback, a refusal because the channel moved. Ledger the timings,
    then enable the flag.
