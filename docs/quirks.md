@@ -12,6 +12,7 @@ Pinned dependencies covered here:
 | MediaMTX | v1.21.1 linux_arm64 (`ops/pins.sh`, sha256-pinned) | `stream-relay` (adapter not yet written); host install `ops/` (ADR-0002) |
 | Axis VAPIX (camera firmware) | per camera; record model + firmware seen on site | `camera-config` (adapter not yet written) |
 | firewalld | 2.3.1-1+deb13u1, not pinned: the RevPi image enables it | host install `ops/` (ADR-0002 A1) |
+| Docker (the host's, not this repo's) | 26.1.5+dfsg1, not pinned: installed on the node for unrelated work | `tailnet-gateway` (`modules/tailnet_gateway/core/site_networks.py`) |
 | GitHub (repo refs, REST API) | not pinned: a hosted service; API version `2022-11-28` | `node-updater` (`modules/node_updater/core/github_source.py`, ADR-0009) |
 
 ## Entries
@@ -251,6 +252,30 @@ Pinned dependencies covered here:
   to `unknown` (never an offer), reads at most 2 MiB of a response, walks at most 3 release tags
   per check, and checks every 30 min (at most 4 calls a check).
 - **Last verified:** 2026-10-25.
+
+### Q-012: Docker's bridge is up with no containers, so it looks like a site network
+
+- **Dependency / version:** Docker 26.1.5+dfsg1 (Debian trixie), installed on the node for
+  work unrelated to this repo.
+- **Behaviour:** `docker.service` creates `docker0` with `172.17.0.1/16` and sets it
+  administratively up, even with no container running (`NO-CARRIER`, state `DOWN`). It is
+  listed by `ip -4 addr show up`. A network Docker creates (`br-<id>`, `172.18.0.0/16` and
+  on) does the same. Nothing errors.
+- **How measured:** 2026-10-26 on the node (docker0 appeared 2026-10-25 23:47). The overview
+  showed `site_networks` `192.168.137.0/24, 172.17.0.0/16`. The operator's Scan was refused
+  whole ("172.17.0.0/16 is wider than /22", ADR-0007's every-network-or-none rule), and
+  `wanted_routes` held `172.17.0.0/16`, so the next Apply would have advertised Docker's
+  bridge to the tailnet. `/sys/class/net/docker0` links under `devices/virtual`, with no
+  `device` entry; `lan0` and `lan1` have one.
+- **Detection signature:** a `172.17.0.0/16` (or other `172.1x`) entry in the overview's
+  site networks; a Scan refused as "wider than /22".
+- **Our accommodation:** site-network detection counts only interfaces with a
+  `/sys/class/net/<name>/device` entry (Ethernet, USB, Wi-Fi), so `docker0`, `br-*`, veth
+  pairs and libvirt's `virbr0` are skipped (tailnet-gateway 0.8.3, ADR-0005 A3 note of
+  2026-10-26). A bridge an operator builds over a site port would be skipped too; its routes
+  can still be set by hand on `/config`. Docker left iptables' `FORWARD` policy `ACCEPT` here,
+  so the subnet routes are unaffected; check `sudo iptables -S FORWARD` if that ever changes.
+- **Last verified:** 26.1.5+dfsg1, 2026-10-26.
 
 ## Unverified assumptions (verify, then turn into entries or delete)
 

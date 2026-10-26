@@ -326,6 +326,9 @@ tailnet the operator already joined*:
   several interfaces (an LTE uplink beside the site LAN), `auto` includes both. The panel
   shows what `auto` means right now, so the operator sees it before confirming, and can
   replace `auto` with the exact network.
+  *2026-10-26:* only interfaces backed by a device count (`/sys/class/net/<name>/device`).
+  A virtual one (Docker's `docker0`, veth pairs, container bridges) is the node's own, not
+  the site's, and is never proposed or scanned (quirks Q-012).
 - **Applied by Join** (`--advertise-routes=…`, always passed, empty included, so a later
   join never trips Q-001-style "mention all non-default flags"), and on a joined node by a
   new confirmed operation, **Routes** (`tailscale set --advertise-routes=…`). The adapter

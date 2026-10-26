@@ -494,9 +494,28 @@ def test_site_networks_adapter_skips_loopback_tailnet_link_local_and_hosts() -> 
         assert argv == ["ip", "-j", "-4", "addr", "show", "up"]
         return subprocess.CompletedProcess(argv, 0, json.dumps(links), "")
 
-    assert IpSiteNetworks(run=run, which=lambda b: "/usr/sbin/ip").read() == ["192.168.137.0/24", "10.20.0.0/16"]
+    assert IpSiteNetworks(run=run, which=lambda b: "/usr/sbin/ip",
+                          is_device=lambda n: True).read() == ["192.168.137.0/24", "10.20.0.0/16"]
     broken = IpSiteNetworks(run=Runner(raises=OSError(2, "gone")), which=lambda b: "/usr/sbin/ip")
     assert broken.read() == []
+
+
+def test_site_networks_adapter_skips_virtual_interfaces() -> None:
+    # Quirks Q-012: Docker's bridge is up, even with no containers, and is no site network.
+    from modules.tailnet_gateway.core.site_networks import IpSiteNetworks, has_device
+    links = [
+        {"ifname": "lan0", "addr_info": [{"local": "192.168.137.195", "prefixlen": 24}]},
+        {"ifname": "docker0", "addr_info": [{"local": "172.17.0.1", "prefixlen": 16}]},
+        {"ifname": "br-3f2a", "addr_info": [{"local": "172.18.0.1", "prefixlen": 16}]},
+    ]
+
+    def run(argv, **kw):
+        return subprocess.CompletedProcess(argv, 0, json.dumps(links), "")
+
+    devices = {"lan0"}
+    assert IpSiteNetworks(run=run, which=lambda b: "/usr/sbin/ip",
+                          is_device=devices.__contains__).read() == ["192.168.137.0/24"]
+    assert not has_device("lo") and not has_device("") and not has_device("../lan0")
 
 
 def test_resolve_routes_is_the_one_authority() -> None:
