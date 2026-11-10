@@ -32,7 +32,7 @@ class NavAction:
         port = DEFAULT_PORT
         if self.operation == "send":
             if address is None:
-                return ActionResult(False, "pick a host from the last scan")
+                return ActionResult(False, "pick a host from the last scan or a tailnet peer")
             raw = (form.get("port") or "").strip()
             if raw:
                 if not raw.isdigit() or not 1 <= int(raw) <= 65535:

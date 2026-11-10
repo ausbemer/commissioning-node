@@ -62,7 +62,7 @@ declares a field and the surface that edits it (ADR-0004).
 | `camera/announced` | `CameraAnnouncement` | camera-config → stream-relay, dashboard |
 | `stream/announced` | `StreamAnnouncement` (nested `StreamEndpoint`) | stream-relay → dashboard |
 | `tailnet/status` | `TailnetStatus` (0.7.0: `dns_name`) | tailnet-gateway → stream-relay, site-survey, dashboard |
-| `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`, 0.6.0: `endpoint`), declares `period_s` | tailnet-gateway → dashboard (caller identity, ADR-0003) |
+| `tailnet/peers` | `TailnetPeers` (nested `TailnetPeer`, 0.6.0: `endpoint`), declares `period_s` | tailnet-gateway → dashboard (caller identity, ADR-0003; the nav Send picker), nav-relay (checks a tailnet destination, ADR-0010 A2) |
 | `tailnet/apply` | `TailnetApply` (command; no values, no secret) | dashboard via `main.invoke()` → tailnet-gateway writer (ADR-0005) |
 | `tailnet/apply-result` | `TailnetApplyResult` | tailnet-gateway → dashboard |
 | `site/scan` | `SiteScan` (command; no targets) | dashboard via `main.invoke()` → site-survey (ADR-0007) |
@@ -86,8 +86,8 @@ declares a field and the surface that edits it (ADR-0004).
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
 | `site-survey` (`modules/site_survey/`) | Bridge to nmap and the neighbour table: scans the site networks once per operator request (gentle, unprivileged, ports 80/443/554) and publishes every host that answered, with MAC, maker, hostname and open ports (ADR-0007). Never writes to a device; hosts are never persisted. | 0.1.0 |
 | `node-updater` (`modules/node_updater/`) | Bridge to GitHub: read-only, unauthenticated (`git ls-remote` over HTTPS, the public API). Reads what the node runs from the root-written `running.json`, checks the node's update channel (`releases` or `dev`, node-scoped config) on a schedule and on the operator's Check now, and offers only the newest commit whose CI passed, and only if newer (ADR-0009). On a confirmed Update it leaves the root updater a request with one expected commit and no code, and publishes root's record of the outcome; off unless `CN_NODE_UPDATE=1` (ADR-0009 D3). | 0.2.0 |
-| `nav-relay` (`modules/nav_relay/`) | Bridge from a vessel's NMEA 2000 bus (Kvaser Leaf Lite v2, SocketCAN `n2k0`, listen-only, never transmits) to NMEA 0183 over UDP (ADR-0010). Reads four PGNs (position, COG/SOG, heading, time), sends `$GPGGA` + `$GPVTG` + `$HEHDT` once a second to each host an operator picked from the last site scan (up to 4; memory only). A stale position is sent as "no fix" (GGA quality 0). | 0.1.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008); shows what runs and any update on the overview, with Check now and the Update slider (ADR-0009); shows the nav feed and sends nav data to a host the operator picks from the scan (ADR-0010). | 0.14.0 |
+| `nav-relay` (`modules/nav_relay/`) | Bridge from a vessel's NMEA 2000 bus (Kvaser Leaf Lite v2, SocketCAN `n2k0`, listen-only, never transmits) to NMEA 0183 over UDP (ADR-0010). Reads four PGNs (position, COG/SOG, heading, time), sends `$GPGGA` + `$GPVTG` + `$HEHDT` once a second to each host an operator picked from the last site scan or the current tailnet peers (up to 4; memory only; ADR-0010 A2). A stale position is sent as "no fix" (GGA quality 0). | 0.2.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008); shows what runs and any update on the overview, with Check now and the Update slider (ADR-0009); shows the nav feed and sends nav data to a host the operator picks from the scan or the tailnet peers (ADR-0010, A2). | 0.15.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.
@@ -121,7 +121,8 @@ directory and import path.
     site-LAN address; tailnet addresses only (ADR-0001). The one exception is the TLS admin
     fallback on 8443 (ADR-0003). nav-relay's NMEA 0183 datagrams are a second, outbound-only
     exception: sent to a host an operator picked from the scan and confirmed, with nothing on
-    the node listening (ADR-0010 D8). A name is never served on 8080; the node's MagicDNS name
+    the node listening (ADR-0010 D8). Sending them to a current tailnet peer is no exception
+    (ADR-0010 A2). A name is never served on 8080; the node's MagicDNS name
     only redirects to its tailnet IP (ADR-0008). Every request is sorted into a door and every write passes
     the dashboard's single `authorize()`; a new surface or write path goes through the same
     doors, never around them.

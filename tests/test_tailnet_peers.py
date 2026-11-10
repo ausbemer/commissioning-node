@@ -196,6 +196,15 @@ def test_table_lapses_after_the_derived_window() -> None:
     assert isinstance(out, Unresolved) and out.reason == "stale"
 
 
+def test_tailnet_hosts_lists_fresh_ipv4_peers_only() -> None:
+    d, clock = directory(ALICE, CI_BOX)
+    hosts = d.tailnet_hosts()
+    assert set(hosts) == {"100.64.0.10", "100.64.0.20"}
+    assert hosts["100.64.0.10"].node_name == ALICE.node_name
+    clock.now += 15.1
+    assert d.tailnet_hosts() == {}
+
+
 def test_update_replaces_the_whole_table() -> None:
     d, _ = directory(ALICE, CI_BOX)
     d.update(peers_msg(CI_BOX))                 # alice left the tailnet

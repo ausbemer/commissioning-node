@@ -360,3 +360,7 @@ Pinned dependencies covered here:
     VTG and HDT only (no RMC since 2026-11-10). GGA carries no date, so gpsd takes the date
     from its own clock or reports TPV without a full time until it has one (check `gpsd -V`
     and `gpspipe -w` on the device). The sentences parse with pynmea2 1.19 (2026-11-10).
+  - To a tailnet peer (ADR-0010 A2) the datagrams leave over `tailscale0`. The tailnet's ACL
+    must let this node reach the peer on the UDP port (2947 by default). Tailscale drops a
+    datagram the ACL refuses without any error at the sender, so the panel still counts it
+    as sent; check on the device with `gpspipe -w`.

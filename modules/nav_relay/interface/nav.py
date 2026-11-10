@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from freshness import RAPID_MIN_S, is_fresh
-from interfaces import NavDestinationState, NavFeedSource, NavFix, SiteHosts
+from interfaces import NavDestinationState, NavFeedSource, NavFix, SiteHosts, TailnetPeers
 
 # -- the crossing allowlist (ADR-0010 D2, §6) -------------------------------------------------
 
@@ -188,10 +188,21 @@ def current_fix(readings: list[Reading], now: float) -> tuple[NavFix, list[NavFe
 
 # -- destinations (ADR-0010 D4) -----------------------------------------------------------------
 
-def destination_problem(address: str | None, port: int, hosts: SiteHosts | None) -> str | None:
+def tailnet_peer(address: str, peers: TailnetPeers | None) -> str | None:
+    """The node name of the one peer in `peers` that has `address`, or None (not listed, or
+    claimed by two peers). The caller passes `peers` only while it is fresh."""
+    if peers is None:
+        return None
+    owners = [p.node_name for p in peers.peers if address in p.addresses]
+    return owners[0] if len(owners) == 1 else None
+
+
+def destination_problem(address: str | None, port: int, hosts: SiteHosts | None,
+                        peers: TailnetPeers | None = None) -> str | None:
     """Why nav data may not be sent to `address`:`port`, or None. The feature checks before it
-    adds a destination. The address must be a host the last completed scan found, on a scanned
-    network, and not this node or the tailnet."""
+    adds a destination. The address must be either a host the last completed scan found, on a
+    scanned network, and not this node; or a tailnet address that exactly one peer in the
+    current peer table holds (ADR-0010 A2). `peers` is passed only while it is fresh."""
     if not address:
         return "no address given"
     try:
@@ -201,7 +212,11 @@ def destination_problem(address: str | None, port: int, hosts: SiteHosts | None)
     if not 1 <= port <= 65535:
         return f"port {port} is out of range"
     if addr in TAILNET_V4:
-        return f"{addr} is tailnet address space; nav data goes only to site hosts"
+        if peers is None:
+            return "no fresh tailnet peer table: wait a few seconds and try again"
+        if tailnet_peer(address, peers) is None:
+            return f"{addr} is not a current tailnet peer (or two peers claim it)"
+        return None
     if addr.is_multicast or addr.is_loopback or addr.is_unspecified or addr == ipaddress.IPv4Address("255.255.255.255"):
         return f"{addr} is not a single host"
     if hosts is None:
@@ -316,5 +331,5 @@ __all__ = ["ALLOWLIST", "NOMINAL_PERIOD_S", "PGN_SYSTEM_TIME", "PGN_VESSEL_HEADI
            "PGN_POSITION_RAPID", "PGN_COG_SOG_RAPID", "INTERFACE", "LINK_UP", "LINK_DOWN",
            "LINK_NO_ADAPTER", "LINK_NOT_LISTEN_ONLY", "MAX_SOURCES", "MAX_DESTINATIONS",
            "OUTPUT_PERIOD_S", "DEFAULT_PORT", "Reading", "LinkReport", "NavState",
-           "current_fix", "destination_problem", "Destination", "DestinationTable",
+           "current_fix", "destination_problem", "tailnet_peer", "Destination", "DestinationTable",
            "NavSource", "SentenceSink"]

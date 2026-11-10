@@ -675,31 +675,49 @@ def _nav_last(last: dict | None) -> str:
             f'{escape(last.get("requested_by", ""))}</span>')
 
 
+def _option(address: str, label: str, sending: set[str]) -> str:
+    return (f'<option value="{escape(address)}">{escape(address)}{" · " + escape(label) if label else ""}'
+            f'{" (sending)" if address in sending else ""}</option>')
+
+
 def _nav_send(snapshot: dict, csrf: str | None, sending: set[str]) -> str:
-    scan = (snapshot.get("site_hosts") or {}).get("self")
-    if not scan:
-        return '<p class="muted">Scan the site network first: nav data goes only to a host the scan found.</p>'
+    """The Send picker: hosts from the last site scan and current tailnet peers (ADR-0010 A2)."""
+    scan = (snapshot.get("site_hosts") or {}).get("self") or {}
     own = set(scan.get("self_addresses") or [])
     hosts = [h for h in scan.get("hosts") or [] if h.get("address") not in own]
-    if not hosts:
-        return '<p class="muted">The last scan found no other host to send to.</p>'
     hosts.sort(key=lambda h: ipaddress.ip_address(h.get("address", "0.0.0.0")))
-    options = "".join(
-        f'<option value="{escape(h.get("address", ""))}">{escape(h.get("address", ""))}'
-        f'{" · " + escape(h.get("hostname") or h.get("maker") or "") if (h.get("hostname") or h.get("maker")) else ""}'
-        f'{" (sending)" if h.get("address") in sending else ""}</option>' for h in hosts)
+    peers = sorted((snapshot.get("tailnet_hosts") or {}).items(), key=lambda kv: ipaddress.ip_address(kv[0]))
+    if not hosts and not peers:
+        return ('<p class="muted">Nothing to send to yet: scan the site network, or wait for the '
+                'tailnet peer table. Nav data goes only to a host the scan found or a tailnet peer.</p>')
+    groups = []
+    if hosts:
+        groups.append('<optgroup label="Site hosts (last scan)">' + "".join(
+            _option(h.get("address", ""), h.get("hostname") or h.get("maker") or "", sending) for h in hosts)
+            + "</optgroup>")
+    if peers:
+        groups.append('<optgroup label="Tailnet peers">' + "".join(
+            _option(a, p.get("node_name", ""), sending) for a, p in peers) + "</optgroup>")
+    options = "".join(groups)
     path, warning = NAV_OPERATIONS["send"]
     token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
     return (f'<p class="note">{escape(warning)} The device reads it as a UDP source, e.g. '
             '<span class="mono">gpsd udp://0.0.0.0:2947</span>.</p>'
             f'<form class="op bare" method="post" action="{escape(path)}" data-slide data-hold '
             f'data-marker="data-last-nav">{token}<input type="hidden" name="then" value="/">'
-            f'<div class="pick"><label>Host from the last scan<select name="address" required>'
+            f'<div class="pick"><label>Host<select name="address" required>'
             f'<option value="">Pick a host…</option>{options}</select></label>'
             f'<label>UDP port<input type="number" name="port" min="1" max="65535" value="2947" required></label></div>'
             f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '
             f'<span>{escape(warning)}</span></label>'
             '<button class="btn primary" type="submit">Send nav data</button></form>')
+
+
+def _dest_label(dest: dict, tailnet: dict) -> str:
+    if dest.get("mac"):
+        return dest["mac"]
+    peer = tailnet.get(dest.get("address", ""))
+    return f'tailnet peer {peer.get("node_name", "")}' if peer else "no MAC"
 
 
 def _nav(snapshot: dict) -> str:
@@ -721,6 +739,7 @@ def _nav(snapshot: dict) -> str:
     token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
     stop_path, _ = NAV_OPERATIONS["stop"]
     rows, sending = [], set()
+    tailnet = snapshot.get("tailnet_hosts") or {}
     for d in status.get("destinations") or []:
         sending.add(d.get("address", ""))
         err = d.get("last_error")
@@ -731,7 +750,7 @@ def _nav(snapshot: dict) -> str:
                 f'<input type="hidden" name="address" value="{escape(d.get("address", ""))}">'
                 '<button class="btn" type="submit">Stop</button></form>') if NAV_SENDER in caps else ""
         rows.append(f'<li><span><span class="name mono">{escape(d.get("address", ""))}:{int(d.get("port", 0))}</span> '
-                    f'{chip}</span>{stop}<span class="sub">{escape(d.get("mac") or "no MAC")} · since '
+                    f'{chip}</span>{stop}<span class="sub">{escape(_dest_label(d, tailnet))} · since '
                     f'{escape(_clock(d.get("since") or 0))}, by {escape(d.get("requested_by", ""))}</span></li>')
     dests = (f'<ul class="dest">{"".join(rows)}</ul>' if rows
              else '<p class="muted">Sending to nobody. Nothing is sent until you pick a host.</p>')
@@ -739,7 +758,7 @@ def _nav(snapshot: dict) -> str:
     return (f'<section class="nav" aria-labelledby="nav-h"><h2 id="nav-h">Nav feed '
             '<small>NMEA 2000 in, NMEA 0183 over UDP out</small></h2>'
             f'<div class="nav-grid"><dl class="facts">{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts)}</dl>'
-            f'<div><h3>Sending to</h3>{dests}<h3>Send to a scanned host</h3>{send}</div></div>'
+            f'<div><h3>Sending to</h3>{dests}<h3>Send to a host</h3>{send}</div></div>'
             f'{nav_marker(snapshot)}</section>')
 
 

@@ -108,6 +108,17 @@ class PeerDirectory:
             return {a: who for a, who in self._by_endpoint.items() if who is not None}
 
 
+    def tailnet_hosts(self) -> dict[str, PeerIdentity]:
+        """Peers by their tailnet IPv4 address, for the nav Send picker (display only, ADR-0010
+        A2; nav-relay checks the pick against its own copy of the table). Empty unless the
+        table is fresh; an address two peers claim is left out."""
+        with self._lock:
+            if not is_fresh(self._received_at, self._period_s, self._clock()):
+                return {}
+            return {str(a): who for a, who in self._by_addr.items()
+                    if who is not None and isinstance(a, ipaddress.IPv4Address)}
+
+
 def parse_address(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse an address as a socket reports it: strips an IPv6 zone and unwraps IPv4-mapped."""
     try:

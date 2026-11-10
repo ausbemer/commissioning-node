@@ -32,7 +32,7 @@ def build(subscribe: Subscribe, publish: Publish, source: NavSource | None = Non
     state, table = NavState(), DestinationTable()
     reader = Reader(source or SocketCanSource(), state, clock)
     sender = Sender(state, table, sink or UdpSink(), clock)
-    registry.register(DestinationFeature(table))
+    registry.register(DestinationFeature(table, clock=clock))
     registry.register(StatusFeature(state, table, clock))
     attach(registry, subscribe, Output(publish))
     if spawn is not None:

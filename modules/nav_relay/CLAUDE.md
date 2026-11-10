@@ -19,19 +19,19 @@ Distinguish the two directions explicitly. **Outward** topics cross service boun
 their payloads conform to the ecosystem contract (`commissioning-node-interfaces`). **Inward**
 topics/types are local to this module and defined by its own `interface/`.
 
-- **Consumes — outward (from the bus):** `nav/destination` (`NavDestination`, command, via `main.invoke()`), `site/hosts` (`SiteHosts`, the last scan, to check a destination against), `system/tick` (`Tick`, the status cadence)
+- **Consumes — outward (from the bus):** `nav/destination` (`NavDestination`, command, via `main.invoke()`), `site/hosts` (`SiteHosts`, the last scan, to check a destination against), `tailnet/peers` (`TailnetPeers`, to check a tailnet destination against while fresh, ADR-0010 A2), `system/tick` (`Tick`, the status cadence)
 - **Consumes — inward (core → features):** `NavState` (latest readings and link report, written by core's reader), `DestinationTable` (sends recorded by core's sender)
 - **Produces — outward (to the bus):** `nav/destination-result` (`NavDestinationResult`, every request), `nav/status` (`NavStatus`, every tick) — conforms to the ecosystem contract (`interfaces/` v0.10.0). The sentences themselves never ride the bus (§6: data plane).
 - **Produces — inward (features → core):** destinations into the `DestinationTable`
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.2.0; inward
-  contract `__version__` 0.1.0. Both live in `interface/__init__.py`; see
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.3.0; inward
+  contract `__version__` 0.2.0. Both live in `interface/__init__.py`; see
   `interface/README.md`.
 
 ## Features
 
 | Feature | Status | Built on interface | Notes |
 |---------|--------|--------------------|-------|
-| `sender` | enabled | 0.1.0 | Adds a destination only if `destination_problem` passes against the last `SiteHosts`, up to `MAX_DESTINATIONS`; stops one or all. A `NavDestinationResult` for every request. |
+| `sender` | enabled | 0.2.0 | Adds a destination only if `destination_problem` passes against the last `SiteHosts`, or for a tailnet address the fresh `TailnetPeers` (A2), up to `MAX_DESTINATIONS`; stops one or all. A `NavDestinationResult` for every request. |
 | `status` | enabled | 0.1.0 | On each tick: link, `current_fix` (exactly what the sender would send now), sources with the selected one marked, destinations with sent counts and last error. |
 
 Core: `n2k.py` (NMEA 2000 decode, kernel filters), `nmea0183.py` (sentences), `socketcan_source.py` (the `NavSource` adapter), `udp_sink.py` (the `SentenceSink` adapter), `workers.py` (reader and sender threads; started only by `build(spawn=…)`, which main's serve passes).

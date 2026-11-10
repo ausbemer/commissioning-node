@@ -319,6 +319,9 @@ class HttpSurface:
                 # names only: the map has no use for peers' logins.
                 snap["tailnet_endpoints"] = {a: {"node_name": who.node_name}
                                              for a, who in surface._peers.endpoints().items()}
+                # Fresh tailnet peers by tailnet IPv4, for the nav Send picker (ADR-0010 A2).
+                snap["tailnet_hosts"] = {a: {"node_name": who.node_name}
+                                         for a, who in surface._peers.tailnet_hosts().items()}
                 self._send(200, view.content_type, view.render(snap))
 
             # -- POST --------------------------------------------------------------------

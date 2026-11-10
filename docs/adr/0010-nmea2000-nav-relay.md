@@ -120,6 +120,8 @@ The staleness window comes from the `freshness` authority, using each PGN's nomi
 
 ### D4 — The destination is a host from the last scan
 
+> **Widened by Amendment A2 (2026-11-10):** a current tailnet peer may be a destination too.
+
 - **Selection:** in the overview's host table, each scanned host gets "Send nav data here".
   This is a dashboard `Action` behind `authorize()`, may-disturb with a slide to confirm (D7),
   and it asks for the UDP port (default **2947**). It sends `nav/destination` through `invoke()`
@@ -333,3 +335,33 @@ explicit "no fix"; it replaces RMC `V`). Stale COG and SOG → VTG with empty fi
 That is unverified (quirks, "Unverified assumptions"), and the rehearsal checks it with
 `gpspipe -w`. The D7 warning ("position, speed, course and heading … once a second") still
 describes what is sent, so it is unchanged. nav-relay release 0.2.0, with no contract change.
+
+### A2 — A tailnet peer may be a destination (operator, 2026-11-10)
+
+The device the operator wants to send to is on the tailnet. D4 refused tailnet space, so it
+couldn't be picked. The operator asked for tailnet addresses in the Send drop-down.
+
+- **Source of the list:** the `tailnet/peers` table tailnet-gateway already publishes from
+  tailscaled. That table is not a scan result. It is the overlay's own list of every peer, kept
+  current and declaring its `period_s`. Nothing is probed. An nmap sweep of 100.64.0.0/10 would
+  find no more than the table and would send probes into the tailnet, so it was not built.
+  site-survey and the site map are unchanged.
+- **The check (rung 13):** nav-relay subscribes to `tailnet/peers`. A tailnet address passes
+  `destination_problem` only if a peer table, still fresh by the `freshness` authority, has
+  exactly one peer holding it. If the table is stale or missing, no tailnet address passes (rule
+  10). If two peers claim the address, it fails. A site address is checked as in D4.
+- **The picker:** the dashboard shows two groups, "Site hosts (last scan)" and "Tailnet peers"
+  (fresh peers' IPv4 addresses with their node names, from its `PeerDirectory`). It no longer
+  needs a scan when peers are listed. A tailnet destination shows its peer name where a site
+  destination shows its MAC.
+- **Warning (D7):** reworded so it covers both: unencrypted and readable on the site LAN to a
+  site host, inside the tailnet to a peer. It is still may-disturb and still confirmed.
+- **Rule 13:** a tailnet destination is inside the trust boundary (ADR-0001), so it is no
+  exception. D8's exception still covers only site hosts.
+- **Unchanged:** at most `MAX_DESTINATIONS` in total, memory only (R1), one datagram per
+  destination per second, nothing sent without a confirmed pick.
+- **Cost:** the tailnet ACL must allow this node → peer on the UDP port. If it doesn't, the
+  datagram is dropped silently and the panel still counts it as sent (quirks).
+- **Versions:** no contract change. Only `NavDestination`'s docstring names the wider check.
+  nav-relay release 0.3.0 (inward 0.2.0: `destination_problem(peers=)`, `tailnet_peer`).
+  Dashboard 0.15.0 (`PeerDirectory.tailnet_hosts()`).

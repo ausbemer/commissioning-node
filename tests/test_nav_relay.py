@@ -368,6 +368,52 @@ def test_a_stale_position_is_sent_as_no_fix() -> None:
     assert text.startswith("$GPGGA,,,,,,0,") and "$GPVTG,,T,,M,,N,,K,N*" in text and "HDT" not in text
 
 
+def peers(*entries: tuple[str, str], period_s: float = 10.0) -> interfaces.TailnetPeers:
+    return interfaces.TailnetPeers.stamped(
+        interfaces.__version__, observed_at=1.0, period_s=period_s,
+        peers=[interfaces.TailnetPeer(node_name=name, addresses=[addr, "fd7a:115c:a1e0::1"])
+               for name, addr in entries])
+
+
+TABLET = "100.101.102.103"
+
+
+@pytest.mark.parametrize("address, table, why", [
+    (TABLET, None, "no fresh tailnet peer table"),
+    (TABLET, peers(("tablet", TABLET)), None),
+    ("100.101.102.104", peers(("tablet", TABLET)), "not a current tailnet peer"),
+    (TABLET, peers(("tablet", TABLET), ("impostor", TABLET)), "not a current tailnet peer"),
+])
+def test_a_tailnet_destination_must_be_one_current_peer(address, table, why) -> None:
+    problem = destination_problem(address, 2947, None, table)
+    assert problem is None if why is None else why in problem
+
+
+def test_sending_to_a_tailnet_peer_needs_no_scan() -> None:
+    node, clock, source, sink, reader, sender = make()
+    results = record(node.bus, interfaces.NAV_DESTINATION_RESULT)
+    node.bus.publish(interfaces.TAILNET_PEERS, peers(("tablet.tail1234.ts.net", TABLET)).model_dump())
+    ask(node, "send", address=TABLET)
+    assert results[-1]["ok"] is True and "tablet.tail1234.ts.net" in results[-1]["message"]
+    feed(reader, source, [(can_id(129025, 10), position(1.5, 2.5))])
+    sender.step()
+    (address, port, payload), = sink.sent
+    assert (address, port) == (TABLET, 2947) and payload.decode().startswith("$GPGGA,")
+    statuses = record(node.bus, interfaces.NAV_STATUS)
+    main.tick(node)
+    dest, = interfaces.NavStatus.model_validate(statuses[-1]).destinations
+    assert dest.address == TABLET and dest.mac is None
+
+
+def test_a_stale_peer_table_admits_no_tailnet_destination() -> None:
+    node, clock, source, sink, reader, sender = make()
+    results = record(node.bus, interfaces.NAV_DESTINATION_RESULT)
+    node.bus.publish(interfaces.TAILNET_PEERS, peers(("tablet", TABLET), period_s=2.0).model_dump())
+    clock.t += 60.0
+    ask(node, "send", address=TABLET)
+    assert results[-1]["ok"] is False and "no fresh tailnet peer table" in results[-1]["message"]
+
+
 def test_stop_and_the_destination_limit() -> None:
     node, clock, source, sink, reader, sender = make()
     results = record(node.bus, interfaces.NAV_DESTINATION_RESULT)
@@ -424,3 +470,21 @@ def test_the_dashboard_shows_the_feed_and_offers_scanned_hosts() -> None:
     assert "Nav feed" in html and "1.50000°N" in html
     assert f'<option value="{PLOTTER}">' in html and f'<option value="{SELF}"' not in html
     assert 'action="/actions/nav/send"' in html and "data-hold" in html
+
+
+def test_the_send_picker_offers_tailnet_peers_without_a_scan() -> None:
+    from modules.dashboard.features.overview_page import OverviewPage
+    node, clock, source, sink, reader, sender = make()
+    main.tick(node)
+    snap = node.dashboard._state.snapshot()
+    view = {**snap, "viewer": {"csrf": "t"}, "tailnet_hosts": {TABLET: {"node_name": "tablet.ts.net"}}}
+    html = OverviewPage().render(view)
+    assert '<optgroup label="Tailnet peers">' in html and "Site hosts" not in html
+    assert f'<option value="{TABLET}">{TABLET} · tablet.ts.net</option>' in html
+    node.bus.publish(interfaces.SITE_HOSTS, hosts(PLOTTER).model_dump())
+    html = OverviewPage().render({**node.dashboard._state.snapshot(), "viewer": {"csrf": "t"},
+                                  "tailnet_hosts": {TABLET: {"node_name": "<b>x</b>"}}})
+    assert html.index("Site hosts (last scan)") < html.index("Tailnet peers")
+    assert "<b>x</b>" not in html and "&lt;b&gt;x&lt;/b&gt;" in html
+    html = OverviewPage().render({**snap, "viewer": {"csrf": "t"}})
+    assert "Nothing to send to yet" in html

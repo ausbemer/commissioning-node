@@ -28,6 +28,8 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
          fill `tools/ledgers/nav-relay/` with counts and rates only (the ledger's table).
       5. **Destination:** the device runs `gpsd -N -n udp://0.0.0.0:2947` (or `DEVICES=` in
          `/etc/default/gpsd`; note `gpsd -V`). Scan the site network, pick it in Send, slide.
+         A device on the tailnet is under "Tailnet peers" with no scan (ADR-0010 A2); the
+         tailnet ACL must let the node reach it on UDP 2947.
          On the device `gpspipe -w` shows TPV (lat/lon/speed/track) and heading.
       6. **Fail-safe:** unplug the Kvaser while sending: the device sees GGA quality 0 (no fix)
          within ~1 s, and the panel shows `no-adapter`. Plug back in: it recovers by itself.

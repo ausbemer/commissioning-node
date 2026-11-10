@@ -137,7 +137,8 @@ NAV_SENDER = "nav-relay:sender"
 NAV_OPERATIONS = {
     "send": ("/actions/nav/send",
              "Sends this vessel's position, speed, course and heading to the chosen host as "
-             "unencrypted NMEA 0183 over UDP, once a second. Anyone on the site LAN can read it. "
+             "NMEA 0183 over UDP, once a second. To a site host it goes unencrypted, and anyone "
+             "on the site LAN can read it; to a tailnet peer it stays inside the tailnet. "
              "Check the device expects it before you send."),
     "stop": ("/actions/nav/stop", None),
 }

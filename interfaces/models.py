@@ -429,8 +429,9 @@ class NavDestination(Envelope):
     """Command: start or stop sending nav data to a site host (0.10.0, ADR-0010). Produced by
     the operator surface through `invoke()`; consumed by nav-relay's sender.
 
-    The address must be a host from the last completed site scan; nav-relay checks that
-    itself (rung 13), so a request can't point the sender anywhere else.
+    The address must be a host from the last completed site scan, or a tailnet address held
+    by one peer of the current `TailnetPeers` (ADR-0010 A2); nav-relay checks that itself
+    (rung 13), so a request can't point the sender anywhere else.
     """
     #: Correlates the result with this request.
     request_id: str
