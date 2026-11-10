@@ -5,6 +5,28 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 
 ## Up next (start here next session)
 
+- [ ] **On the boat: plug in the Kvaser and rehearse the nav relay** (ADR-0010). Node ready
+      2026-11-10: `c9ae52a` installed, `kvaser_usb` built by DKMS and loading, udev rule and
+      link unit in place, doctor clean apart from "no n2k0", dashboard shows `no-adapter`.
+      1. **Cable:** NMEA 2000 drop (Micro-C) to the Leaf's DB9: CAN_H pin 7, CAN_L pin 2, GND
+         pin 3. Tee into the backbone; add no terminator (the backbone has its two).
+      2. **Plug in, then check:** `lsusb` shows `0bfd:0120`; `ip -details link show n2k0` shows
+         `<LISTEN-ONLY>`, `bitrate 250000`, state UP; `sudo ops/doctor.sh` has no WARN for n2k0.
+         If the link stays down: `journalctl -u commissioning-node-can@n2k0` (adapter refused
+         listen-only? quirks "Unverified assumptions") and `dmesg | grep -i kvaser`. Never
+         bring it up without listen-only by hand.
+      3. **See the bus:** `candump n2k0 | head`, then the dashboard's Nav feed: position,
+         speed/course, heading with ages under 1 s, and the sources per PGN.
+      4. **Record** `candump -l n2k0` for ~10 min (under way if possible). Keep the log off git;
+         fill `tools/ledgers/nav-relay/` with counts and rates only (the ledger's table).
+      5. **Destination:** the device runs `gpsd -N -n udp://0.0.0.0:2947` (or `DEVICES=` in
+         `/etc/default/gpsd`; note `gpsd -V`). Scan the site network, pick it in Send, slide.
+         On the device `gpspipe -w` shows TPV (lat/lon/speed/track) and heading.
+      6. **Fail-safe:** unplug the Kvaser while sending: the device sees RMC `V` (no fix)
+         within ~1 s, and the panel shows `no-adapter`. Plug back in: it recovers by itself.
+      7. Record what you saw in quirks (turn the nav "Unverified assumptions" into entries)
+         and tick ADR-0010's steps 1 and 4.
+
 - [ ] **Dashboard design** — the next piece of work (operator, 2026-10-13).
 - [ ] **Finish the tailnet writer rehearsal** (ADR-0005), on the node:
       1. ~~`sudo ops/install.sh`, then the doctor~~ — done 2026-10-13: the firewall unit owns

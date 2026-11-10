@@ -289,8 +289,8 @@ The rule is amended to name it, so the exception is a recorded deal (§6), not a
 
 ### Progress
 
-- **2026-11-10, steps 2, 3 and 5 done, and the ops half of step 1** (`dev`, uncommitted on
-  writing):
+- **2026-11-10, steps 2, 3 and 5 done, and the ops half of step 1** (`dev`, commit `c9ae52a`;
+  installed on the node 2026-11-10: driver loading, doctor clean but for the absent adapter):
   - contract 0.10.0;
   - `freshness.RAPID_MIN_S`;
   - the `nav-relay` module (35 tests on frames built from the standard's layouts, and the
