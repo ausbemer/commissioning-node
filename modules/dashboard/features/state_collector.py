@@ -1,6 +1,6 @@
 """state-collector — keeps the latest card, tailnet status and apply result, camera and stream
-per entity, and the last site scan request, its hosts and its result (ADR-0007; in memory
-only, Safety 6). The request is observed, never acted on: the map shows a scan as running.
+per entity, the last site scan request, its hosts and its result (ADR-0007; in memory
+only, Safety 6), and nav-relay's status and last destination result (ADR-0010). The request is observed, never acted on: the map shows a scan as running.
 
 Terminal consumer (§8.2): it deserializes through the pinned contract models and NEVER
 re-publishes. If it ever must, revisit — forwarders pass raw payloads.
@@ -17,6 +17,8 @@ from interfaces import (
     CAMERA_ANNOUNCED,
     NODE_UPDATE_RESULT,
     NODE_UPDATE_STATUS,
+    NAV_DESTINATION_RESULT,
+    NAV_STATUS,
     SITE_HOSTS,
     SITE_SCAN,
     SITE_SCAN_RESULT,
@@ -25,6 +27,8 @@ from interfaces import (
     TAILNET_APPLY_RESULT,
     TAILNET_STATUS,
     CameraAnnouncement,
+    NavDestinationResult,
+    NavStatus,
     NodeCard,
     NodeUpdateResult,
     NodeUpdateStatus,
@@ -56,6 +60,8 @@ _ROUTES = {
     SITE_SCAN: ("site_request", SiteScan, None),
     NODE_UPDATE_STATUS: ("node_update", NodeUpdateStatus, None),
     NODE_UPDATE_RESULT: ("node_update_result", NodeUpdateResult, None),
+    NAV_STATUS: ("nav", NavStatus, None),
+    NAV_DESTINATION_RESULT: ("nav_result", NavDestinationResult, None),
 }
 #: Kinds stored with the wall-clock time they arrived (`received_at`), for a payload that
 #: carries no time of its own: the map says since when a scan has run, and the overview judges

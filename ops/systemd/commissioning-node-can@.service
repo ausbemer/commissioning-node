@@ -1,0 +1,20 @@
+# Installed by ops/install.sh (ADR-0010 D6). Started by the udev rule when the adapter appears
+# (90-commissioning-node-can.rules), and stopped when it goes away (BindsTo=).
+#
+# The NMEA 2000 bus belongs to the vessel, and the node never transmits on it (spec §11 rung 8).
+# Listen-only is set BEFORE the link comes up and checked before it does: if the driver or
+# the adapter's firmware won't take listen-only, the link stays down and this unit fails.
+# nav-relay re-checks it before reading (rung 13), and the doctor checks it too.
+[Unit]
+Description=NMEA 2000 CAN link %i: 250 kbit/s, listen-only (ADR-0010)
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/ip link set dev %i down
+ExecStart=/usr/sbin/ip link set dev %i type can bitrate 250000 listen-only on restart-ms 100
+ExecStart=/bin/sh -c '/usr/sbin/ip -details link show dev %i | grep -q LISTEN-ONLY || { echo "%i did not take listen-only: leaving it down (ADR-0010 D2)" >&2; exit 1; }'
+ExecStart=/usr/sbin/ip link set dev %i up
+ExecStop=/usr/sbin/ip link set dev %i down

@@ -238,6 +238,83 @@ if apt-mark showhold 2>/dev/null | grep -qx nmap; then ok "nmap held at its pin"
 else act "apt-mark hold nmap" apt-mark hold nmap; fi
 
 # ---------------------------------------------------------------------------------------
+step "can-utils $CAN_UTILS_VERSION (the doctor and the nav replay corpus; ADR-0010)"
+have="$(installed_version can-utils)"
+if [[ "$have" == "$CAN_UTILS_VERSION" ]]; then
+  ok "can-utils $have installed"
+else
+  act "apt-get update" apt_update_all
+  act "install can-utils=$CAN_UTILS_VERSION (installed: ${have:-none})" \
+    apt-get install -y -qq --no-install-recommends --allow-downgrades --allow-change-held-packages "can-utils=$CAN_UTILS_VERSION"
+fi
+if apt-mark showhold 2>/dev/null | grep -qx can-utils; then ok "can-utils held at its pin"
+else act "apt-mark hold can-utils" apt-mark hold can-utils; fi
+
+# ---------------------------------------------------------------------------------------
+step "Kvaser USB driver (kvaser_usb ${KVASER_USB_SRC_TAG}, DKMS; ADR-0010)"
+kver="$(uname -r)"
+kvaser_version="${KVASER_USB_SRC_TAG#v}"
+kvaser_src="/usr/src/kvaser_usb-$kvaser_version"
+kvaser_file="$(modinfo -k "$kver" -F filename kvaser_usb 2>/dev/null || true)"
+if [[ -n "$kvaser_file" && "$kvaser_file" != */updates/dkms/* ]]; then
+  # The kernel ships it (a RevPi image might): nothing to build.
+  ok "kernel $kver ships kvaser_usb ($kvaser_file)"
+else
+  missing=()
+  for pkg in dkms "linux-headers-$kver"; do is_installed "$pkg" || missing+=("$pkg"); done
+  if ((${#missing[@]})); then
+    act "apt-get update" apt_update_all
+    act "apt-get install ${missing[*]}" apt-get install -y -qq --no-install-recommends "${missing[@]}"
+  else
+    ok "dkms, linux-headers-$kver"
+  fi
+  CHANGED=0
+  if ((DRY_RUN)); then
+    echo "    would: fetch kvaser_usb sources at $KVASER_USB_SRC_TAG and check their sha256 (needs network)"
+  else
+    mkdir -p "$work/kvaser_usb"
+    for entry in "${KVASER_USB_SRC_SHA256[@]}"; do
+      read -r name sum <<< "$entry"
+      curl -fsSL --retry 3 -o "$work/kvaser_usb/$name" "$KVASER_USB_SRC_URL/$name?h=$KVASER_USB_SRC_TAG" \
+        || refuse "could not fetch kvaser_usb/$name at $KVASER_USB_SRC_TAG"
+      echo "$sum  $work/kvaser_usb/$name" | sha256sum -c --quiet - \
+        || refuse "kvaser_usb/$name at $KVASER_USB_SRC_TAG does not match its pinned sha256"
+      sync_file "$work/kvaser_usb/$name" "$kvaser_src/$name" 0644
+    done
+    ok "kvaser_usb sources match their pinned sha256"
+  fi
+  sed -e "s|@VERSION@|$kvaser_version|g" "$OPS_DIR/dkms/kvaser_usb/dkms.conf" > "$work/dkms.conf"
+  sync_file "$work/dkms.conf" "$kvaser_src/dkms.conf" 0644
+  if dkms status -m kvaser_usb -v "$kvaser_version" -k "$kver" 2>/dev/null | grep -q installed && ((!CHANGED)); then
+    ok "kvaser_usb/$kvaser_version built and installed for $kver"
+  else
+    if ! dkms status -m kvaser_usb -v "$kvaser_version" 2>/dev/null | grep -q .; then
+      act "dkms add kvaser_usb/$kvaser_version" dkms add -m kvaser_usb -v "$kvaser_version"
+    elif ((CHANGED)); then
+      act "dkms remove kvaser_usb/$kvaser_version (sources changed)" dkms remove -m kvaser_usb -v "$kvaser_version" --all
+      act "dkms add kvaser_usb/$kvaser_version" dkms add -m kvaser_usb -v "$kvaser_version"
+    fi
+    act "dkms install kvaser_usb/$kvaser_version for $kver" dkms install -m kvaser_usb -v "$kvaser_version" -k "$kver"
+  fi
+fi
+CHANGED=0
+sync_file "$OPS_DIR/udev/90-commissioning-node-can.rules" "$CAN_UDEV_RULE" 0644
+((CHANGED)) && act "udevadm control --reload" udevadm control --reload
+can_changed=$CHANGED
+CHANGED=0
+sync_file "$OPS_DIR/systemd/$CAN_UNIT" "$UNIT_DIR/$CAN_UNIT" 0644
+((CHANGED)) && act "systemctl daemon-reload" systemctl daemon-reload
+if [[ -d "/sys/class/net/$CAN_IF" ]]; then
+  if ((CHANGED || can_changed)) || ! systemctl is-active --quiet "commissioning-node-can@$CAN_IF.service"; then
+    act "restart commissioning-node-can@$CAN_IF (250 kbit/s, listen-only)" systemctl restart "commissioning-node-can@$CAN_IF.service"
+  else
+    ok "$CAN_IF up, listen-only (commissioning-node-can@$CAN_IF active)"
+  fi
+else
+  echo "    note: no $CAN_IF yet; plugging in the Kvaser names it and brings it up listen-only"
+fi
+
+# ---------------------------------------------------------------------------------------
 step "Firewall (MediaMTX + dashboard ports: tailnet + loopback only)"
 CHANGED=0
 if ((EUID == 0)) && command -v nft > /dev/null; then

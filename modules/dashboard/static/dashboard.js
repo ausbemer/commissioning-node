@@ -19,6 +19,8 @@
 //    waits while the operator is mid-action: a slide moved or a confirm box ticked. Any
 //    surprise (an error, a redirect such as an expired fallback session) falls back to a
 //    full reload.
+//    A form marked data-hold (nav Send: a host picker and a port) also holds the refresh
+//    for up to a minute after its last edit, so a half-made choice isn't swapped away.
 // 3. Day/night: a click on the banner's slider sets the theme cookie in the background and
 //    switches the theme in place, instead of navigating (which would scroll to the top).
 //    If that fails, the link is followed as without script.
@@ -29,6 +31,11 @@
   var CONFIRM_AT = 0.97;
   var busy = 0; // slides in progress; refresh waits while > 0
   var slides = []; // redraw functions of the slides on the page now
+  var HOLD_MS = 60000; // how long an edit to a data-hold form holds the refresh
+  var editedAt = 0;
+  document.addEventListener("input", function (e) {
+    if (e.target.closest && e.target.closest("main form[data-hold]")) editedAt = Date.now();
+  });
 
   function enhance(form) {
     var box = form.querySelector('input[type="checkbox"][name="confirm"]');
@@ -140,7 +147,8 @@
     return busy > 0 ||
       Array.prototype.some.call(document.querySelectorAll(".slide"),
         function (t) { return t.getAttribute("aria-valuenow") !== "0"; }) ||
-      document.querySelector('main input[type="checkbox"][name="confirm"]:checked') !== null;
+      document.querySelector('main input[type="checkbox"][name="confirm"]:checked') !== null ||
+      (Date.now() - editedAt < HOLD_MS && document.querySelector("main form[data-hold]") !== null);
   }
 
   function focusables() {
@@ -169,6 +177,7 @@
     // between refreshes, and a control that moved only loses focus, nothing else.
     var at = Array.prototype.indexOf.call(focusables(), document.activeElement);
     pairs.forEach(function (p) { document.querySelector(p[0]).replaceWith(p[1]); });
+    editedAt = 0; // the edited form was just replaced: nothing left to hold for
     document.title = next.title;
     enhanceAll();
     // A theme chosen while the fetch ran is newer than the fetched banner.

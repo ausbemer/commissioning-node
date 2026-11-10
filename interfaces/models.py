@@ -423,3 +423,104 @@ class NodeUpdateResult(Envelope):
     #: Wall-clock times (Unix seconds); None when not yet.
     started_at: float | None = None
     finished_at: float | None = None
+
+
+class NavDestination(Envelope):
+    """Command: start or stop sending nav data to a site host (0.10.0, ADR-0010). Produced by
+    the operator surface through `invoke()`; consumed by nav-relay's sender.
+
+    The address must be a host from the last completed site scan; nav-relay checks that
+    itself (rung 13), so a request can't point the sender anywhere else.
+    """
+    #: Correlates the result with this request.
+    request_id: str
+    #: Who asked, as the operator surface recorded them.
+    requested_by: str
+    #: Which door they came through: "local", "tailnet" or "fallback" (ADR-0003).
+    door: str
+    #: "send" (start sending to `address`:`port`) or "stop" (stop sending to `address`, or to
+    #: every destination when `address` is None). Open vocabulary: an unknown one is refused.
+    operation: str
+    #: IPv4 address of the destination host.
+    address: str | None = None
+    #: UDP port the destination's NMEA 0183 reader (e.g. gpsd's `udp://` source) listens on.
+    port: int = 2947
+
+
+class NavDestinationResult(Envelope):
+    """The outcome of one `NavDestination`."""
+    request_id: str
+    ok: bool
+    #: For people: what happened, or why not (§11 rung 7).
+    message: str
+    requested_by: str = ""
+    door: str = ""
+    operation: str = ""
+    #: Wall-clock time the request was decided (Unix seconds).
+    finished_at: float
+
+
+class NavFix(Shape):
+    """The latest nav values that are fresh enough to send (ADR-0010 D3). A missing value
+    is None: never the last known one. Ages are seconds since the node received it."""
+    lat: float | None = None
+    lon: float | None = None
+    position_age_s: float | None = None
+    #: Speed over ground, knots.
+    sog_kn: float | None = None
+    #: Course over ground, degrees true (a magnetic course corrected by a fresh variation).
+    cog_true_deg: float | None = None
+    cogsog_age_s: float | None = None
+    #: Heading, degrees true (from a true reference, or magnetic + a fresh variation).
+    heading_true_deg: float | None = None
+    #: Heading, degrees magnetic, when the bus reports a magnetic heading.
+    heading_mag_deg: float | None = None
+    heading_age_s: float | None = None
+    #: Magnetic variation, degrees, east positive.
+    variation_deg: float | None = None
+    #: UTC from the bus's system time (Unix seconds), when fresh.
+    utc: float | None = None
+
+
+class NavFeedSource(Shape):
+    """One device seen sending one PGN on the NMEA 2000 bus."""
+    pgn: int
+    #: NMEA 2000 source address (0–253).
+    source: int
+    #: Seconds since its last frame was received.
+    age_s: float
+    #: True when this source's values are the ones used (ADR-0010 D2: lowest fresh address).
+    selected: bool = False
+
+
+class NavDestinationState(Shape):
+    """One host nav sentences are being sent to."""
+    address: str
+    port: int
+    #: The host's MAC from the scan it was picked from, when known.
+    mac: str | None = None
+    requested_by: str = ""
+    #: Wall-clock time sending started (Unix seconds).
+    since: float
+    #: Datagrams sent so far.
+    sent: int = 0
+    #: The last send error, or None while sends succeed.
+    last_error: str | None = None
+
+
+class NavStatus(Envelope):
+    """nav-relay's state, once per tick (ADR-0010 D5). Latest-value state, not a sample
+    stream: the sentences themselves never ride the bus (§6)."""
+    #: The CAN link's state: "up", "down", "no-adapter", "not-listen-only". Open vocabulary.
+    link: str
+    #: For people: why the link is not up, when it isn't.
+    link_detail: str = ""
+    #: The CAN interface read, e.g. "n2k0".
+    interface: str = ""
+    fix: NavFix | None = None
+    sources: list[NavFeedSource] = []
+    destinations: list[NavDestinationState] = []
+    #: The cadence the producer intends to publish at, in seconds.
+    period_s: float
+    #: Discriminator (§3): which producer made this status, "module/feature".
+    origin: str

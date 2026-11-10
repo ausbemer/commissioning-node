@@ -10,6 +10,12 @@ from .models import (
     CameraRegistration,
     ConfigField,
     ModuleInfo,
+    NavDestination,
+    NavDestinationResult,
+    NavDestinationState,
+    NavFeedSource,
+    NavFix,
+    NavStatus,
     NodeCard,
     NodeUpdate,
     NodeUpdateCheck,
@@ -37,6 +43,9 @@ from .topics import (
     NODE_UPDATE_CHECK,
     NODE_UPDATE_RESULT,
     NODE_UPDATE_STATUS,
+    NAV_DESTINATION,
+    NAV_DESTINATION_RESULT,
+    NAV_STATUS,
     SITE_HOSTS,
     SITE_SCAN,
     SITE_SCAN_RESULT,
@@ -49,7 +58,7 @@ from .topics import (
     TAILNET_STATUS,
 )
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "__version__",
@@ -95,4 +104,13 @@ __all__ = [
     "NODE_UPDATE_CHECK",
     "NODE_UPDATE",
     "NODE_UPDATE_RESULT",
+    "NavDestination",
+    "NavDestinationResult",
+    "NavFix",
+    "NavFeedSource",
+    "NavDestinationState",
+    "NavStatus",
+    "NAV_DESTINATION",
+    "NAV_DESTINATION_RESULT",
+    "NAV_STATUS",
 ]

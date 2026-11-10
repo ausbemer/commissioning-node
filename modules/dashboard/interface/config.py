@@ -127,3 +127,17 @@ SITE_OPERATIONS = {
              "Probes every address on the site network (ports 80, 443, 554). Some site "
              "security tools report scans; check with site IT first."),
 }
+
+#: The capability sending nav data needs (§5, ADR-0010).
+NAV_SENDER = "nav-relay:sender"
+
+#: Nav relay operations (ADR-0010 D7): operation -> (POST path, may-disturb warning or None).
+#: Send carries the operator's pick (address, port); nav-relay re-checks it against the scan.
+#: Stop needs no confirm: it only stops what the node itself sends.
+NAV_OPERATIONS = {
+    "send": ("/actions/nav/send",
+             "Sends this vessel's position, speed, course and heading to the chosen host as "
+             "unencrypted NMEA 0183 over UDP, once a second. Anyone on the site LAN can read it. "
+             "Check the device expects it before you send."),
+    "stop": ("/actions/nav/stop", None),
+}

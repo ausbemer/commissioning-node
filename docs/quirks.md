@@ -277,6 +277,26 @@ Pinned dependencies covered here:
   so the subnet routes are unaffected; check `sudo iptables -S FORWARD` if that ever changes.
 - **Last verified:** 26.1.5+dfsg1, 2026-10-26.
 
+### Q-013: the Raspberry Pi kernel ships no Kvaser USB driver
+
+- **Dependency / version:** kernel `6.18.50+rpt-rpi-2712` (Raspberry Pi OS / Debian 13
+  `linux-image-rpi-2712`), Kvaser Leaf Lite v2 (USB `0bfd:0120`).
+- **Behaviour:** `CONFIG_CAN_KVASER_USB is not set`, so a Leaf Lite v2 plugged in gets no
+  network interface at all: no error, nothing in `ip link`. SocketCAN itself is there (`can`,
+  `can-raw`, `can-dev` as modules; `CONFIG_CAN_NETLINK=y`, `CONFIG_NET_DEVLINK=y`), as are
+  `gs_usb` and `peak_usb`.
+- **How measured:** 2026-11-10, `/boot/config-$(uname -r)` and `find /lib/modules`. The
+  mainline driver at `v6.18.50` (6 files from git.kernel.org stable) built out of tree against
+  `linux-headers-6.18.50+rpt-rpi-2712` without warnings (`make -C …/build M=… 
+  CONFIG_CAN_KVASER_USB=m modules`). `modinfo` gives `alias usb:v0BFDp0120…`, `depends: can-dev`.
+- **Detection signature:** `modinfo kvaser_usb` fails; `sudo ops/doctor.sh` FAILs "no
+  kvaser_usb for kernel …".
+- **Our accommodation:** `ops/install.sh` builds it with DKMS from the pinned, sha256-checked
+  sources (`ops/pins.sh`, ADR-0010 D6), and skips that if the kernel ships the driver. A
+  kernel update within the series is rebuilt by DKMS; a new series may need a new tag.
+- **Last verified:** 2026-11-10, build only. The module has not yet been loaded with the
+  adapter attached (see "Unverified assumptions").
+
 ## Unverified assumptions (verify, then turn into entries or delete)
 
 - `tailscale status --json` field mapping used by `tailscale_cli.py`. **Partly verified**
@@ -323,3 +343,16 @@ Pinned dependencies covered here:
   out when Q-009 was measured. Verify after the next join with the dashboard over the tailnet
   and a camera reached through an advertised route. Also check that NetworkManager does not
   move `tailscale0` into another zone.
+- **Nav relay (ADR-0010), none seen on hardware yet:**
+  - The Leaf Lite v2 takes listen-only. In `kvaser_usb` its family (`leafimx`) advertises
+    `CAN_CTRLMODE_LISTENONLY` only if the adapter's firmware answers the
+    `CAP_CMD_LISTEN_MODE` capability query (`kvaser_usb_leaf.c`). If it doesn't, the link unit
+    refuses to bring `n2k0` up, and the doctor FAILs. Then an older firmware may need an update.
+  - The udev rule's `NAME="n2k0"` renames the interface, and `ENV{SYSTEMD_WANTS}` starts
+    `commissioning-node-can@n2k0` on plug-in.
+  - An unprivileged daemon may open `CAN_RAW` and set its filters under `NoNewPrivileges=yes`.
+  - `ip -details -json link show` reports listen-only as `linkinfo.info_data.ctrlmode`
+    containing `"LISTEN-ONLY"` (`socketcan_source.listen_only`).
+  - The destination's gpsd reads our sentences from a `udp://0.0.0.0:2947` source. RMC and
+    HDT are long supported; HDG needs a gpsd new enough to parse it (check `gpsd -V` on the
+    device). The sentences do parse with pynmea2 1.19 (2026-11-10).

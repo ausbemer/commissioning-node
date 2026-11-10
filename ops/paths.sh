@@ -32,6 +32,11 @@ OPERATOR_UNIT=commissioning-node-tailscale-operator
 # daemon user). site/ is wiped when the node leaves a site; node/ survives the move.
 CN_STATE=/var/lib/commissioning-node
 
+# The NMEA 2000 adapter (ADR-0010 D6): the udev rule names it, its link unit configures it.
+CAN_IF=n2k0
+CAN_UDEV_RULE=/etc/udev/rules.d/90-commissioning-node-can.rules
+CAN_UNIT="commissioning-node-can@.service"
+
 # One-click update (ADR-0009). Root's release checkout (root 0755), cloned over HTTPS from the
 # public repo (no key), and the root updater's copies and units. Root never runs a tree's file
 # as root except this checkout's, which only root writes.

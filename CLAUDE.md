@@ -32,31 +32,31 @@ delivery is synchronous and in-process; the eventual broker is undecided.
 
 | Path | Role |
 |------|------|
-| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.9.0`. All cross-module types live here and nowhere else. |
+| `interfaces/` | The shared contract package (future `commissioning-node-interfaces` repo). Additive-only; version `0.10.0`. All cross-module types live here and nowhere else. |
 | `bus/` | In-process dispatcher. Same pub/sub API a real broker adapter will expose. |
 | `modules/` | One directory per module, each with the spec §4 layout (interface/ core/ features/). |
 | `main.py` | Composition root: composes modules onto the bus, owns the tick loop, the node card, capability aggregation and `invoke()`. Imports everything; imported by nothing. |
 | `config_registry/` | Bus-coupled infra (§4), the one §6 bypass of the bus (ADR-0004): declared `ConfigField`s, values under the daemon's state directory (`site/` wiped at teardown, `node/` kept), secrets as 0600 files only their owner can locate. Wired by `main.py`; no module imports it. |
-| `freshness/` | Neutral package (§4): the one staleness-window authority for renewed levels, `clamp(3 × period_s, min, max)`. Used by stream-relay and the dashboard. |
+| `freshness/` | Neutral package (§4): the one staleness-window authority for renewed levels, `clamp(3 × period_s, min, max)`, with a lower named floor (`RAPID_MIN_S`) for the NMEA 2000 feed. Used by stream-relay, the dashboard and nav-relay. |
 | `tools/check_additivity.py` | Contract shape check (§3/§8.1): strict superset, nested shapes typed or declared in `schemas/blind_spots.txt`. Run `check` in CI, `snapshot` at release. |
 | `tools/check_boundaries.py` | Ontology check (§4/§8.1): every top-level package has a tier and keeps that tier's import rules. A new neutral or bus-coupled package is declared in its config sets. |
 | `tests/` | Smoke test (bus round-trip), additivity test, boundary test (with planted violations), plus per-module unit tests. Keep all green. |
 | `ci.sh` | The whole gate, the same locally and in CI. |
 | `tools/ledgers/`, `tests/replay/` | Evidence for behaviour/safety constants and the replay corpus (§8.11/§8.12) — this node acts on the world. |
-| `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX, Axis VAPIX, nmap, GitHub, the host's Docker and the RevPi image's firewalld (§7). |
-| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (one-command bring-up after the git clone, ADR-0002 A2: idempotent, `--dry-run`; also the Python runtime, the fallback TLS key pair, the Tailscale operator, the admin-password prompt, and a closing doctor run), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `tailscale-operator.sh` (renews tailscaled's operator as root, installed as a root-owned copy; ADR-0002 A4), `update.sh` + `update_helper.py` (the root updater: fetches into root's release checkout `/opt/commissioning-node-release`, verifies, installs, runs the doctor, rolls back; root-owned copies, started by a `.path` on the daemon's request; ADR-0009), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1, nmap 7.95+dfsg-3), `paths.sh` (host paths, incl. the config registry's state directory, + the daemon user, recorded at first install, and the running-commit record, ADR-0009), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080; forwarding from the tailnet, and from the site LAN only into it; its unit also enables IPv4 forwarding for the subnet router once the table loads), the three entries it makes in the RevPi image's firewalld (the fallback's 8443 open, `tailscale0` trusted, ADR-0002 A1; the `site-to-tailnet` forward policy, A3), and the systemd units. Never imported. |
+| `docs/quirks.md` | Vendor quirk registry for tailscaled, MediaMTX, Axis VAPIX, nmap, GitHub, the host's Docker, the RevPi image's firewalld and the Kvaser driver (§7). |
+| `ops/` | Ops tier (ADR-0002, ADR-0003): `install.sh` (one-command bring-up after the git clone, ADR-0002 A2: idempotent, `--dry-run`; also the Python runtime, the fallback TLS key pair, the Tailscale operator, the admin-password prompt, and a closing doctor run), `doctor.sh` (read-only), `set-admin-password.sh` (+ `admin_cred.py`, the scrypt credential writer), `tailscale-operator.sh` (renews tailscaled's operator as root, installed as a root-owned copy; ADR-0002 A4), `update.sh` + `update_helper.py` (the root updater: fetches into root's release checkout `/opt/commissioning-node-release`, verifies, installs, runs the doctor, rolls back; root-owned copies, started by a `.path` on the daemon's request; ADR-0009), `pins.sh` (Tailscale 1.102.5, MediaMTX v1.21.1, nmap 7.95+dfsg-3, can-utils 2023.03-1+b2, the `kvaser_usb` driver sources at v6.18.50 by sha256), `paths.sh` (host paths, incl. the config registry's state directory, + the daemon user, recorded at first install, and the running-commit record, ADR-0009), MediaMTX config + its check, the scoped nftables firewall (MediaMTX ports and dashboard 8080; forwarding from the tailnet, and from the site LAN only into it; its unit also enables IPv4 forwarding for the subnet router once the table loads), the three entries it makes in the RevPi image's firewalld (the fallback's 8443 open, `tailscale0` trusted, ADR-0002 A1; the `site-to-tailnet` forward policy, A3), and the systemd units.; and the NMEA 2000 adapter (ADR-0010): `dkms/kvaser_usb/` (the installer builds the driver), the udev rule naming it `n2k0`, and `commissioning-node-can@.service` (250 kbit/s, listen-only, or the link stays down). Never imported. |
 
 **§4 tiers in this repo:** contract `interfaces/` · bus `bus/` · modules `modules/` ·
 neutral packages `freshness/` · bus-coupled infra `config_registry/` · ops tier `ops/` · composition root `main.py`.
 
-## Topics (contract v0.9.0)
+## Topics (contract v0.10.0)
 
 Not on the wire: `ConfigField` (0.3.0) is a config declaration, shared by the module that
 declares a field and the surface that edits it (ADR-0004).
 
 | Topic | Payload | Producer → consumers |
 |-------|---------|----------------------|
-| `system/tick` | `Tick` (declares `period_s`) | `main.py` → tailnet-gateway, stream-relay, site-survey |
+| `system/tick` | `Tick` (declares `period_s`) | `main.py` → tailnet-gateway, stream-relay, site-survey, nav-relay |
 | `system/card` | `NodeCard` (nested `ModuleInfo`) | `main.py` → dashboard |
 | `camera/register` | `CameraRegistration` (command) | operator surface via `main.invoke()` → camera-config |
 | `camera/announced` | `CameraAnnouncement` | camera-config → stream-relay, dashboard |
@@ -66,13 +66,16 @@ declares a field and the surface that edits it (ADR-0004).
 | `tailnet/apply` | `TailnetApply` (command; no values, no secret) | dashboard via `main.invoke()` → tailnet-gateway writer (ADR-0005) |
 | `tailnet/apply-result` | `TailnetApplyResult` | tailnet-gateway → dashboard |
 | `site/scan` | `SiteScan` (command; no targets) | dashboard via `main.invoke()` → site-survey (ADR-0007) |
-| `site/hosts` | `SiteHosts` (nested `SiteHost`), a snapshot per completed scan | site-survey → dashboard (camera-config planned, ADR-0007 step 5) |
+| `site/hosts` | `SiteHosts` (nested `SiteHost`), a snapshot per completed scan | site-survey → dashboard, nav-relay (checks a destination, ADR-0010) (camera-config planned, ADR-0007 step 5) |
 | `site/scan-result` | `SiteScanResult` | site-survey → dashboard |
 | `camera/identified` | `CameraIdentification` (not a registration) | camera-config → dashboard; **planned** (ADR-0007 step 5): no producer yet |
 | `node/update-status` | `NodeUpdateStatus` (nested `NodeVersion`), declares `period_s` (0.8.0) | node-updater → dashboard (ADR-0009) |
 | `node/update-check` | `NodeUpdateCheck` (command; no values, 0.8.0) | dashboard via `main.invoke()` → node-updater (ADR-0009) |
 | `node/update` | `NodeUpdate` (command; the expected commit only, 0.9.0) | dashboard via `main.invoke()` → node-updater, which leaves root a request (ADR-0009 D3) |
 | `node/update-result` | `NodeUpdateResult` (nested `NodeVersion`, 0.9.0) | node-updater (its refusals, and the root updater's record) → dashboard |
+| `nav/destination` | `NavDestination` (command: send to / stop a scanned host) | dashboard via `main.invoke()` → nav-relay (ADR-0010) |
+| `nav/destination-result` | `NavDestinationResult` | nav-relay → dashboard |
+| `nav/status` | `NavStatus` (nested `NavFix`, `NavFeedSource`, `NavDestinationState`), declares `period_s` | nav-relay → dashboard |
 
 ## Modules
 
@@ -83,7 +86,8 @@ declares a field and the surface that edits it (ADR-0004).
 | `stream-relay` (`modules/stream_relay/`) | Bridge to MediaMTX: plans one relay path per camera and announces tailnet-only endpoints. Sole writer of MediaMTX config. | 0.1.0 |
 | `site-survey` (`modules/site_survey/`) | Bridge to nmap and the neighbour table: scans the site networks once per operator request (gentle, unprivileged, ports 80/443/554) and publishes every host that answered, with MAC, maker, hostname and open ports (ADR-0007). Never writes to a device; hosts are never persisted. | 0.1.0 |
 | `node-updater` (`modules/node_updater/`) | Bridge to GitHub: read-only, unauthenticated (`git ls-remote` over HTTPS, the public API). Reads what the node runs from the root-written `running.json`, checks the node's update channel (`releases` or `dev`, node-scoped config) on a schedule and on the operator's Check now, and offers only the newest commit whose CI passed, and only if newer (ADR-0009). On a confirmed Update it leaves the root updater a request with one expected commit and no code, and publishes root's record of the outcome; off unless `CN_NODE_UPDATE=1` (ADR-0009 D3). | 0.2.0 |
-| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008); shows what runs and any update on the overview, with Check now and the Update slider (ADR-0009). | 0.13.0 |
+| `nav-relay` (`modules/nav_relay/`) | Bridge from a vessel's NMEA 2000 bus (Kvaser Leaf Lite v2, SocketCAN `n2k0`, listen-only, never transmits) to NMEA 0183 over UDP (ADR-0010). Reads four PGNs (position, COG/SOG, heading, time), sends `$GPRMC` + `$HEHDT`/`$HCHDG` once a second to each host an operator picked from the last site scan (up to 4; memory only). A stale position is sent as "no fix" (RMC `V`). | 0.1.0 |
+| `dashboard` (`modules/dashboard/`) | Operator config + ops surface: HTTP view of node card, tailnet, cameras, streams and wire versions behind three doors (local, tailnet, TLS admin fallback); every write passes its one `authorize()` (ADR-0003); edits the config registry at `/config` and applies the tailnet config from the overview (ADR-0004, ADR-0005); restarts its own service from `/config` (ADR-0003 amendment); first-party scripts only (ADR-0006); opens the overview on the site map and runs the operator's Scan (ADR-0007); redirects the node's MagicDNS name to its tailnet IP (ADR-0008); shows what runs and any update on the overview, with Check now and the Update slider (ADR-0009); shows the nav feed and sends nav data to a host the operator picks from the scan (ADR-0010). | 0.14.0 |
 
 Kebab-case is the module's name (logs, capability flags, tables); snake_case is its package
 directory and import path.
@@ -115,7 +119,9 @@ directory and import path.
     or in logs.
 13. **Domain-specific:** the site LAN is untrusted. Never advertise a stream or surface on a
     site-LAN address; tailnet addresses only (ADR-0001). The one exception is the TLS admin
-    fallback on 8443 (ADR-0003). A name is never served on 8080; the node's MagicDNS name
+    fallback on 8443 (ADR-0003). nav-relay's NMEA 0183 datagrams are a second, outbound-only
+    exception: sent to a host an operator picked from the scan and confirmed, with nothing on
+    the node listening (ADR-0010 D8). A name is never served on 8080; the node's MagicDNS name
     only redirects to its tailnet IP (ADR-0008). Every request is sorted into a door and every write passes
     the dashboard's single `authorize()`; a new surface or write path goes through the same
     doors, never around them.
@@ -127,7 +133,7 @@ directory and import path.
     (the node is a subnet router, ADR-0005) and the site LAN open them only into the tailnet
     (ADR-0005, 2026-10-21), and drops the rest; forwarding is enabled only after it loads. Never `flush ruleset` and never enable Debian's
     `nftables.service` (ADR-0002). A new MediaMTX server or port also means a firewall entry.
-16. Vendor calls (tailscale, VAPIX, MediaMTX, nmap, GitHub) live only in their bridge module's `core/`
+16. Vendor calls (tailscale, VAPIX, MediaMTX, nmap, GitHub, SocketCAN/NMEA 2000, NMEA 0183) live only in their bridge module's `core/`
     adapter behind an `interface/` seam; every silent vendor behaviour you measure goes in
     `docs/quirks.md`.
 

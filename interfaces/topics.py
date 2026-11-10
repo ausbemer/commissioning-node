@@ -50,3 +50,11 @@ NODE_UPDATE_CHECK = "node/update-check"
 NODE_UPDATE = "node/update"
 #: Where one `node/update` is, or how it ended. Payload: `NodeUpdateResult`.
 NODE_UPDATE_RESULT = "node/update-result"
+
+#: Command: operator asks nav-relay to start or stop sending nav data to a site host
+#: (ADR-0010). Payload: `NavDestination`.
+NAV_DESTINATION = "nav/destination"
+#: The outcome of one `nav/destination`. Payload: `NavDestinationResult`.
+NAV_DESTINATION_RESULT = "nav/destination-result"
+#: nav-relay's link, latest fix, sources and destinations, once per tick. Payload: `NavStatus`.
+NAV_STATUS = "nav/status"

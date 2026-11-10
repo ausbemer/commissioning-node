@@ -12,6 +12,7 @@ from .core.registry import Registry
 from .features.config_editor import config_actions
 from .features.config_page import ConfigPage
 from .features.login_page import LoginPage
+from .features.nav_destination import nav_actions
 from .features.overview_page import OverviewPage
 from .features.peer_directory import PeerDirectoryFeed
 from .features.state_collector import StateCollector
@@ -35,7 +36,7 @@ def build(subscribe: Subscribe, publish: Publish, host: str = "::", port: int = 
     """`fallback` + `admin_cred` enable the TLS admin door; without them it never starts.
     `config` is the config registry's operator surface (ADR-0004): it adds the /config page
     and a set and clear `Action` per field. `invoke` (main.invoke, §5) adds the tailnet Join,
-    Rename and Leave actions (ADR-0005), the site Scan (ADR-0007), and the update Check now and Update (ADR-0009). `restart` (main's) adds the service restart on
+    Rename and Leave actions (ADR-0005), the site Scan (ADR-0007), the update Check now and Update (ADR-0009), and nav-relay's Send and Stop (ADR-0010). `restart` (main's) adds the service restart on
     /config. `actions` are any further writes."""
     state = DashboardState()
     peers = PeerDirectory()
@@ -48,6 +49,7 @@ def build(subscribe: Subscribe, publish: Publish, host: str = "::", port: int = 
     writes += tailnet_apply_actions(invoke) if invoke is not None else []
     writes += ([SiteScanAction(invoke), NodeUpdateCheckAction(invoke), NodeUpdateAction(invoke)]
                if invoke is not None else [])
+    writes += nav_actions(invoke) if invoke is not None else []
     writes += [ServiceRestartAction(restart)] if restart is not None else []
     return registry, HttpSurface(state, [OverviewPage(), ConfigPage()], host, port, peers,
                                  actions=writes, admin=admin, fallback=fallback,

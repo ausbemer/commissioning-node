@@ -1,0 +1,6 @@
+# Installed by ops/install.sh to /etc/udev/rules.d/ (ADR-0010 D6).
+# Any network interface on the kvaser_usb driver (the Leaf Lite v2 on the vessel's NMEA 2000
+# bus) is named n2k0, so no other CAN adapter is ever mistaken for the vessel bus. Its link
+# unit sets 250 kbit/s, listen-only, and brings it up, on every plug-in.
+# One adapter, one channel: a second Kvaser channel would clash on the name and stay unnamed.
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="kvaser_usb", NAME="n2k0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="commissioning-node-can@n2k0.service"

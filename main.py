@@ -30,6 +30,8 @@ import modules.dashboard as dashboard
 import modules.dashboard.interface as dashboard_if
 import modules.node_updater as node_updater
 import modules.node_updater.interface as node_updater_if
+import modules.nav_relay as nav_relay
+import modules.nav_relay.interface as nav_relay_if
 import modules.site_survey as site_survey
 import modules.site_survey.interface as site_survey_if
 import modules.stream_relay as stream_relay
@@ -67,6 +69,7 @@ INTERFACES = {
     "camera-config": camera_config_if,
     "dashboard": dashboard_if,
     "node-updater": node_updater_if,
+    "nav-relay": nav_relay_if,
     "site-survey": site_survey_if,
     "stream-relay": stream_relay_if,
     "tailnet-gateway": tailnet_gateway_if,
@@ -79,6 +82,8 @@ class Node:
     registries: list = field(default_factory=list)
     dashboard: dashboard.HttpSurface | None = None
     config: ConfigRegistry | None = None
+    #: nav-relay's reader and sender (ADR-0010), for tests that step them by hand.
+    nav: list = field(default_factory=list)
 
     def capabilities(self) -> set[str]:
         """The in-process capability registry (§5): every enabled "module:feature" flag."""
@@ -111,7 +116,9 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
             site_networks=None, restart: Callable[[], None] | None = None,
             site_scanner=None, scan_spawn=None, release_source=None, running_source=None,
             update_spawn=None, node_update: bool = False, update_requester=None,
-            update_results=None) -> Node:
+            update_results=None,
+            nav_source=None, nav_sink=None, nav_spawn=None,
+            nav_stop: threading.Event | None = None) -> Node:
     """Wire every module onto `bus`. Tests pass a fake overlay source, clock and listeners.
 
     With `config_root`, the config registry (ADR-0004, the one §6 bypass of the bus) is built
@@ -127,7 +134,10 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
     `release_source` turns on node-updater's channel check (ADR-0009). Daemon mode passes the
     GitHub adapter; without one nothing is checked, so tests never reach the network.
     `node_update` enables the confirmed update (ADR-0009 D3; registered disabled otherwise);
-    tests pass a fake `update_requester` and `update_results`."""
+    tests pass a fake `update_requester` and `update_results`.
+
+    nav-relay (ADR-0010) starts its reader and sender threads only with `nav_spawn` (serve's);
+    tests pass a fake `nav_source` and `nav_sink` and drive `node.nav` themselves."""
     node = Node(bus=bus)
     sub, pub = bus.subscribe, bus.publish
     if config_root is not None:
@@ -138,6 +148,8 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
         sub, pub, dashboard_host, dashboard_port, fallback, admin_cred, actions, surface,
         invoke=lambda topic, payload, requires: invoke(node, topic, payload, requires),
         restart=restart)
+    nav_registry, *node.nav = nav_relay.build(sub, pub, nav_source, nav_sink, clock,
+                                              nav_spawn, nav_stop)
     gateway_config = node.config.owner_view("tailnet-gateway") if node.config else None
     node.registries = [
         tailnet_gateway.build(sub, pub, overlay_source, config=gateway_config,
@@ -152,6 +164,7 @@ def compose(bus: Bus, overlay_source=None, clock: Callable[[], float] = time.mon
                            config=node.config.owner_view("node-updater") if node.config else None,
                            clock=clock, spawn=update_spawn, apply=node_update,
                            requester=update_requester, results=update_results),
+        nav_registry,
         dash_registry,
     ]
     return node
@@ -226,6 +239,10 @@ def _node_update_from_env() -> bool:
     return raw == "1"
 
 
+def _nav_thread(name: str, target: Callable[[], None]) -> None:
+    threading.Thread(target=target, name=name, daemon=True).start()
+
+
 def serve() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     stop, restarting = threading.Event(), threading.Event()
@@ -240,7 +257,8 @@ def serve() -> None:
                    admin_cred=ADMIN_CRED_PATH, config_root=CONFIG_ROOT,
                    tailnet_writer=_writer_from_env(), restart=restart,
                    release_source=node_updater.GitHubReleaseSource(),
-                   node_update=_node_update_from_env())
+                   node_update=_node_update_from_env(),
+                   nav_spawn=_nav_thread, nav_stop=stop)
     try:
         node.dashboard.start()
     except OSError as exc:

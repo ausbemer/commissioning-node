@@ -327,6 +327,32 @@ else
   fi
 fi
 
+section "NMEA 2000 adapter (ADR-0010)"
+kver="$(uname -r)"
+kvaser_file="$(modinfo -k "$kver" -F filename kvaser_usb 2>/dev/null || true)"
+check "kvaser_usb available for $kver${kvaser_file:+ ($kvaser_file)}" \
+  "no kvaser_usb for kernel $kver — re-run sudo ops/install.sh (DKMS builds it; a new kernel series may need a new KVASER_USB_SRC_TAG)" \
+  test -n "$kvaser_file"
+have="$(dpkg-query -W -f='${Version}' can-utils 2>/dev/null || true)"
+if [[ -z "$have" ]]; then fail "can-utils not installed — run sudo ops/install.sh"
+elif [[ "$have" == "$CAN_UTILS_VERSION" ]]; then pass "can-utils $have"
+else fail "can-utils $have installed, pinned $CAN_UTILS_VERSION"; fi
+check "$CAN_UDEV_RULE matches the repo" "$CAN_UDEV_RULE missing or differs — re-run the installer" \
+  cmp -s "$OPS_DIR/udev/90-commissioning-node-can.rules" "$CAN_UDEV_RULE"
+check "$CAN_UNIT matches the repo" "$CAN_UNIT missing or differs — re-run the installer" \
+  cmp -s "$OPS_DIR/systemd/$CAN_UNIT" "/etc/systemd/system/$CAN_UNIT"
+if [[ -d "/sys/class/net/$CAN_IF" ]]; then
+  details="$(ip -details link show dev "$CAN_IF" 2>/dev/null)"
+  # The vessel's bus is never transmitted on (§11 rung 8): a link that isn't listen-only fails.
+  check "$CAN_IF is listen-only" "$CAN_IF is NOT listen-only — nav-relay refuses to read it; sudo systemctl restart commissioning-node-can@$CAN_IF" \
+    grep -q LISTEN-ONLY <<< "$details"
+  check_warn "$CAN_IF is up at 250 kbit/s" "$CAN_IF is not up at 250 kbit/s — sudo systemctl restart commissioning-node-can@$CAN_IF" \
+    grep -Eq 'state UP|,UP' <<< "$details"
+  check_warn "bitrate 250000" "bitrate is not 250000 (NMEA 2000)" grep -q 'bitrate 250000 ' <<< "$details"
+else
+  warn "no $CAN_IF: the Kvaser is not plugged in (or the driver did not claim it: lsusb, dmesg)"
+fi
+
 section "commissioning-node daemon"
 check "commissioning-node active" "commissioning-node not active" active commissioning-node.service
 check "dashboard answers on 127.0.0.1:8080 (local door)" "dashboard not answering on 127.0.0.1:8080" \

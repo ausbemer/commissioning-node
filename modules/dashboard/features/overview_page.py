@@ -32,7 +32,7 @@ from html import escape
 from freshness import stale_after
 from interfaces import __version__ as CONTRACT_VERSION
 
-from ..interface import (NODE_UPDATER_APPLY, SITE_SCANNER, TAILNET_WRITER, UPDATE_CHECK_PATH, banner,
+from ..interface import (NAV_OPERATIONS, NAV_SENDER, NODE_UPDATER_APPLY, SITE_SCANNER, TAILNET_WRITER, UPDATE_CHECK_PATH, banner,
                          op_form, page)
 
 GATEWAY = "tailnet-gateway"
@@ -138,6 +138,21 @@ STYLE = """
 .update-go { flex-basis:100%; max-width:360px; margin-top:6px; }
 .check { display:inline; margin-left:8px; }
 .check .btn { padding:2px 10px; font-size:12px; }
+.nav { margin-top:28px; }
+.nav > h2 { font-size:20px; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px;
+  padding-bottom:8px; border-bottom:2px solid var(--line-strong); }
+.nav > h2 small { font:13px system-ui, sans-serif; color:var(--muted); }
+.nav-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+@media (max-width: 860px) { .nav-grid { grid-template-columns:1fr; } }
+.nav .dest { list-style:none; margin:0; padding:0; }
+.nav .dest > li { padding:12px 2px; border-bottom:1px solid var(--line); display:grid;
+  grid-template-columns:minmax(0, 1fr) auto; gap:2px 12px; align-items:center; }
+.nav .dest .sub { grid-column:1 / 2; font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.nav .dest form { grid-row:1 / span 2; grid-column:2; margin:0; }
+.nav .pick { display:grid; grid-template-columns:minmax(0, 1fr) 7em; gap:8px; margin-bottom:10px; }
+.nav .pick label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); min-width:0; }
+.nav .pick select { min-width:0; }
+.nav h3 { font-size:15px; margin:18px 0 8px; }
 """
 
 
@@ -590,6 +605,144 @@ def _site_map(snapshot: dict, status: dict, cameras: list[dict], name: str, now:
             f'<li>A scan shows who answered then, not who is up now.</li></ul>{table}</section>')
 
 
+# -- the nav feed (ADR-0010 D7) ----------------------------------------------------------------
+
+_PGN_NAMES = {129025: "Position", 129026: "COG & SOG", 127250: "Heading", 126992: "System time"}
+_LINK_CHIPS = {"up": ("ok", "Listening (listen-only)"), "down": ("warn", "Link down"),
+               "no-adapter": ("warn", "No adapter"), "not-listen-only": ("crit", "Not listen-only: not read")}
+
+
+def nav_marker(snapshot: dict) -> str:
+    """The last nav result: a confirmed Send slide holds until it changes."""
+    last = (snapshot.get("nav_result") or {}).get("self") or {}
+    mark = f'{last.get("request_id", "")}:{last.get("finished_at", "")}'
+    return f'<span hidden data-last-nav="{escape(mark)}"></span>'
+
+
+def _age(age: float | None) -> str:
+    return "" if age is None else f' <span class="muted">({age:.1f} s ago)</span>'
+
+
+def _fix_facts(fix: dict) -> list[tuple[str, str]]:
+    none = '<span class="muted">not fresh: not sent</span>'
+    lat, lon = fix.get("lat"), fix.get("lon")
+    position = (f'<span class="mono">{abs(lat):.5f}°{"N" if lat >= 0 else "S"} '
+                f'{abs(lon):.5f}°{"E" if lon >= 0 else "W"}</span>{_age(fix.get("position_age_s"))}'
+                if lat is not None and lon is not None
+                else '<span class="chip warn">No fix</span> <span class="muted">sent as RMC status V</span>')
+    sog, cog = fix.get("sog_kn"), fix.get("cog_true_deg")
+    parts = [f"{sog:.1f} kn" if sog is not None else "", f"{cog:.1f}° T" if cog is not None else ""]
+    motion = (f'<span class="mono">{escape(", ".join(p for p in parts if p))}</span>{_age(fix.get("cogsog_age_s"))}'
+              if any(parts) else none)
+    ht, hm = fix.get("heading_true_deg"), fix.get("heading_mag_deg")
+    if ht is not None:
+        heading = f'<span class="mono">{ht:.1f}° T</span> <span class="muted">HDT</span>'
+    elif hm is not None:
+        heading = (f'<span class="mono">{hm:.1f}° M</span> <span class="muted">HDG: no variation on the '
+                   'bus, so no true heading</span>')
+    else:
+        heading = none
+    if ht is not None or hm is not None:
+        heading += _age(fix.get("heading_age_s"))
+    utc = fix.get("utc")
+    clock = (f'<span class="mono">{escape(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(utc)))} UTC</span>'
+             if utc is not None else '<span class="muted">no system time on the bus: RMC time left empty</span>')
+    return [("Position", position), ("Speed, course", motion), ("Heading", heading), ("Bus time", clock)]
+
+
+def _sources(sources: list[dict]) -> str:
+    if not sources:
+        return '<span class="muted">nothing heard</span>'
+    by_pgn: dict[int, list[dict]] = {}
+    for src in sources:
+        by_pgn.setdefault(src.get("pgn", 0), []).append(src)
+    lines = []
+    for pgn, items in sorted(by_pgn.items()):
+        addrs = ", ".join(f'{s.get("source")}{"*" if s.get("selected") else ""}' for s in items)
+        warn = (f' <span class="chip warn">{len(items)} sources: using the lowest fresh address (*)</span>'
+                if len(items) > 1 else "")
+        lines.append(f'<span class="sub">{escape(_PGN_NAMES.get(pgn, str(pgn)))} '
+                     f'<span class="mono muted">{pgn}</span> from <span class="mono">{escape(addrs)}</span>{warn}</span>')
+    return "".join(lines)
+
+
+def _nav_last(last: dict | None) -> str:
+    if not last:
+        return ""
+    chip = '<span class="chip ok">Done</span>' if last.get("ok") else '<span class="chip crit">Refused</span>'
+    return (f'{chip} {escape(last.get("message", ""))} <span class="muted">at '
+            f'{escape(time.strftime("%H:%M:%S", time.localtime(last.get("finished_at") or 0)))}, by '
+            f'{escape(last.get("requested_by", ""))}</span>')
+
+
+def _nav_send(snapshot: dict, csrf: str | None, sending: set[str]) -> str:
+    scan = (snapshot.get("site_hosts") or {}).get("self")
+    if not scan:
+        return '<p class="muted">Scan the site network first: nav data goes only to a host the scan found.</p>'
+    own = set(scan.get("self_addresses") or [])
+    hosts = [h for h in scan.get("hosts") or [] if h.get("address") not in own]
+    if not hosts:
+        return '<p class="muted">The last scan found no other host to send to.</p>'
+    hosts.sort(key=lambda h: ipaddress.ip_address(h.get("address", "0.0.0.0")))
+    options = "".join(
+        f'<option value="{escape(h.get("address", ""))}">{escape(h.get("address", ""))}'
+        f'{" · " + escape(h.get("hostname") or h.get("maker") or "") if (h.get("hostname") or h.get("maker")) else ""}'
+        f'{" (sending)" if h.get("address") in sending else ""}</option>' for h in hosts)
+    path, warning = NAV_OPERATIONS["send"]
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    return (f'<p class="note">{escape(warning)} The device reads it as a UDP source, e.g. '
+            '<span class="mono">gpsd udp://0.0.0.0:2947</span>.</p>'
+            f'<form class="op bare" method="post" action="{escape(path)}" data-slide data-hold '
+            f'data-marker="data-last-nav">{token}<input type="hidden" name="then" value="/">'
+            f'<div class="pick"><label>Host from the last scan<select name="address" required>'
+            f'<option value="">Pick a host…</option>{options}</select></label>'
+            f'<label>UDP port<input type="number" name="port" min="1" max="65535" value="2947" required></label></div>'
+            f'<label class="confirm"><input type="checkbox" name="confirm" value="yes" required> '
+            f'<span>{escape(warning)}</span></label>'
+            '<button class="btn primary" type="submit">Send nav data</button></form>')
+
+
+def _nav(snapshot: dict) -> str:
+    status = (snapshot.get("nav") or {}).get("self")
+    caps = _capabilities(snapshot)
+    if not status:
+        body = ('<p class="empty">No status from nav-relay yet.</p>' if NAV_SENDER in caps or not snapshot.get("nodes")
+                else '<p class="empty"><span class="chip none">Nav relay off</span></p>')
+        return f'<section class="nav" aria-labelledby="nav-h"><h2 id="nav-h">Nav feed</h2>{body}</section>'
+    kind, label = _LINK_CHIPS.get(status.get("link", ""), ("warn", status.get("link", "unknown")))
+    link = f'<span class="chip {kind}">{escape(label)}</span> <span class="mono">{escape(status.get("interface", ""))}</span>'
+    if status.get("link_detail"):
+        link += f'<span class="sub">{escape(status["link_detail"])}</span>'
+    facts = [("CAN link", link)] + _fix_facts(status.get("fix") or {}) + [("Sources", _sources(status.get("sources") or []))]
+    last = (snapshot.get("nav_result") or {}).get("self")
+    if last:
+        facts.append(("Last action", _nav_last(last)))
+    csrf = (snapshot.get("viewer") or {}).get("csrf")
+    token = f'<input type="hidden" name="csrf" value="{escape(csrf)}">' if csrf else ""
+    stop_path, _ = NAV_OPERATIONS["stop"]
+    rows, sending = [], set()
+    for d in status.get("destinations") or []:
+        sending.add(d.get("address", ""))
+        err = d.get("last_error")
+        chip = (f'<span class="chip crit">Failing: {escape(err)}</span>' if err
+                else f'<span class="chip ok">{int(d.get("sent", 0))} sent</span>')
+        stop = (f'<form method="post" action="{escape(stop_path)}">{token}'
+                f'<input type="hidden" name="then" value="/">'
+                f'<input type="hidden" name="address" value="{escape(d.get("address", ""))}">'
+                '<button class="btn" type="submit">Stop</button></form>') if NAV_SENDER in caps else ""
+        rows.append(f'<li><span><span class="name mono">{escape(d.get("address", ""))}:{int(d.get("port", 0))}</span> '
+                    f'{chip}</span>{stop}<span class="sub">{escape(d.get("mac") or "no MAC")} · since '
+                    f'{escape(_clock(d.get("since") or 0))}, by {escape(d.get("requested_by", ""))}</span></li>')
+    dests = (f'<ul class="dest">{"".join(rows)}</ul>' if rows
+             else '<p class="muted">Sending to nobody. Nothing is sent until you pick a host.</p>')
+    send = _nav_send(snapshot, csrf, sending) if NAV_SENDER in caps else ""
+    return (f'<section class="nav" aria-labelledby="nav-h"><h2 id="nav-h">Nav feed '
+            '<small>NMEA 2000 in, NMEA 0183 over UDP out</small></h2>'
+            f'<div class="nav-grid"><dl class="facts">{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts)}</dl>'
+            f'<div><h3>Sending to</h3>{dests}<h3>Send to a scanned host</h3>{send}</div></div>'
+            f'{nav_marker(snapshot)}</section>')
+
+
 #: The query that keeps System open across the auto-refresh (a reload resets <details>).
 SYSTEM_OPEN = "open"
 
@@ -655,6 +808,7 @@ class OverviewPage:
 </div>
 {_update_banner(snapshot)}{update_marker(snapshot)}
 {_site_map(snapshot, status, cameras, name, snapshot.get("now") or time.time())}
+{_nav(snapshot)}
 <div class="zones">
 <section class="zone lan"><h2>Cameras <small>on the site network</small></h2>{_cameras(cameras)}</section>
 <section class="zone gw"><h2>This gateway <small>tailscaled</small></h2>{_gateway(status, machine, (snapshot.get("tailnet_apply") or {}).get("self"), _software(snapshot))}{_apply(snapshot, status)}{last_marker(snapshot)}</section>

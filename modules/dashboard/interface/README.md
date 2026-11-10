@@ -66,6 +66,7 @@ interface objects").
 
 ## Changelog
 
+- v0.14.0 — `NAV_SENDER` and `NAV_OPERATIONS` (`config.py`): the nav-relay capability and the Send/Stop paths and warning (ADR-0010) (additive).
 - v0.13.0 — `NODE_UPDATER_APPLY`, `NODE_OPERATIONS` (`config.py`), `op_form(extra=...)` hidden fields, and the `node_update_result` state kind: the Update slider and its outcome (ADR-0009 D3) (additive).
 - v0.12.0 — `NODE_UPDATE_CHECKER`, `UPDATE_CHECK_PATH` (`config.py`) and the `node_update` state kind: what runs and the update channel's offer, with Check now (ADR-0009) (additive).
 - v0.11.0 — `name_redirect()` (`doors.py`): where a GET on the node's MagicDNS name goes, the tailnet IP, or None; the name is never served (ADR-0008) (additive).

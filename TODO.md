@@ -52,6 +52,16 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       pinned, two measured scans) and step 2 (contract 0.6.0 + `site-survey`, on
       `feature/site-survey`) step 3 (the Scan slider and the map, dashboard 0.9.0) and step 4
       (tailnet nodes on the map) done 2026-10-13; step 5 (VAPIX identification) next. Separately: the overview never judges `TailnetStatus` freshness (ADR-0007, Options).
+- [ ] **Nav relay: NMEA 2000 → NMEA 0183 over UDP** (`docs/adr/0010-nmea2000-nav-relay.md`,
+      Accepted 2026-11-10). Built: contract 0.10.0, `nav-relay`, the dashboard's Nav feed, ops
+      (DKMS `kvaser_usb`, udev → `n2k0`, listen-only link unit, doctor). On the node, with the
+      Kvaser:
+      1. `sudo ops/install.sh`, plug in, `sudo ops/doctor.sh`: `n2k0` listen-only (if the
+         adapter refuses listen-only, it stays down: quirks "Unverified assumptions").
+      2. `candump -l n2k0` for ~10 min; fill `tools/ledgers/nav-relay/` (counts and rates only)
+         and a scrubbed replay in `tests/replay/nav-relay/`.
+      3. Rehearse: device runs `gpsd -N -n udp://0.0.0.0:2947`, Scan, Send to it, `gpspipe -w`
+         shows TPV + heading; unplug the adapter → RMC `V` within ~1 s.
 - [ ] **Restart vs. an operation in flight** (release review, 2026-10-13). A service restart
       from `/config` while a Join, Rename or Routes is still running loses its outcome (no
       Last action), and the join record misses what tailscaled did, so a later rejoin may
@@ -91,6 +101,27 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [x] ADR-0003 step 3 applied on the node (2026-10-13): TLS key, admin password, operator,
       8080 rule; doctor clean. `tailscale up --operator=<user>` waits for the dashboard's
       join flow (ADR-0003 step 6) or a manual join.
+- [ ] **Installer: retry the admin password prompt** (ADR-0002 A2). A mismatch or a password
+      under 12 characters makes `set-admin-password.sh` refuse, and the installer stops there,
+      before the daemon unit is installed on a fresh node. Re-ask up to 3 times, then skip with
+      the fail-closed note and finish the rest. Then rehearse the first-run path on a blank
+      card (never seen yet: this node already had a password).
+- [ ] **32-bit ARM on Debian 13 (trixie): older Pis** (ADR-0002 amendment first). Turn
+      `ops/pins.sh` into a table keyed by codename + arch, still refusing anything not in it,
+      and add the 32-bit row. Verify before pinning:
+      - Raspberry Pi OS 32-bit reports `armhf` but is built for ARMv6 (Pi Zero/1), whereas
+        Debian's `armhf` is ARMv7. The CPU (`uname -m`: `armv6l` vs `armv7l`) picks the
+        MediaMTX asset (`linux_armv6` runs on both, `linux_armv7` needs a Pi 2+), not dpkg.
+      - Tailscale: which repo serves Pi OS 32-bit (`/stable/raspbian` vs `/stable/debian`),
+        an armhf 1.102.5 build, and the signing key.
+      - `python3-pydantic` (2.x, Rust `pydantic-core`) and `nmap` exist in the 32-bit archive
+        at usable versions; pin nmap's exact version for that row.
+      - Measure on the board: the admin password's scrypt cost and memory (sized on a Pi 5),
+        nmap scan time (`tools/ledgers/site-survey/`), and MediaMTX relay load per camera.
+      - Re-verify the Tailscale/MediaMTX/nmap entries in `docs/quirks.md` there (§7), and
+        dry-run the installer for that row in CI.
+      Out of scope for now: Debian 12 (needs pydantic 2 from a venv, not apt; its own ADR),
+      Ubuntu, and anything older.
 - [ ] Install `nodejs` on the dev node (dev/CI only) so `ci.sh` parses the dashboard's scripts
       (ADR-0006); until then that gate prints SKIPPED.
 - [ ] **One-click node update** (ADR-0009, accepted 2026-10-25). Step 1 done (the daemon
@@ -133,6 +164,9 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       `SOURCE_V6_PREFIX = 64`, `MAX_PENDING_LOGINS = 64`, `MAX_SESSIONS = 32`; `http_surface.CONN_TIMEOUT_S = 15`,
       `MAX_BODY = 16 KiB`. Ledger: `tools/ledgers/admin-auth/` (scrypt N is already there).
 - [ ] `dashboard.interface.models.MAX_PER_KIND = 256`
+- [ ] nav-relay (ADR-0010): `NOMINAL_PERIOD_S`, `freshness.RAPID_MIN_S = 1.0`,
+      `OUTPUT_PERIOD_S = 1.0`, `MAX_SOURCES = 16`, `MAX_DESTINATIONS = 4`, `LINK_CHECK_S = 5.0`,
+      `RCVBUF_BYTES = 64 KiB`. Ledger: `tools/ledgers/nav-relay/` (empty: needs a real bus).
 - [ ] `tailnet_writer`: `REJOIN_BACKOFF_MIN_S = 60`, `REJOIN_BACKOFF_MAX_S = 1800` (ADR-0005 A2);
       `site_networks.IP_TIMEOUT_S = 2.0`.
 - [ ] `tailscale_writer`: `UP_TIMEOUT_S = 60`, `SET_TIMEOUT_S = 15`, `LOGOUT_TIMEOUT_S = 15`,
