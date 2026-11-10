@@ -63,7 +63,7 @@ topics/types are local to this module and defined by its own `interface/`.
 
 **Nav feed (0.12.0, ADR-0010 D7)** on the overview, under the site map:
 - the CAN link (listen-only or why not);
-- the fix with each field's age ("not fresh: not sent"; no position reads "No fix, sent as RMC status V");
+- the fix with each field's age ("not fresh: not sent"; no position reads "No fix, sent as GGA quality 0");
 - the sources per PGN, warning when a PGN has more than one;
 - the destinations with sent count or last error and a Stop button.
 

@@ -12,7 +12,7 @@ from .nav import (ALLOWLIST, DEFAULT_PORT, INTERFACE, LINK_DOWN, LINK_NO_ADAPTER
 #: Module identity (kebab-case) for capability flags and logging. Lives here, not in core.
 MODULE = "nav-relay"
 #: Release version — bumps with features/implementation (§4 dual versioning).
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 #: Inward contract version — bumps only when this interface/ package changes.
 __version__ = "0.1.0"
 

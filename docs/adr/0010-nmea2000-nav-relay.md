@@ -87,6 +87,8 @@ place, `interface/`.
 
 ### D3 — What goes out (the data plane)
 
+> **Superseded in part by Amendment A1 (2026-11-10):** the sentences are now GGA, VTG and HDT.
+
 Every `OUTPUT_PERIOD_S` (1.0 s, provisional), a core sender thread sends one UDP datagram per
 destination. The datagram holds:
 
@@ -308,3 +310,26 @@ The rule is amended to name it, so the exception is a recorded deal (§6), not a
   - check listen-only is accepted (quirks, "Unverified assumptions");
   - record `candump`, and fill the ledger;
   - step 4 (rehearsal to a real gpsd).
+
+## Amendments
+
+### A1 — GGA, VTG and HDT only (operator, 2026-11-10)
+
+The operator wants the node to send `$GPGGA`, `$GPVTG` and `$HEHDT`, and nothing else. This
+replaces D3's sentence list and ruling R4. `$GPRMC` and `$HCHDG` are no longer sent.
+
+- **`$GPGGA`** (always): UTC time from PGN 126992 (empty if not fresh), lat/lon, quality `1`.
+  Satellites, HDOP and altitude are not among the D2 PGNs, so those fields are empty.
+- **`$GPVTG`** (always): COG true, SOG in knots and km/h, mode `A`. The magnetic course is
+  empty.
+- **`$HEHDT`** (when a true heading is known): unchanged. A magnetic heading still becomes true
+  with a fresh variation. A magnetic-only heading is no longer sent at all.
+
+**Fail-safe, restated:** stale position → GGA quality `0` with empty position fields (the
+explicit "no fix"; it replaces RMC `V`). Stale COG and SOG → VTG with empty fields and mode
+`N`. Stale heading, or magnetic only → no HDT. The datagram is still sent every second.
+
+**Cost:** GGA has no date, so gpsd at the destination takes the date from its own clock.
+That is unverified (quirks, "Unverified assumptions"), and the rehearsal checks it with
+`gpspipe -w`. The D7 warning ("position, speed, course and heading … once a second") still
+describes what is sent, so it is unchanged. nav-relay release 0.2.0, with no contract change.

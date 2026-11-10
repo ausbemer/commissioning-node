@@ -171,33 +171,45 @@ def test_checksum_matches_the_textbook_rmc() -> None:
     assert nmea0183.checksum("GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W") == "6A"
 
 
-def test_rmc_with_a_fix() -> None:
-    fix = interfaces.NavFix(lat=48.1173, lon=-11.5166667, sog_kn=22.4, cog_true_deg=84.4,
-                            variation_deg=-3.1,
+def test_gga_with_a_fix() -> None:
+    fix = interfaces.NavFix(lat=48.1173, lon=-11.5166667,
                             utc=calendar.timegm((1994, 3, 23, 12, 35, 19)) + 0.25)
-    s = nmea0183.rmc(fix)
-    body = "GPRMC,123519.25,A,4807.0380,N,01131.0000,W,22.4,84.4,230394,3.1,W,A"
+    s = nmea0183.gga(fix)
+    body = "GPGGA,123519.25,4807.0380,N,01131.0000,W,1,,,,,,,,"
     assert s == f"${body}*{nmea0183.checksum(body)}\r\n"
     assert len(s) <= nmea0183.MAX_LEN
 
 
-def test_rmc_without_a_fix_is_status_v_with_nothing_in_it() -> None:
-    s = nmea0183.rmc(interfaces.NavFix(sog_kn=3.0, cog_true_deg=10.0))
-    assert s.startswith("$GPRMC,,V,,,,,,,,,,N*")
+def test_gga_without_a_fix_is_quality_0_with_nothing_in_it() -> None:
+    s = nmea0183.gga(interfaces.NavFix(sog_kn=3.0, cog_true_deg=10.0))
+    assert s.startswith("$GPGGA,,,,,,0,,,,,,,,*")
+
+
+def test_vtg() -> None:
+    body = "GPVTG,84.4,T,,M,22.4,N,41.5,K,A"
+    s = nmea0183.vtg(interfaces.NavFix(sog_kn=22.4, cog_true_deg=84.4))
+    assert s == f"${body}*{nmea0183.checksum(body)}\r\n"
+    assert nmea0183.vtg(interfaces.NavFix(sog_kn=1.0)).startswith("$GPVTG,,T,,M,1.0,N,1.9,K,A*")
+    assert nmea0183.vtg(interfaces.NavFix()).startswith("$GPVTG,,T,,M,,N,,K,N*")
 
 
 def test_rounding_never_prints_60_minutes_or_360_degrees() -> None:
-    s = nmea0183.rmc(interfaces.NavFix(lat=1.99999999, lon=-179.999999999, cog_true_deg=359.96))
-    assert ",0200.0000,N,18000.0000,W," in s and ",0.0," in s
-    assert nmea0183.heading(interfaces.NavFix(heading_true_deg=359.97)).startswith("$HEHDT,0.0,T*")
+    s = nmea0183.gga(interfaces.NavFix(lat=1.99999999, lon=-179.999999999))
+    assert ",0200.0000,N,18000.0000,W," in s
+    assert nmea0183.vtg(interfaces.NavFix(cog_true_deg=359.96)).startswith("$GPVTG,0.0,T,")
+    assert nmea0183.hdt(interfaces.NavFix(heading_true_deg=359.97)).startswith("$HEHDT,0.0,T*")
 
 
-def test_heading_sentences() -> None:
-    assert nmea0183.heading(interfaces.NavFix(heading_true_deg=274.07)).startswith("$HEHDT,274.1,T*")
-    assert nmea0183.heading(interfaces.NavFix(heading_mag_deg=12.0)).startswith("$HCHDG,12.0,,,,*")
-    assert nmea0183.heading(interfaces.NavFix()) is None
-    both = nmea0183.datagram(interfaces.NavFix(lat=1.0, lon=2.0, heading_true_deg=5.0)).decode()
-    assert both.count("\r\n") == 2 and both.index("$GPRMC") < both.index("$HEHDT")
+def test_only_gga_vtg_and_hdt_go_out() -> None:
+    assert nmea0183.hdt(interfaces.NavFix(heading_true_deg=274.07)).startswith("$HEHDT,274.1,T*")
+    assert nmea0183.hdt(interfaces.NavFix(heading_mag_deg=12.0)) is None    # no HDG
+    assert nmea0183.hdt(interfaces.NavFix()) is None
+    full = nmea0183.datagram(interfaces.NavFix(lat=1.0, lon=2.0, sog_kn=3.0, cog_true_deg=4.0,
+                                               heading_true_deg=5.0, heading_mag_deg=6.0,
+                                               variation_deg=-1.0, utc=0.0)).decode()
+    assert [line[1:6] for line in full.split("\r\n") if line] == ["GPGGA", "GPVTG", "HEHDT"]
+    bare = nmea0183.datagram(interfaces.NavFix()).decode()
+    assert [line[1:6] for line in bare.split("\r\n") if line] == ["GPGGA", "GPVTG"]
 
 
 # -- the policy: freshness and source selection --------------------------------------------------
@@ -341,7 +353,7 @@ def test_nothing_is_sent_until_an_operator_picks_a_scanned_host() -> None:
     sender.step()
     (address, port, payload), = sink.sent
     assert (address, port) == (PLOTTER, 2947)
-    assert payload.decode().startswith("$GPRMC,,A,0130.0000,N,00230.0000,E,")
+    assert payload.decode().startswith("$GPGGA,,0130.0000,N,00230.0000,E,1,")
 
 
 def test_a_stale_position_is_sent_as_no_fix() -> None:
@@ -353,7 +365,7 @@ def test_a_stale_position_is_sent_as_no_fix() -> None:
     clock.t += 1.5
     sender.step()
     text = sink.sent[-1][2].decode()
-    assert text.startswith("$GPRMC,,V,") and "HDT" not in text
+    assert text.startswith("$GPGGA,,,,,,0,") and "$GPVTG,,T,,M,,N,,K,N*" in text and "HDT" not in text
 
 
 def test_stop_and_the_destination_limit() -> None:

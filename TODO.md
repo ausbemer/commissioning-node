@@ -29,7 +29,7 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       5. **Destination:** the device runs `gpsd -N -n udp://0.0.0.0:2947` (or `DEVICES=` in
          `/etc/default/gpsd`; note `gpsd -V`). Scan the site network, pick it in Send, slide.
          On the device `gpspipe -w` shows TPV (lat/lon/speed/track) and heading.
-      6. **Fail-safe:** unplug the Kvaser while sending: the device sees RMC `V` (no fix)
+      6. **Fail-safe:** unplug the Kvaser while sending: the device sees GGA quality 0 (no fix)
          within ~1 s, and the panel shows `no-adapter`. Plug back in: it recovers by itself.
       7. Record what you saw in quirks (turn the nav "Unverified assumptions" into entries)
          and tick ADR-0010's steps 1 and 4.
@@ -90,7 +90,7 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
       2. `candump -l n2k0` for ~10 min; fill `tools/ledgers/nav-relay/` (counts and rates only)
          and a scrubbed replay in `tests/replay/nav-relay/`.
       3. Rehearse: device runs `gpsd -N -n udp://0.0.0.0:2947`, Scan, Send to it, `gpspipe -w`
-         shows TPV + heading; unplug the adapter → RMC `V` within ~1 s.
+         shows TPV + heading; unplug the adapter → GGA quality 0 within ~1 s.
 - [ ] **Restart vs. an operation in flight** (release review, 2026-10-13). A service restart
       from `/config` while a Join, Rename or Routes is still running loses its outcome (no
       Last action), and the join record misses what tailscaled did, so a later rejoin may

@@ -356,6 +356,7 @@ Pinned dependencies covered here:
   - An unprivileged daemon may open `CAN_RAW` and set its filters under `NoNewPrivileges=yes`.
   - `ip -details -json link show` reports listen-only as `linkinfo.info_data.ctrlmode`
     containing `"LISTEN-ONLY"` (`socketcan_source.listen_only`).
-  - The destination's gpsd reads our sentences from a `udp://0.0.0.0:2947` source. RMC and
-    HDT are long supported; HDG needs a gpsd new enough to parse it (check `gpsd -V` on the
-    device). The sentences do parse with pynmea2 1.19 (2026-11-10).
+  - The destination's gpsd reads our sentences from a `udp://0.0.0.0:2947` source. We send GGA,
+    VTG and HDT only (no RMC since 2026-11-10). GGA carries no date, so gpsd takes the date
+    from its own clock or reports TPV without a full time until it has one (check `gpsd -V`
+    and `gpspipe -w` on the device). The sentences parse with pynmea2 1.19 (2026-11-10).

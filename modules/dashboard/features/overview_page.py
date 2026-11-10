@@ -629,7 +629,7 @@ def _fix_facts(fix: dict) -> list[tuple[str, str]]:
     position = (f'<span class="mono">{abs(lat):.5f}°{"N" if lat >= 0 else "S"} '
                 f'{abs(lon):.5f}°{"E" if lon >= 0 else "W"}</span>{_age(fix.get("position_age_s"))}'
                 if lat is not None and lon is not None
-                else '<span class="chip warn">No fix</span> <span class="muted">sent as RMC status V</span>')
+                else '<span class="chip warn">No fix</span> <span class="muted">sent as GGA quality 0</span>')
     sog, cog = fix.get("sog_kn"), fix.get("cog_true_deg")
     parts = [f"{sog:.1f} kn" if sog is not None else "", f"{cog:.1f}° T" if cog is not None else ""]
     motion = (f'<span class="mono">{escape(", ".join(p for p in parts if p))}</span>{_age(fix.get("cogsog_age_s"))}'
@@ -638,15 +638,15 @@ def _fix_facts(fix: dict) -> list[tuple[str, str]]:
     if ht is not None:
         heading = f'<span class="mono">{ht:.1f}° T</span> <span class="muted">HDT</span>'
     elif hm is not None:
-        heading = (f'<span class="mono">{hm:.1f}° M</span> <span class="muted">HDG: no variation on the '
-                   'bus, so no true heading</span>')
+        heading = (f'<span class="mono">{hm:.1f}° M</span> <span class="muted">not sent: no variation on '
+                   'the bus, so no true heading for HDT</span>')
     else:
         heading = none
     if ht is not None or hm is not None:
         heading += _age(fix.get("heading_age_s"))
     utc = fix.get("utc")
     clock = (f'<span class="mono">{escape(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(utc)))} UTC</span>'
-             if utc is not None else '<span class="muted">no system time on the bus: RMC time left empty</span>')
+             if utc is not None else '<span class="muted">no system time on the bus: GGA time left empty</span>')
     return [("Position", position), ("Speed, course", motion), ("Heading", heading), ("Bus time", clock)]
 
 

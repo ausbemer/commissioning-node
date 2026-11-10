@@ -8,8 +8,8 @@
 Bridge between a vessel's NMEA 2000 bus and an NMEA 0183 reader on the site LAN (ADR-0010). It is the only module that touches the CAN link and the only one that sends nav data.
 
 - **Reading:** a core reader thread reads `n2k0` (a Kvaser Leaf Lite v2 on the mainline `kvaser_usb` driver), only while the link is up and listen-only. Kernel filters pass exactly four PGNs (129025 position, 129026 COG/SOG, 127250 heading, 126992 time), and the reader keeps the latest reading per (PGN, source).
-- **Sending:** a core sender thread runs every `OUTPUT_PERIOD_S` and sends one UDP datagram (`$GPRMC` + `$HEHDT`, or `$HCHDG` when only magnetic heading is known) to each destination an operator picked from the last site scan.
-- **When data is stale:** a field older than its freshness window is not sent. Position falls back to RMC status `V`.
+- **Sending:** a core sender thread runs every `OUTPUT_PERIOD_S` and sends one UDP datagram (`$GPGGA` + `$GPVTG`, and `$HEHDT` when a true heading is known; nothing else, ADR-0010 amendment 2026-11-10) to each destination an operator picked from the last site scan.
+- **When data is stale:** a field older than its freshness window is not sent. Position falls back to GGA quality 0 with empty position fields; a stale course and speed to VTG mode `N`; a magnetic-only heading is not sent.
 - **Never transmits on the NMEA 2000 bus** (spec §11 rung 8): the seam has no send, and the link is listen-only, set by ops and re-checked here.
 - **Memory only:** nothing is persisted. A restart sends to nobody until an operator picks again (R1).
 
@@ -23,7 +23,7 @@ topics/types are local to this module and defined by its own `interface/`.
 - **Consumes — inward (core → features):** `NavState` (latest readings and link report, written by core's reader), `DestinationTable` (sends recorded by core's sender)
 - **Produces — outward (to the bus):** `nav/destination-result` (`NavDestinationResult`, every request), `nav/status` (`NavStatus`, every tick) — conforms to the ecosystem contract (`interfaces/` v0.10.0). The sentences themselves never ride the bus (§6: data plane).
 - **Produces — inward (features → core):** destinations into the `DestinationTable`
-- **Versions (spec §4 dual versioning):** release `VERSION` 0.1.0; inward
+- **Versions (spec §4 dual versioning):** release `VERSION` 0.2.0; inward
   contract `__version__` 0.1.0. Both live in `interface/__init__.py`; see
   `interface/README.md`.
 
