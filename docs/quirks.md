@@ -344,6 +344,9 @@ Pinned dependencies covered here:
   and a camera reached through an advertised route. Also check that NetworkManager does not
   move `tailscale0` into another zone.
 - **Nav relay (ADR-0010), none seen on hardware yet:**
+  - The adapter in use is Kvaser's M12 → USB-A model (operator, 2026-11-10), not
+    necessarily the DB9 Leaf Lite v2 (`0bfd:0120`). Record its USB product id and check that
+    `kvaser_usb` claims it.
   - The Leaf Lite v2 takes listen-only. In `kvaser_usb` its family (`leafimx`) advertises
     `CAN_CTRLMODE_LISTENONLY` only if the adapter's firmware answers the
     `CAP_CMD_LISTEN_MODE` capability query (`kvaser_usb_leaf.c`). If it doesn't, the link unit

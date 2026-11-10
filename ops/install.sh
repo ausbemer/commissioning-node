@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329  # helpers run through act "…" fn, which shellcheck cannot follow (0.11+ flags them as never invoked)
 # ops/install.sh — idempotent host installer for commissioning-node (spec §4 ops tier;
 # ADR-0002). Installs, at the versions pinned in ops/pins.sh:
 #

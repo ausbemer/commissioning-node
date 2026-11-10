@@ -8,9 +8,16 @@ Growth is trigger-driven: nothing here is scheduled until it's needed.
 - [ ] **On the boat: plug in the Kvaser and rehearse the nav relay** (ADR-0010). Node ready
       2026-11-10: `c9ae52a` installed, `kvaser_usb` built by DKMS and loading, udev rule and
       link unit in place, doctor clean apart from "no n2k0", dashboard shows `no-adapter`.
-      1. **Cable:** NMEA 2000 drop (Micro-C) to the Leaf's DB9: CAN_H pin 7, CAN_L pin 2, GND
-         pin 3. Tee into the backbone; add no terminator (the backbone has its two).
-      2. **Plug in, then check:** `lsusb` shows `0bfd:0120`; `ip -details link show n2k0` shows
+      1. **Cable:** the adapter is Kvaser's **M12 → USB-A** model: its M12 (5-pin A-coded) is the
+         NMEA 2000 Micro-C connector, so it goes straight onto a backbone tee (or a drop
+         cable). Before plugging in, check its data sheet: the pinout matches NMEA 2000
+         (3 GND, 4 CAN_H, 5 CAN_L), what it does with pin 2 (NET-S, +12 V from the bus), and
+         that it has no built-in terminator (the backbone already has its two).
+      2. **Plug in, then check:** `lsusb` shows a Kvaser `0bfd:xxxx`. Note the product id: the
+         ADR assumed `0120` (Leaf Lite v2); the M12 model may report another. `kvaser_usb`
+         must claim it (`dmesg | grep -i kvaser`). If nothing claims it, the id is not in the
+         driver's table (`kvaser_usb_core.c`); stop there, nothing on our side changes
+         otherwise (the udev rule matches the driver, not the id). `ip -details link show n2k0` shows
          `<LISTEN-ONLY>`, `bitrate 250000`, state UP; `sudo ops/doctor.sh` has no WARN for n2k0.
          If the link stays down: `journalctl -u commissioning-node-can@n2k0` (adapter refused
          listen-only? quirks "Unverified assumptions") and `dmesg | grep -i kvaser`. Never
